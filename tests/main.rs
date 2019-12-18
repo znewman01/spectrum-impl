@@ -1,8 +1,9 @@
 extern crate spectrum_impl;
 
-use futures::executor::block_on;
-
 #[test]
 fn test_pass() {
-    block_on(spectrum_impl::run());
+    // TODO: tokio::run in tokio 0.2.0+
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(spectrum_impl::run());
 }

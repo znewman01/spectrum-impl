@@ -1,5 +1,4 @@
-use futures::executor::block_on;
-
-fn main() {
-    block_on(spectrum_impl::run());
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    spectrum_impl::run().await
 }
