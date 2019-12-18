@@ -7,6 +7,8 @@ pub mod leader;
 pub mod publisher;
 pub mod server;
 
+mod config;
+
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _ = futures::join!(
         client::run(),
