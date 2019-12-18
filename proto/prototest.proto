@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package prototest;
+
+service Server {
+  rpc PingPong (Ping) returns (Pong) {}
+}
+
+message Ping {}
+
+message Pong {}

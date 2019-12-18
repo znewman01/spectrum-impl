@@ -23,4 +23,10 @@ name = "server"
 path = "src/server.rs"
 
 [dependencies]
-futures = "0.3.1"
+futures = "0.3"
+prost = "0.5"
+bytes = "0.4"
+tonic = "0.1.0-alpha.6"
+
+[build-dependencies]
+tonic-build = "0.1.0-alpha.6"
