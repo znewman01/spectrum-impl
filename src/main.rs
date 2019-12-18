@@ -1,8 +1,5 @@
-extern crate spectrum_impl;
-
 use futures::executor::block_on;
 
-#[test]
-fn test_pass() {
+fn main() {
     block_on(spectrum_impl::run());
 }

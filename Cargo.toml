@@ -8,18 +8,19 @@ edition = "2018"
 
 [[bin]]
 name = "client"
-path = "bin/client.rs"
+path = "src/client.rs"
 
 [[bin]]
 name = "leader"
-path = "bin/leader.rs"
+path = "src/leader.rs"
 
 [[bin]]
 name = "publisher"
-path = "bin/publisher.rs"
+path = "src/publisher.rs"
 
 [[bin]]
 name = "server"
-path = "bin/server.rs"
+path = "src/server.rs"
 
 [dependencies]
+futures = "0.3.1"
