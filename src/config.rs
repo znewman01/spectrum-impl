@@ -9,7 +9,7 @@ type Value = String;
 pub trait ConfigStore {
     fn get(&self, key: Key) -> Option<Value>;
 
-    fn put(&mut self, key: Key, value: Value) -> Option<Value>;
+    fn put(&self, key: Key, value: Value) -> Option<Value>;
 
     fn list(&self, prefix: Key) -> Vec<(Key, Value)>;
 }
@@ -32,7 +32,7 @@ impl ConfigStore for InMemoryConfigStore {
         map.get(&key).cloned()
     }
 
-    fn put(&mut self, key: Key, value: Value) -> Option<Value> {
+    fn put(&self, key: Key, value: Value) -> Option<Value> {
         let mut map = self.map.lock().unwrap();
         map.insert(key, value)
     }
@@ -68,20 +68,20 @@ mod tests {
     proptest! {
         #[test]
         fn test_put_and_get(key in key_strat(), value in value_strat()) {
-            let mut store = InMemoryConfigStore::new();
+            let store = InMemoryConfigStore::new();
             store.put(key.clone(), value.clone());
             prop_assert_eq!(store.get(key).unwrap(), value);
         }
 
         #[test]
         fn test_get_empty(key in key_strat()) {
-            let mut store = InMemoryConfigStore::new();
+            let store = InMemoryConfigStore::new();
             prop_assert!(store.get(key).is_none());
         }
 
         #[test]
         fn test_put_and_get_keep_latter(key in key_strat(), value1 in value_strat(), value2 in value_strat()) {
-            let mut store = InMemoryConfigStore::new();
+            let store = InMemoryConfigStore::new();
             store.put(key.clone(), value1.clone());
             store.put(key.clone(), value2.clone());
             prop_assert_eq!(store.get(key).unwrap(), value2.clone());
@@ -92,7 +92,7 @@ mod tests {
                      suffixes in hash_set(key_strat(), 0..10usize),
                      other_keys in hash_set(key_strat(), 0..10usize),
                      value in value_strat()) {
-            let mut store = InMemoryConfigStore::new();
+            let store = InMemoryConfigStore::new();
             for suffix in &suffixes {
                 let key: Key = prefix.iter().cloned().chain(suffix.iter().cloned()).collect();
                 store.put(key, value.clone());
