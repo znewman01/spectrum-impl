@@ -1,6 +1,9 @@
-use spectrum_impl::server;
+use spectrum_impl::{config, server};
+use std::rc::Rc;
+
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    server::run().await
+    let config_store = Rc::new(config::InMemoryConfigStore::new());
+    server::run(config_store).await
 }

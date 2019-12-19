@@ -1,4 +1,6 @@
+use crate::config;
 use tonic::{Request, Response, Status};
+use std::rc::Rc;
 
 pub mod prototest {
     tonic::include_proto!("prototest");
@@ -22,9 +24,17 @@ impl Server for MyServer {
     }
 }
 
-pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(
+    config_store: Rc<dyn config::ConfigStore>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse().unwrap();
     let server = MyServer::default();
+
+    // TODO: do this more async
+    config_store.put(
+        vec![String::from("servers"), String::from("server")],
+        String::from("[::1]:50051"),
+    );
 
     tonic::transport::server::Server::builder()
         .add_service(ServerServer::new(server))
