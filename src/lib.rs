@@ -1,7 +1,7 @@
 //! Spectrum implementation.
+use std::rc::Rc;
 use std::time::Duration;
 use tokio::timer::Timeout;
-use std::rc::Rc;
 
 pub mod client;
 pub mod leader;

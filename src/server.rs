@@ -1,6 +1,6 @@
 use crate::config;
-use tonic::{Request, Response, Status};
 use std::rc::Rc;
+use tonic::{Request, Response, Status};
 
 pub mod prototest {
     tonic::include_proto!("prototest");

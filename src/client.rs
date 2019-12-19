@@ -1,6 +1,6 @@
 use crate::config;
-use std::time::Duration;
 use std::rc::Rc;
+use std::time::Duration;
 
 pub mod prototest {
     tonic::include_proto!("prototest");
@@ -8,9 +8,11 @@ pub mod prototest {
 
 use prototest::{client::ServerClient, Ping};
 
-pub async fn run(config_store: Rc<dyn config::ConfigStore>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(
+    config_store: Rc<dyn config::ConfigStore>,
+) -> Result<(), Box<dyn std::error::Error>> {
     loop {
-        if config_store.list(vec![String::from("servers")]).len() > 0 {
+        if !config_store.list(vec![String::from("servers")]).is_empty() {
             // shouldn't need to sleep here but server does stuff sync and weird
             tokio::timer::delay_for(Duration::from_millis(200)).await;
             break;
