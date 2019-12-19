@@ -83,9 +83,9 @@ mod tests {
         #[test]
         fn test_put_and_get_keep_latter(key in key_strat(), value1 in value_strat(), value2 in value_strat()) {
             let store = InMemoryConfigStore::new();
-            store.put(key.clone(), value1.clone());
+            store.put(key.clone(), value1);
             store.put(key.clone(), value2.clone());
-            prop_assert_eq!(store.get(key).unwrap(), value2.clone());
+            prop_assert_eq!(store.get(key).unwrap(), value2);
         }
 
         #[test]
