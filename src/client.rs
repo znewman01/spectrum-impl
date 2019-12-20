@@ -6,7 +6,7 @@ pub mod prototest {
     tonic::include_proto!("prototest");
 }
 
-use prototest::{client::ServerClient, Ping};
+use prototest::{server_client::ServerClient, Ping};
 
 pub async fn run(
     config_store: Arc<dyn config::ConfigStore>,
@@ -14,10 +14,10 @@ pub async fn run(
     loop {
         if !config_store.list(vec![String::from("servers")]).is_empty() {
             // shouldn't need to sleep here but server does stuff sync and weird
-            tokio::timer::delay_for(Duration::from_millis(200)).await;
+            tokio::time::delay_for(Duration::from_millis(200)).await;
             break;
         }
-        tokio::timer::delay_for(Duration::from_secs(2)).await; // hack; should use retries
+        tokio::time::delay_for(Duration::from_secs(2)).await; // hack; should use retries
     }
 
     println!("client starting");

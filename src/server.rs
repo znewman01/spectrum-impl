@@ -7,7 +7,7 @@ pub mod prototest {
 }
 
 use prototest::{
-    server::{Server, ServerServer},
+    server_server::{Server, ServerServer},
     Ping, Pong,
 };
 
