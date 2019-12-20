@@ -1,5 +1,4 @@
 use crate::config;
-use std::sync::Arc;
 use std::time::Duration;
 
 pub mod prototest {
@@ -8,8 +7,8 @@ pub mod prototest {
 
 use prototest::{server_client::ServerClient, Ping};
 
-pub async fn run(
-    config_store: Arc<dyn config::ConfigStore>,
+pub async fn run<C: config::ConfigStore>(
+    config_store: C,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         if !config_store.list(vec![String::from("servers")]).is_empty() {

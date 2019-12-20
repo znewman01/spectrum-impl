@@ -1,5 +1,4 @@
 use crate::config;
-use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 pub mod prototest {
@@ -24,8 +23,8 @@ impl Server for MyServer {
     }
 }
 
-pub async fn run(
-    config_store: Arc<dyn config::ConfigStore>,
+pub async fn run<C: config::ConfigStore>(
+    config_store: C,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse().unwrap();
     let server = MyServer::default();

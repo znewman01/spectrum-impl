@@ -14,7 +14,7 @@ pub trait ConfigStore {
     fn list(&self, prefix: Key) -> Vec<(Key, Value)>;
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct InMemoryConfigStore {
     map: Arc<Mutex<HashMap<Key, Value>>>,
 }
