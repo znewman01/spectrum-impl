@@ -1,4 +1,5 @@
 use crate::config;
+use futures::Future;
 use tonic::{Request, Response, Status};
 
 pub mod prototest {
@@ -23,8 +24,9 @@ impl Server for MyServer {
     }
 }
 
-pub async fn run<C: config::ConfigStore>(
+pub async fn run<C: config::ConfigStore, F: Future<Output = ()>>(
     config_store: C,
+    shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse().unwrap();
     let server = MyServer::default();
@@ -37,8 +39,10 @@ pub async fn run<C: config::ConfigStore>(
 
     tonic::transport::server::Server::builder()
         .add_service(ServerServer::new(server))
-        .serve(addr)
+        .serve_with_shutdown(addr, shutdown)
         .await?;
+
+    println!("Shut down server.");
 
     Ok(())
 }

@@ -1,6 +1,5 @@
 //! Spectrum implementation.
 use std::time::Duration;
-use tokio::time::timeout;
 
 pub mod client;
 pub mod leader;
@@ -14,7 +13,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _ = futures::join!(
         client::run(config_store.clone()),
         client::run(config_store.clone()),
-        timeout(Duration::from_secs(5), server::run(config_store.clone())),
+        server::run(config_store.clone(), tokio::time::delay_for(Duration::from_secs(5))),
         publisher::run(),
         leader::run()
     );
