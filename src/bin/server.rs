@@ -1,8 +1,8 @@
 use spectrum_impl::{config, server};
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config_store = Rc::new(config::InMemoryConfigStore::new());
+    let config_store = Arc::new(config::InMemoryConfigStore::new());
     server::run(config_store).await
 }
