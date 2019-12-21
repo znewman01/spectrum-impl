@@ -1,5 +1,5 @@
 //! Spectrum implementation.
-use std::time::Duration;
+use futures::future::FutureExt;
 
 pub mod client;
 pub mod leader;
@@ -10,10 +10,10 @@ pub mod config;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config_store = config::InMemoryConfigStore::new();
+    let barrier = tokio::sync::Barrier::new(2);
     let _ = futures::join!(
-        client::run(config_store.clone()),
-        client::run(config_store.clone()),
-        server::run(config_store.clone(), tokio::time::delay_for(Duration::from_secs(5))),
+        client::run(config_store.clone()).then(|_| barrier.wait()),
+        server::run(config_store.clone(), barrier.wait().map(|_| ())),
         publisher::run(),
         leader::run()
     );
