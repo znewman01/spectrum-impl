@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+package spectrum;
+
+////////////////////////////////////////////////////////////////////////////////
+// Common
+////////////////////////////////////////////////////////////////////////////////
+
+message ClientId {
+  string client_id = 1;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Security Protocol
+////////////////////////////////////////////////////////////////////////////////
+
+// Dummy share/proof/check for testing/benchmarking system
+message InsecureShare {
+  bytes data = 1;
+}
+
+message InsecureProof {
+}
+
+message InsecureShareCheck {
+}
+
+message Share {
+  oneof share_data {
+    InsecureShare insecure_share = 1;
+  }
+}
+
+message Proof {
+  oneof proof {
+    InsecureProof insecure_proof = 1;
+  }
+}
+
+message ShareWithProof {
+  Share share = 1;
+  Proof proof = 2;
+}
+
+// Share checks: what workers exchange to collaboratively verify shares
+message ShareCheck {
+  oneof check {
+    InsecureShareCheck insecure_check = 1;
+  }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Servicesk
+////////////////////////////////////////////////////////////////////////////////
+
+service Worker {
+  rpc Upload(UploadRequest) returns (UploadResponse) {}
+  rpc Verify(stream VerifyRequest) returns (VerifyResponse) {}
+}
+
+
+
+message UploadRequest {
+  ClientId client_id = 1;
+  ShareWithProof share_and_proof = 2;
+}
+
+message UploadResponse {
+}
+
+message VerifyRequest {
+  // TODO(zjn): repeated to allow batching?
+  ClientId client_id = 1;
+  ShareCheck check = 2;
+}
+
+message VerifyResponse {
+}
+
+service Leader {
+  rpc AggregateWorker(AggregateWorkerRequest) returns (AggregateWorkerResponse) {}
+}
+
+message AggregateWorkerRequest {
+  Share share = 1;
+}
+
+message AggregateWorkerResponse {
+}
+
+service Publisher {
+  rpc AggregateGroup(AggregateGroupResponse) returns (AggregateGroupResponse) {}
+}
+
+message AggregateGroupRequest {
+  Share share = 1;
+}
+
+message AggregateGroupResponse {
+}
+
+service StreamingServer {
+  rpc Publish(PublishRequest) returns (PublishResponse) {}
+  rpc Stream(StreamRequest) returns (stream StreamResponse) {}
+}
+
+message PublishRequest {
+  repeated bytes channel_data = 1;
+}
+
+message PublishResponse {
+}
+
+message StreamRequest {
+  uint32 channel_id = 1;
+}
+
+message StreamResponse {
+  bytes data = 1;
+}
