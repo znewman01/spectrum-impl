@@ -1,11 +1,11 @@
 use crate::config;
 use std::time::Duration;
 
-pub mod prototest {
-    tonic::include_proto!("prototest");
+pub mod spectrum {
+    tonic::include_proto!("spectrum");
 }
 
-use prototest::{server_client::ServerClient, Ping};
+use spectrum::{worker_client::WorkerClient, ClientId, UploadRequest};
 
 pub async fn run<C: config::ConfigStore>(
     config_store: C,
@@ -20,11 +20,16 @@ pub async fn run<C: config::ConfigStore>(
     }
 
     println!("client starting");
-    let mut client = ServerClient::connect("http://[::1]:50051").await?;
+    let mut client = WorkerClient::connect("http://[::1]:50051").await?;
 
-    let req = tonic::Request::new(Ping {});
+    let req = tonic::Request::new(UploadRequest {
+        client_id: Some(ClientId {
+            client_id: "1".to_string(),
+        }),
+        share_and_proof: None,
+    });
 
-    let response = client.ping_pong(req).await?;
+    let response = client.upload(req).await?;
 
     println!("RESPONSE={:?}", response);
 

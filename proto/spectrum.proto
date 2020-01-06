@@ -51,12 +51,12 @@ message ShareCheck {
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// Servicesk
+// Services
 ////////////////////////////////////////////////////////////////////////////////
 
 service Worker {
   rpc Upload(UploadRequest) returns (UploadResponse) {}
-  rpc Verify(stream VerifyRequest) returns (VerifyResponse) {}
+  rpc Verify(VerifyRequest) returns (VerifyResponse) {}
 }
 
 
