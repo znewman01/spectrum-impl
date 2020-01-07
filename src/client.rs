@@ -1,4 +1,5 @@
 use crate::config;
+use log::{debug, info};
 use std::time::Duration;
 
 pub mod spectrum {
@@ -10,6 +11,7 @@ use spectrum::{worker_client::WorkerClient, ClientId, UploadRequest};
 pub async fn run<C: config::ConfigStore>(
     config_store: C,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Client starting");
     loop {
         if !config_store.list(vec![String::from("workers")]).is_empty() {
             // shouldn't need to sleep here but worker does stuff sync and weird
@@ -18,8 +20,8 @@ pub async fn run<C: config::ConfigStore>(
         }
         tokio::time::delay_for(Duration::from_millis(100)).await; // hack; should use retries
     }
+    debug!("Received configuration from configuration server; initializing.");
 
-    println!("client starting");
     let mut client = WorkerClient::connect("http://[::1]:50051").await?;
 
     let req = tonic::Request::new(UploadRequest {
@@ -31,7 +33,7 @@ pub async fn run<C: config::ConfigStore>(
 
     let response = client.upload(req).await?;
 
-    println!("RESPONSE={:?}", response);
+    debug!("RESPONSE={:?}", response.into_inner());
 
     Ok(())
 }

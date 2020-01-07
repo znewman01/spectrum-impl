@@ -11,6 +11,7 @@ futures = "0.3"
 prost = "0.5"
 bytes = "0.4"
 tonic = "0.1.0-beta.1"
+log = "0.4"
 tokio = { version = "0.2", features = [ "macros", "signal" ] }
 
 [build-dependencies]

@@ -8,11 +8,16 @@ pub mod worker;
 
 pub mod config;
 
+use log::trace;
+
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config_store = config::InMemoryConfigStore::new();
     let barrier = tokio::sync::Barrier::new(2);
     let _ = futures::join!(
-        client::run(config_store.clone()).then(|_| barrier.wait()),
+        client::run(config_store.clone()).then(|_| {
+            trace!("Awaiting barrier -- client.");
+            barrier.wait()
+        }),
         worker::run(config_store.clone(), barrier.wait().map(|_| ())),
         publisher::run(),
         leader::run()

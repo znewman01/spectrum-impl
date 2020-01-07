@@ -1,3 +1,6 @@
+use log::info;
+
 pub async fn run() {
-    println!("Hello, world from the leader!");
+    info!("Leader starting up.");
+    info!("Leader shutting down.");
 }

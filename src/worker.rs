@@ -1,5 +1,6 @@
 use crate::config;
 use futures::Future;
+use log::{debug, error, info};
 use tonic::{Request, Response, Status};
 
 pub mod spectrum {
@@ -20,7 +21,7 @@ impl Worker for MyWorker {
         &self,
         request: Request<UploadRequest>,
     ) -> Result<Response<UploadResponse>, Status> {
-        println!("Request! {:?}", request);
+        debug!("Request! {:?}", request.into_inner());
 
         let reply = UploadResponse {};
         Ok(Response::new(reply))
@@ -30,6 +31,7 @@ impl Worker for MyWorker {
         &self,
         _request: Request<VerifyRequest>,
     ) -> Result<Response<VerifyResponse>, Status> {
+        error!("Not implemented.");
         Err(Status::new(
             tonic::Code::Unimplemented,
             "Not implemented".to_string(),
@@ -49,13 +51,14 @@ pub async fn run<C: config::ConfigStore, F: Future<Output = ()>>(
         vec![String::from("workers"), String::from("worker")],
         String::from("[::1]:50051"),
     );
+    debug!("Registered with config server.");
 
     tonic::transport::server::Server::builder()
         .add_service(WorkerServer::new(server))
         .serve_with_shutdown(addr, shutdown)
         .await?;
 
-    println!("Shut down worker server.");
+    info!("Shut down worker server.");
 
     Ok(())
 }

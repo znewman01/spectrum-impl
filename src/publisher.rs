@@ -1,3 +1,6 @@
+use log::info;
+
 pub async fn run() {
-    println!("Hello, world from the publisher!");
+    info!("Publisher starting up.");
+    info!("Publisher shutting down.");
 }
