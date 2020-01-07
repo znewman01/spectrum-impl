@@ -7,8 +7,9 @@ pub mod spectrum {
 }
 
 use spectrum::{
-    worker_server::{Worker, WorkerServer}
-    , UploadRequest, UploadResponse, VerifyRequest, VerifyResponse};
+    worker_server::{Worker, WorkerServer},
+    UploadRequest, UploadResponse, VerifyRequest, VerifyResponse,
+};
 
 #[derive(Default)]
 pub struct MyWorker {}
@@ -45,7 +46,7 @@ pub async fn run<C: config::ConfigStore, F: Future<Output = ()>>(
 
     // TODO: do this more async
     config_store.put(
-        vec![String::from("servers"), String::from("server")],
+        vec![String::from("workers"), String::from("worker")],
         String::from("[::1]:50051"),
     );
 
@@ -54,7 +55,7 @@ pub async fn run<C: config::ConfigStore, F: Future<Output = ()>>(
         .serve_with_shutdown(addr, shutdown)
         .await?;
 
-    println!("Shut down server.");
+    println!("Shut down worker server.");
 
     Ok(())
 }

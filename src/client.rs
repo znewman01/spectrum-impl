@@ -11,8 +11,8 @@ pub async fn run<C: config::ConfigStore>(
     config_store: C,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
-        if !config_store.list(vec![String::from("servers")]).is_empty() {
-            // shouldn't need to sleep here but server does stuff sync and weird
+        if !config_store.list(vec![String::from("workers")]).is_empty() {
+            // shouldn't need to sleep here but worker does stuff sync and weird
             tokio::time::delay_for(Duration::from_millis(200)).await;
             break;
         }

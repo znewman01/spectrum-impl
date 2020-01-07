@@ -1,8 +1,8 @@
 use futures::prelude::*;
-use spectrum_impl::{config, server};
+use spectrum_impl::{config, worker};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_store = config::InMemoryConfigStore::new();
-    server::run(config_store, tokio::signal::ctrl_c().map(|_| ())).await
+    worker::run(config_store, tokio::signal::ctrl_c().map(|_| ())).await
 }
