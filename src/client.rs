@@ -13,10 +13,10 @@ pub async fn run<C: config::ConfigStore>(
     loop {
         if !config_store.list(vec![String::from("workers")]).is_empty() {
             // shouldn't need to sleep here but worker does stuff sync and weird
-            tokio::time::delay_for(Duration::from_millis(200)).await;
+            tokio::time::delay_for(Duration::from_millis(100)).await;
             break;
         }
-        tokio::time::delay_for(Duration::from_secs(2)).await; // hack; should use retries
+        tokio::time::delay_for(Duration::from_millis(100)).await; // hack; should use retries
     }
 
     println!("client starting");
