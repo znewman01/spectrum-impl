@@ -43,22 +43,23 @@ pub async fn run<C: config::ConfigStore, F: Future<Output = ()>>(
     config_store: C,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50051".parse().unwrap();
+    info!("Worker starting up.");
+    let addr = "127.0.0.1:50051";  // TODO(zjn): use IPv6 if available
     let server = MyWorker::default();
 
     // TODO: do this more async
     config_store.put(
         vec![String::from("workers"), String::from("worker")],
-        String::from("[::1]:50051"),
+        String::from(addr),
     );
     debug!("Registered with config server.");
 
     tonic::transport::server::Server::builder()
         .add_service(WorkerServer::new(server))
-        .serve_with_shutdown(addr, shutdown)
+        .serve_with_shutdown(addr.parse().unwrap(), shutdown)
         .await?;
 
-    info!("Shut down worker server.");
+    info!("Worker shutting down.");
 
     Ok(())
 }

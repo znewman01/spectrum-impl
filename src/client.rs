@@ -1,5 +1,5 @@
 use crate::config;
-use log::{debug, info};
+use log::{debug, info, trace};
 use std::time::Duration;
 
 pub mod spectrum {
@@ -22,7 +22,8 @@ pub async fn run<C: config::ConfigStore>(
     }
     debug!("Received configuration from configuration server; initializing.");
 
-    let mut client = WorkerClient::connect("http://[::1]:50051").await?;
+    let worker_addr = "http://127.0.0.1:50051";  // TODO(zjn): get from config server
+    let mut client = WorkerClient::connect(worker_addr).await?;
 
     let req = tonic::Request::new(UploadRequest {
         client_id: Some(ClientId {
@@ -31,6 +32,7 @@ pub async fn run<C: config::ConfigStore>(
         share_and_proof: None,
     });
 
+    trace!("About to send upload request.");
     let response = client.upload(req).await?;
 
     debug!("RESPONSE={:?}", response.into_inner());
