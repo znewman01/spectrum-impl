@@ -1,4 +1,5 @@
 use crate::config;
+use config::store::Store;
 use futures::Future;
 use log::{debug, error, info};
 use tonic::{Request, Response, Status};
@@ -39,7 +40,7 @@ impl Worker for MyWorker {
     }
 }
 
-pub async fn run<C: config::ConfigStore, F: Future<Output = ()>>(
+pub async fn run<C: Store, F: Future<Output = ()>>(
     config_store: C,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error>> {

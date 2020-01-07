@@ -1,4 +1,5 @@
 use crate::config;
+use config::store::Store;
 use log::{debug, info, trace};
 use std::time::Duration;
 
@@ -8,9 +9,7 @@ pub mod spectrum {
 
 use spectrum::{worker_client::WorkerClient, ClientId, UploadRequest};
 
-pub async fn run<C: config::ConfigStore>(
-    config_store: C,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run<C: Store>(config_store: C) -> Result<(), Box<dyn std::error::Error>> {
     info!("Client starting");
     loop {
         if !config_store.list(vec![String::from("workers")]).is_empty() {

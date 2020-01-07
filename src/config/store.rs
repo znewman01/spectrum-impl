@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 type Key = Vec<String>;
 type Value = String;
 
-pub trait ConfigStore {
+pub trait Store {
     fn get(&self, key: Key) -> Option<Value>;
 
     fn put(&self, key: Key, value: Value) -> Option<Value>;
@@ -15,19 +15,19 @@ pub trait ConfigStore {
 }
 
 #[derive(Default, Clone)]
-pub struct InMemoryConfigStore {
+pub struct InMemoryStore {
     map: Arc<Mutex<HashMap<Key, Value>>>,
 }
 
-impl InMemoryConfigStore {
-    pub fn new() -> InMemoryConfigStore {
-        InMemoryConfigStore {
+impl InMemoryStore {
+    pub fn new() -> InMemoryStore {
+        InMemoryStore {
             map: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
 
-impl ConfigStore for InMemoryConfigStore {
+impl Store for InMemoryStore {
     fn get(&self, key: Key) -> Option<Value> {
         let map = self.map.lock().unwrap();
         map.get(&key).cloned()
@@ -69,20 +69,20 @@ mod tests {
     proptest! {
         #[test]
         fn test_put_and_get(key in key_strat(), value in value_strat()) {
-            let store = InMemoryConfigStore::new();
+            let store = InMemoryStore::new();
             store.put(key.clone(), value.clone());
             prop_assert_eq!(store.get(key).unwrap(), value);
         }
 
         #[test]
         fn test_get_empty(key in key_strat()) {
-            let store = InMemoryConfigStore::new();
+            let store = InMemoryStore::new();
             prop_assert!(store.get(key).is_none());
         }
 
         #[test]
         fn test_put_and_get_keep_latter(key in key_strat(), value1 in value_strat(), value2 in value_strat()) {
-            let store = InMemoryConfigStore::new();
+            let store = InMemoryStore::new();
             store.put(key.clone(), value1);
             store.put(key.clone(), value2.clone());
             prop_assert_eq!(store.get(key).unwrap(), value2);
@@ -93,7 +93,7 @@ mod tests {
                      suffixes in hash_set(key_strat(), 0..10usize),
                      other_keys in hash_set(key_strat(), 0..10usize),
                      value in value_strat()) {
-            let store = InMemoryConfigStore::new();
+            let store = InMemoryStore::new();
             for suffix in &suffixes {
                 let key: Key = prefix.iter().cloned().chain(suffix.iter().cloned()).collect();
                 store.put(key, value.clone());
