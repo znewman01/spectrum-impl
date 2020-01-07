@@ -44,7 +44,7 @@ pub async fn run<C: config::ConfigStore, F: Future<Output = ()>>(
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("Worker starting up.");
-    let addr = "127.0.0.1:50051";  // TODO(zjn): use IPv6 if available
+    let addr = "127.0.0.1:50051"; // TODO(zjn): use IPv6 if available
     let server = MyWorker::default();
 
     // TODO: do this more async

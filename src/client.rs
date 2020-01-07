@@ -22,7 +22,7 @@ pub async fn run<C: config::ConfigStore>(
     }
     debug!("Received configuration from configuration server; initializing.");
 
-    let worker_addr = "http://127.0.0.1:50051";  // TODO(zjn): get from config server
+    let worker_addr = "http://127.0.0.1:50051"; // TODO(zjn): get from config server
     let mut client = WorkerClient::connect(worker_addr).await?;
 
     let req = tonic::Request::new(UploadRequest {
