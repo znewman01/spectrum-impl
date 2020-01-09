@@ -8,11 +8,10 @@ pub mod worker;
 
 pub mod config;
 
-use config::store::InMemoryStore;
 use log::trace;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let config_store = InMemoryStore::new();
+    let config_store = config::store::from_env()?;
     let barrier = tokio::sync::Barrier::new(2);
     let _ = futures::join!(
         client::run(config_store.clone()).then(|_| {

@@ -1,8 +1,7 @@
-use config::store::InMemoryStore;
 use spectrum_impl::{client, config};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config_store = InMemoryStore::new();
+    let config_store = config::store::from_env()?;
     client::run(config_store).await
 }
