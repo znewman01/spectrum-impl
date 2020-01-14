@@ -37,3 +37,17 @@ impl Store for InMemoryStore {
         res
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store_tests;
+    use proptest::prelude::*;
+    use proptest::strategy::LazyJust;
+
+    pub fn stores() -> BoxedStrategy<impl Store> {
+        prop_oneof![LazyJust::new(|| InMemoryStore::new()),].boxed()
+    }
+
+    store_tests! {}
+}
