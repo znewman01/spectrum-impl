@@ -2,19 +2,22 @@ use crate::config::inmem::InMemoryStore;
 use crate::config::store::Store;
 use log::{debug, trace};
 
-static CONFIG_SERVER_ENV_VAR: &'static str = "SPECTRUM_CONFIG_SERVER";
+static CONFIG_SERVER_ENV_VAR: &str = "SPECTRUM_CONFIG_SERVER";
 
 pub fn from_string(s: &str) -> Result<impl Store, String> {
     let mut scheme = "mem";
-    let mut remainder = "";
-    if !s.is_empty() {
+    let remainder = if !s.is_empty() {
         let mut chunks = s.splitn(2, "://");
         scheme = chunks.next().expect("");
-        remainder = chunks.next().ok_or(format!(
-            "Missing scheme separator [://] in config specification [{}]",
-            s
-        ))?;
-    }
+        chunks.next().ok_or_else(|| {
+            format!(
+                "Missing scheme separator [://] in config specification [{}]",
+                s
+            )
+        })?
+    } else {
+        ""
+    };
 
     match scheme {
         "mem" => {
