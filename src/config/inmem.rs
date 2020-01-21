@@ -46,7 +46,7 @@ mod tests {
     use proptest::strategy::LazyJust;
 
     pub fn stores() -> BoxedStrategy<impl Store> {
-        prop_oneof![LazyJust::new(|| InMemoryStore::new()),].boxed()
+        prop_oneof![LazyJust::new(InMemoryStore::new),].boxed()
     }
 
     store_tests! {}
