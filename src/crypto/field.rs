@@ -4,89 +4,75 @@ use std::fmt::Debug;
 use std::ops;
 use std::rc::Rc;
 
-// mathematical field element
+/// prime order field
 #[derive(Clone, PartialEq, Debug)]
 pub struct Field {
-    p: Integer,
+    order: Integer,
 }
 
+/// element in a prime order field
 pub struct FieldElement {
-    v: Integer,
-    field: std::rc::Rc<Field>,
+    value: Integer,
+    field: Rc<Field>,
 }
 
 impl Field {
-    // generate new field element
-    pub fn new(p: Integer) -> Field {
-        assert_eq!(p.is_probably_prime(15), IsPrime::Yes);
-        Field { p: p }
+    /// generate new field of prime order
+    /// order must be a prime
+    pub fn new(order: Integer) -> Field {
+        // probability of failure is negligible in k, suggested to set k=15
+        // which is the default used by Rust https://docs.rs/rug/1.6.0/rug/struct.Integer.html
+        assert_eq!(order.is_probably_prime(15), IsPrime::Yes);
+        Field { order: order }
+    }
+
+    // generates a new random field element
+    pub fn rand_element(self, rng: Option<RandState>) -> FieldElement {
+        let mut rand = rng.unwrap_or(RandState::new());
+        FieldElement {
+            value: self.order.clone().random_below(&mut rand),
+            field: Rc::<Field>::new(self),
+        }
     }
 }
 
 impl FieldElement {
-    // generates a new field element; v mod field.p
-    pub fn new(v: Integer, field: std::rc::Rc<Field>) -> FieldElement {
+    /// generates a new field element; value mod field.order
+    pub fn new(v: Integer, field: Rc<Field>) -> FieldElement {
         FieldElement {
-            v: v % &field.p.clone(),
-            field: field,
-        }
-    }
-
-    // generates a new ranom field element
-    pub fn rand(field: std::rc::Rc<Field>) -> FieldElement {
-        let mut rand = RandState::new();
-        FieldElement {
-            v: field.p.clone().random_below(&mut rand),
+            value: v % &field.order.clone(),
             field: field,
         }
     }
 }
 
-// override + operation: want result.v = element1.v + element2.v mod field.p
+/// override + operation: want result.value = element1.value  + element2.value  mod field.order
 impl ops::Add<FieldElement> for FieldElement {
     type Output = FieldElement;
 
     fn add(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
-
-        let res_ref = &self.v + &other.v;
-        let res_mod = Integer::from(res_ref) % &other.field.p.clone();
-        FieldElement {
-            v: res_mod,
-            field: other.field,
-        }
+        FieldElement::new(Integer::from(&self.value + &other.value) % &other.field.order.clone(), other.field)
     }
 }
 
-// override - operation: want result.v = element1.v + (-element2.v) mod field.p
+/// override - operation: want result.vvalue = element1.value  + (-element2.value) mod field.order
 impl ops::Sub<FieldElement> for FieldElement {
     type Output = FieldElement;
 
     fn sub(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
-
-        let res_ref = &self.v - &other.v;
-        let res_mod = Integer::from(res_ref) % &other.field.p.clone();
-        FieldElement {
-            v: res_mod,
-            field: other.field,
-        }
+        FieldElement::new(Integer::from(&self.value - &other.value) % &other.field.order.clone(), other.field)
     }
 }
 
-// override * operation: want result.v = element1.v * element2.v mod field.p
+/// override * operation: want result.value = element1.value * element2.value mod field.order
 impl ops::Mul<FieldElement> for FieldElement {
     type Output = FieldElement;
 
     fn mul(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
-
-        let res_ref = &self.v * &other.v;
-        let res_mod = Integer::from(res_ref) % &other.field.p.clone();
-        FieldElement {
-            v: res_mod,
-            field: other.field,
-        }
+        FieldElement::new(Integer::from(&self.value * &other.value) % &other.field.order.clone(), other.field)
     }
 }
 
@@ -99,13 +85,13 @@ mod tests {
         let val1 = Integer::from(20);
         let val2 = Integer::from(10);
         let p = Integer::from(23);
-        let field = std::rc::Rc::<Field>::new(Field::new(p));
+        let field = Rc::<Field>::new(Field::new(p));
 
-        let el1 = FieldElement::new(Integer::from(&val1), field.clone());
-        let el2 = FieldElement::new(Integer::from(&val2), field.clone());
-        let el_add = el1 + el2;
-        let add_plain_ref = &val1 + &val2;
-        assert_eq!(el_add.v, Integer::from(add_plain_ref) % field.p.clone());
+        let elem1 = FieldElement::new(val1.clone(), field.clone());
+        let elem2 = FieldElement::new(val2.clone(), field.clone());
+        let acutal = (elem1 + elem2).value;
+        let expected = Integer::from(&val1 + &val2) % field.order.clone();
+        assert_eq!(acutal, expected);
     }
 
     #[test]
@@ -113,13 +99,13 @@ mod tests {
         let val1 = Integer::from(20);
         let val2 = Integer::from(10);
         let p = Integer::from(23);
-        let field = std::rc::Rc::<Field>::new(Field::new(p));
+        let field = Rc::<Field>::new(Field::new(p));
 
-        let el1 = FieldElement::new(Integer::from(&val1), field.clone());
-        let el2 = FieldElement::new(Integer::from(&val2), field.clone());
-        let el_sub = el1 - el2;
-        let sub_plain_ref = &val1 - &val2;
-        assert_eq!(el_sub.v, Integer::from(sub_plain_ref) % field.p.clone());
+        let elem1 = FieldElement::new(Integer::from(&val1), field.clone());
+        let elem2 = FieldElement::new(Integer::from(&val2), field.clone());
+        let acutal = (elem1 - elem2).value;
+        let expected = Integer::from(&val1 - &val2) % field.order.clone();
+        assert_eq!(acutal, expected);
     }
 
     #[test]
@@ -127,12 +113,12 @@ mod tests {
         let val1 = Integer::from(20);
         let val2 = Integer::from(10);
         let p = Integer::from(23);
-        let field = std::rc::Rc::<Field>::new(Field::new(p));
+        let field = Rc::<Field>::new(Field::new(p));
 
-        let el1 = FieldElement::new(Integer::from(&val1), field.clone());
-        let el2 = FieldElement::new(Integer::from(&val2), field.clone());
-        let el_mul = el1 * el2;
-        let mul_plain_ref = &val1 * &val2;
-        assert_eq!(el_mul.v, Integer::from(mul_plain_ref) % field.p.clone());
+        let elem1 = FieldElement::new(Integer::from(&val1), field.clone());
+        let elem2 = FieldElement::new(Integer::from(&val2), field.clone());
+        let actual = (elem1 * elem2).value;
+        let expected = Integer::from(&val1 * &val2) % field.order.clone();
+        assert_eq!(actual, expected);
     }
 }

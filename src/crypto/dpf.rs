@@ -16,17 +16,20 @@ pub struct DPF {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct DPFKey {
+    prg: Rc<PRG>,
     encoded_msg: Message,
     bits: Vec<u8>,
     seeds: Vec<PRGSeed>,
 }
 
 impl DPF {
-    // generate new field element
-    // TODO: [for=sss] make security_bytes a macro / enum so that it always matches AES sizes
+    /// generate new field element
     pub fn new(security_bytes: usize, msg: Message, i: usize, n: usize) -> DPF {
+
+        let eval_size = msg.data.len();
+
         // make a new PRG going from security -> length of the message
-        let prg = std::rc::Rc::<PRG>::new(PRG::new(security_bytes, msg.data.len()));
+        let prg = Rc::<PRG>::new(PRG::new(security_bytes, eval_size));
 
         let mut seeds_a: Vec<PRGSeed> = Vec::<PRGSeed>::new();
         let mut seeds_b: Vec<PRGSeed> = Vec::<PRGSeed>::new();
@@ -35,14 +38,14 @@ impl DPF {
 
         // generate the values distributed to servers A and B
         for j in 0..n {
-            let seed = PRGSeed::new(prg.clone());
+            let seed = prg.new_seed();
             let bit = rand::thread_rng().gen_range(0, 2);
 
             seeds_a.push(seed.clone());
             bits_a.push(bit);
 
             if j == i {
-                let seed_prime = PRGSeed::new(prg.clone());
+                let seed_prime = prg.new_seed();
                 seeds_b.push(seed_prime);
                 bits_b.push(1 - bit);
             } else {
@@ -51,8 +54,8 @@ impl DPF {
             }
         }
 
-        let prg_eval_a = seeds_a[i].clone().eval();
-        let prg_eval_b = seeds_b[i].clone().eval();
+        let prg_eval_a = prg.eval(seeds_a[i].clone());
+        let prg_eval_b = prg.eval(seeds_b[i].clone());
 
         // compute G(seed_a) XOR G(seed_b) for the ith seed
         let xor_prgs_eval = prg_eval_a ^ prg_eval_b;
@@ -60,9 +63,8 @@ impl DPF {
         // compute m XOR G(seed_a) XOR G(seed_b)
         let encoded_msg = msg ^ xor_prgs_eval;
 
-
-        let key_a = DPFKey::new(encoded_msg.clone(), bits_a, seeds_a);
-        let key_b = DPFKey::new(encoded_msg.clone(), bits_b, seeds_b);
+        let key_a = DPFKey::new(prg.clone(), encoded_msg.clone(), bits_a, seeds_a);
+        let key_b = DPFKey::new(prg.clone(), encoded_msg.clone(), bits_b, seeds_b);
 
         DPF {
             key_a: key_a,
@@ -73,8 +75,9 @@ impl DPF {
 
 impl DPFKey {
     // generates a new field element; v mod field.p
-    pub fn new(encoded_msg: Message, bits: Vec<u8>, seeds: Vec<PRGSeed>) -> DPFKey {
+    pub fn new(prg: Rc<PRG>, encoded_msg: Message, bits: Vec<u8>, seeds: Vec<PRGSeed>) -> DPFKey {
         DPFKey {
+            prg: prg,
             encoded_msg: encoded_msg,
             bits: bits,
             seeds: seeds,
@@ -89,7 +92,7 @@ impl DPFKey {
         let mut messages: Vec<Message> = Vec::<Message>::new();
 
         for i in 0..n {
-            let message_i = self.seeds[i].clone().eval();
+            let message_i = self.prg.eval(self.seeds[i].clone());
 
             if self.bits[i] == 1 {
                 messages.push(self.encoded_msg.clone() ^ message_i);

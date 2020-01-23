@@ -3,19 +3,21 @@ use rand::{OsRng, Rng};
 use std::fmt::Debug;
 use std::ops;
 
+/// message contains a vector of bytes representing data in spectrum
+/// and is used for easily performing binary operations over bytes
 #[derive(Clone, PartialEq, Debug)]
 pub struct Message {
     pub data: Vec<u8>,
 }
 
 impl Message {
-    // creates a new message type
+    /// creates a new message type
     pub fn new(data: Vec<u8>) -> Message {
         Message { data: data }
     }
 }
 
-// xors the data of the two messages
+/// xors the data of the two messages
 impl ops::BitXor<Message> for Message {
     type Output = Message;
 
