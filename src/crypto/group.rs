@@ -58,7 +58,7 @@ mod tests {
         let elem1 = GroupElement::new(val1.clone(), group.clone());
         let elem2 = GroupElement::new(val2.clone(), group.clone());
        
-        let expected = GroupElement::new(Integer::from(&val1 + &val2), group.clone());
+        let expected = GroupElement::new(Integer::from(&elem1.value * &elem2.value), group.clone());
         let actual = elem1 * elem2;
 
         assert_eq!(actual, expected);

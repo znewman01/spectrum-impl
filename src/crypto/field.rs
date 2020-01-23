@@ -22,7 +22,10 @@ impl Field {
     pub fn new(order: Integer) -> Field {
         // probability of failure is negligible in k, suggested to set k=15
         // which is the default used by Rust https://docs.rs/rug/1.6.0/rug/struct.Integer.html
-        assert_eq!(order.is_probably_prime(15), IsPrime::Yes);
+        if order.is_probably_prime(15) == IsPrime::No {
+            panic!("field must have prime order!");
+        }
+
         Field { order: order }
     }
 
@@ -80,6 +83,11 @@ impl ops::Mul<FieldElement> for FieldElement {
 mod tests {
     use super::*;
 
+    // TODO: additional tests:
+    // 1) ==, != work as expected
+    // 2) all these ops w/ different fields result in panic
+
+
     #[test]
     fn test_field_element_add() {
         let val1 = Integer::from(20);
@@ -121,4 +129,11 @@ mod tests {
         let expected = Integer::from(&val1 * &val2) % field.order.clone();
         assert_eq!(actual, expected);
     }
+
+    #[test]
+    #[should_panic]
+    fn test_field_gen_non_prime() {
+        Field::new(Integer::from(4));
+    }
+
 }

@@ -54,8 +54,8 @@ impl DPF {
             }
         }
 
-        let prg_eval_a = prg.eval(seeds_a[i].clone());
-        let prg_eval_b = prg.eval(seeds_b[i].clone());
+        let prg_eval_a = prg.eval(&seeds_a[i]);
+        let prg_eval_b = prg.eval(&seeds_b[i]);
 
         // compute G(seed_a) XOR G(seed_b) for the ith seed
         let xor_prgs_eval = prg_eval_a ^ prg_eval_b;
@@ -92,7 +92,7 @@ impl DPFKey {
         let mut messages: Vec<Message> = Vec::<Message>::new();
 
         for i in 0..n {
-            let message_i = self.prg.eval(self.seeds[i].clone());
+            let message_i = self.prg.eval(&self.seeds[i]);
 
             if self.bits[i] == 1 {
                 messages.push(self.encoded_msg.clone() ^ message_i);
