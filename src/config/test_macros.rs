@@ -9,20 +9,20 @@ macro_rules! store_tests {
 
             #[test]
             fn test_put_and_get(store in stores(), key in keys(), value in values()) {
-                store.put(key.clone(), value.clone());
-                prop_assert_eq!(store.get(key).unwrap(), value);
+                store.put(key.clone(), value.clone()).unwrap();
+                prop_assert_eq!(store.get(key).unwrap().unwrap(), value);
             }
 
             #[test]
             fn test_get_empty(store in stores(), key in keys()) {
-                prop_assert!(store.get(key).is_none());
+                prop_assert!(store.get(key).unwrap().is_none());
             }
 
             #[test]
             fn test_put_and_get_keep_latter(store in stores(), key in keys(), value1 in values(), value2 in values()) {
-                store.put(key.clone(), value1);
-                store.put(key.clone(), value2.clone());
-                prop_assert_eq!(store.get(key).unwrap(), value2);
+                store.put(key.clone(), value1).unwrap();
+                store.put(key.clone(), value2.clone()).unwrap();
+                prop_assert_eq!(store.get(key).unwrap().unwrap(), value2);
             }
 
             #[test]
@@ -33,16 +33,16 @@ macro_rules! store_tests {
                          value in values()) {
                 for suffix in &suffixes {
                     let key: Key = prefix.iter().cloned().chain(suffix.iter().cloned()).collect();
-                    store.put(key, value.clone());
+                    store.put(key, value.clone()).unwrap();
                 }
                 for key in other_keys {
                     if key.starts_with(&prefix) {
                         continue;
                     }
-                    store.put(key, value.clone());
+                    store.put(key, value.clone()).unwrap();
                 }
 
-                let result = store.list(prefix.clone());
+                let result = store.list(prefix.clone()).unwrap();
 
                 let actual_keys: HashSet<Key> = result
                     .iter()

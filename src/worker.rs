@@ -52,7 +52,7 @@ pub async fn run<C: Store, F: Future<Output = ()>>(
     config_store.put(
         vec![String::from("workers"), String::from("worker")],
         String::from(addr),
-    );
+    )?;
     debug!("Registered with config server.");
 
     tonic::transport::server::Server::builder()

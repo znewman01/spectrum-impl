@@ -12,7 +12,7 @@ use spectrum::{worker_client::WorkerClient, ClientId, UploadRequest};
 pub async fn run<C: Store>(config_store: C) -> Result<(), Box<dyn std::error::Error>> {
     info!("Client starting");
     loop {
-        if !config_store.list(vec![String::from("workers")]).is_empty() {
+        if !config_store.list(vec![String::from("workers")])?.is_empty() {
             // shouldn't need to sleep here but worker does stuff sync and weird
             tokio::time::delay_for(Duration::from_millis(100)).await;
             break;

@@ -2,12 +2,13 @@
 pub type Key = Vec<String>;
 pub type Value = String;
 
+// TODO(zjn): make these return futures
 pub trait Store: Clone + core::fmt::Debug {
-    fn get(&self, key: Key) -> Option<Value>;
+    fn get(&self, key: Key) -> Result<Option<Value>, String>;
 
-    fn put(&self, key: Key, value: Value) -> Option<Value>;
+    fn put(&self, key: Key, value: Value) -> Result<(), String>;
 
-    fn list(&self, prefix: Key) -> Vec<(Key, Value)>;
+    fn list(&self, prefix: Key) -> Result<Vec<(Key, Value)>, String>;
 }
 
 #[cfg(test)]
