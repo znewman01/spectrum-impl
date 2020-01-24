@@ -10,14 +10,14 @@ edition = "2018"
 futures = "0.3"
 prost = "0.6"
 bytes = "0.4"
-tonic = "0.1.0-beta.1"
+tonic = "0.1.1"
 log = "0.4"
 simplelog = "^0.7.4"
 tokio = { version = "0.2", features = [ "macros", "signal" ] }
 async-trait = "0.1.22"
 
 [build-dependencies]
-tonic-build = "0.1.0-beta.1"
+tonic-build = "0.1.1"
 
 [dev-dependencies]
 proptest = "0.9.4"
