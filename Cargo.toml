@@ -23,3 +23,8 @@ tonic-build = "0.1.0-beta.1"
 
 [dev-dependencies]
 proptest = "0.9.4"
+criterion = "0.3.0"
+
+[[bench]]
+name = "crypto_benchmarks"
+harness = false
