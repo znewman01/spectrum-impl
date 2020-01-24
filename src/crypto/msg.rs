@@ -1,5 +1,5 @@
 //! Spectrum implementation.
-use rand::{OsRng, Rng};
+use rand::prelude::*;
 use std::fmt::Debug;
 use std::ops;
 
@@ -43,10 +43,9 @@ mod tests {
     fn test_msg_xor_op() {
         let mut data1 = vec![0; 2048];
         let mut data2 = vec![0; 2048];
-        let mut rng = OsRng::new().ok().unwrap();
-        rng.fill_bytes(&mut data1);
-        rng.fill_bytes(&mut data2);
-
+        thread_rng().fill_bytes(&mut data1);
+        thread_rng().fill_bytes(&mut data2);
+        
         let xor_data_expected: Vec<u8> = data1
             .iter()
             .zip(data2.iter())

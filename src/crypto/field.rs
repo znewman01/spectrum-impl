@@ -1,8 +1,9 @@
 //! Spectrum implementation.
-use rug::{integer::IsPrime, rand::RandState, Integer};
 use std::fmt::Debug;
 use std::ops;
 use std::rc::Rc;
+use rug::{rand::RandState,Integer, integer::IsPrime};
+
 
 /// prime order field
 #[derive(Clone, PartialEq, Debug)]
@@ -11,6 +12,7 @@ pub struct Field {
 }
 
 /// element in a prime order field
+#[derive(Clone, PartialEq, Debug)]
 pub struct FieldElement {
     value: Integer,
     field: Rc<Field>,
@@ -30,10 +32,13 @@ impl Field {
     }
 
     // generates a new random field element
-    pub fn rand_element(self, rng: Option<RandState>) -> FieldElement {
-        let mut rand = rng.unwrap_or(RandState::new());
+    pub fn rand_element(self, rng: &mut RandState) -> FieldElement {
+        
+        // TODO: figure out how to generate a random value
+        let random = self.order.clone().random_below(rng);
+
         FieldElement {
-            value: self.order.clone().random_below(&mut rand),
+            value: random,
             field: Rc::<Field>::new(self),
         }
     }
@@ -46,6 +51,10 @@ impl FieldElement {
             value: v % &field.order.clone(),
             field: field,
         }
+    }
+
+    pub fn field(self) -> Rc<Field> {
+        self.field
     }
 }
 
@@ -88,6 +97,28 @@ impl ops::Mul<FieldElement> for FieldElement {
     }
 }
 
+/// override += operation
+impl ops::AddAssign<FieldElement> for FieldElement {
+    fn add_assign(&mut self, other: FieldElement) {
+        assert_eq!(self.field, other.field);
+        *self = Self {
+            value: self.value.clone() + other.value,
+            field: other.field,
+        };
+    }
+}
+
+/// override -= operation
+impl ops::SubAssign<FieldElement> for FieldElement {
+    fn sub_assign(&mut self, other: FieldElement) {
+        assert_eq!(self.field, other.field);
+        *self = Self {
+            value: self.value.clone() - other.value,
+            field: other.field,
+        };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,6 +126,16 @@ mod tests {
     // TODO: additional tests:
     // 1) ==, != work as expected
     // 2) all these ops w/ different fields result in panic
+
+
+    #[test]
+    fn test_field_rand_element() {
+        let p = Integer::from(23);
+        let field = Field::new(p);
+
+        let mut rng = RandState::new();
+        assert_ne!(field.clone().rand_element(&mut rng), field.clone().rand_element(&mut rng));
+    }
 
     #[test]
     fn test_field_element_add() {

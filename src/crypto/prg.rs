@@ -1,13 +1,12 @@
 //! Spectrum implementation.
 extern crate crypto;
-extern crate rand;
 
 use crate::crypto::msg::Message;
 use crypto::buffer::{BufferResult, ReadBuffer, WriteBuffer};
 use crypto::{aes, blockmodes, buffer, symmetriccipher};
-use rand::{OsRng, Rng};
 use rug::{rand::RandState, Assign, Integer};
 use std::rc::Rc;
+use rand::prelude::*;
 
 /// PRG uses AES to expand a seed to desired length
 #[derive(Clone, PartialEq, Debug)]
@@ -35,8 +34,7 @@ impl PRG {
     pub fn new_seed(&self) -> PRGSeed {
         // seed is just random bytes
         let mut key = vec![0; self.seed_size];
-        let mut rng = OsRng::new().ok().unwrap();
-        rng.fill_bytes(&mut key);
+        thread_rng().fill_bytes(&mut key);        
 
         PRGSeed { bytes: key }
     }
