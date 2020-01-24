@@ -1,14 +1,31 @@
+use async_trait::async_trait;
+use core::fmt;
+
 // TODO(zjn): disallow empty keys/key components? and key components with "/"
 pub type Key = Vec<String>;
 pub type Value = String;
 
+#[derive(fmt::Debug)]
+pub struct Error {
+    message: String,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Error {}
+
 // TODO(zjn): make these return futures
-pub trait Store: Clone + core::fmt::Debug {
-    fn get(&self, key: Key) -> Result<Option<Value>, String>;
+#[async_trait]
+pub trait Store: Clone + fmt::Debug {
+    async fn get(&self, key: Key) -> Result<Option<Value>, Error>;
 
-    fn put(&self, key: Key, value: Value) -> Result<(), String>;
+    async fn put(&self, key: Key, value: Value) -> Result<(), Error>;
 
-    fn list(&self, prefix: Key) -> Result<Vec<(Key, Value)>, String>;
+    async fn list(&self, prefix: Key) -> Result<Vec<(Key, Value)>, Error>;
 }
 
 #[cfg(test)]

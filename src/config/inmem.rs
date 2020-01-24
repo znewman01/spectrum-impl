@@ -1,4 +1,5 @@
-use crate::config::store::{Key, Store, Value};
+use crate::config::store::{Error, Key, Store, Value};
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -13,19 +14,20 @@ impl InMemoryStore {
     }
 }
 
+#[async_trait]
 impl Store for InMemoryStore {
-    fn get(&self, key: Key) -> Result<Option<Value>, String> {
+    async fn get(&self, key: Key) -> Result<Option<Value>, Error> {
         let map = self.map.lock().unwrap();
         Ok(map.get(&key).cloned())
     }
 
-    fn put(&self, key: Key, value: Value) -> Result<(), String> {
+    async fn put(&self, key: Key, value: Value) -> Result<(), Error> {
         let mut map = self.map.lock().unwrap();
         map.insert(key, value);
         Ok(())
     }
 
-    fn list(&self, prefix: Key) -> Result<Vec<(Key, Value)>, String> {
+    async fn list(&self, prefix: Key) -> Result<Vec<(Key, Value)>, Error> {
         let map = self.map.lock().unwrap();
         let mut res = Vec::new();
         for (key, value) in map.iter() {

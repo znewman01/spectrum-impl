@@ -49,10 +49,12 @@ pub async fn run<C: Store, F: Future<Output = ()>>(
     let server = MyWorker::default();
 
     // TODO: do this more async
-    config_store.put(
-        vec![String::from("workers"), String::from("worker")],
-        String::from(addr),
-    )?;
+    config_store
+        .put(
+            vec![String::from("workers"), String::from("worker")],
+            String::from(addr),
+        )
+        .await?;
     debug!("Registered with config server.");
 
     tonic::transport::server::Server::builder()
