@@ -55,7 +55,10 @@ impl ops::Add<FieldElement> for FieldElement {
 
     fn add(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
-        FieldElement::new(Integer::from(&self.value + &other.value) % &other.field.order.clone(), other.field)
+        FieldElement::new(
+            Integer::from(&self.value + &other.value) % &other.field.order.clone(),
+            other.field,
+        )
     }
 }
 
@@ -65,7 +68,10 @@ impl ops::Sub<FieldElement> for FieldElement {
 
     fn sub(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
-        FieldElement::new(Integer::from(&self.value - &other.value) % &other.field.order.clone(), other.field)
+        FieldElement::new(
+            Integer::from(&self.value - &other.value) % &other.field.order.clone(),
+            other.field,
+        )
     }
 }
 
@@ -75,7 +81,10 @@ impl ops::Mul<FieldElement> for FieldElement {
 
     fn mul(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
-        FieldElement::new(Integer::from(&self.value * &other.value) % &other.field.order.clone(), other.field)
+        FieldElement::new(
+            Integer::from(&self.value * &other.value) % &other.field.order.clone(),
+            other.field,
+        )
     }
 }
 
@@ -86,7 +95,6 @@ mod tests {
     // TODO: additional tests:
     // 1) ==, != work as expected
     // 2) all these ops w/ different fields result in panic
-
 
     #[test]
     fn test_field_element_add() {
@@ -135,5 +143,4 @@ mod tests {
     fn test_field_gen_non_prime() {
         Field::new(Integer::from(4));
     }
-
 }

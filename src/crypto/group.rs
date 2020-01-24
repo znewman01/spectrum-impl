@@ -7,21 +7,24 @@ use std::rc::Rc;
 /// mathematical group object
 #[derive(Clone, PartialEq, Debug)]
 pub struct Group {
-    gen: Integer, // generator for the group
+    gen: Integer,     // generator for the group
     modulus: Integer, // group modulus
 }
 
 /// element within a group
 #[derive(Clone, PartialEq, Debug)]
 pub struct GroupElement {
-    value: Integer, // gen^k for some k
+    value: Integer,   // gen^k for some k
     group: Rc<Group>, // reference to the group the element resides in
 }
 
 impl Group {
     /// creates a new group object
     pub fn new(gen: Integer, modulus: Integer) -> Group {
-        Group { gen: gen, modulus: modulus }
+        Group {
+            gen: gen,
+            modulus: modulus,
+        }
     }
 }
 
@@ -29,7 +32,10 @@ impl GroupElement {
     /// generates a new group element gen^v mod group.modulus
     pub fn new(v: Integer, group: Rc<Group>) -> GroupElement {
         let res = group.gen.clone().pow_mod(&v, &group.modulus).unwrap();
-        GroupElement { value: res, group: group }
+        GroupElement {
+            value: res,
+            group: group,
+        }
     }
 }
 
@@ -57,7 +63,7 @@ mod tests {
 
         let elem1 = GroupElement::new(val1.clone(), group.clone());
         let elem2 = GroupElement::new(val2.clone(), group.clone());
-       
+
         let expected = GroupElement::new(Integer::from(&elem1.value * &elem2.value), group.clone());
         let actual = elem1 * elem2;
 

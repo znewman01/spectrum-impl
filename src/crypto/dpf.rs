@@ -25,7 +25,6 @@ pub struct DPFKey {
 impl DPF {
     /// generate new field element
     pub fn new(security_bytes: usize, msg: Message, i: usize, n: usize) -> DPF {
-
         let eval_size = msg.data.len();
 
         // make a new PRG going from security -> length of the message
