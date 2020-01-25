@@ -16,7 +16,7 @@ macro_rules! store_tests {
                     prop_assert_eq!(store.get(key).await?, Some(value));
                     Ok(())
                 };
-                block_on(test)
+                block_on(test)?
             }
 
             #[test]
@@ -25,7 +25,7 @@ macro_rules! store_tests {
                     prop_assert!(store.get(key).await?.is_none());
                     Ok(())
                 };
-                block_on(test)
+                block_on(test)?
             }
 
            #[test]
@@ -36,7 +36,7 @@ macro_rules! store_tests {
                    prop_assert_eq!(store.get(key).await?, Some(value2));
                    Ok(())
                };
-               block_on(test)
+               block_on(test)?
            }
 
            #[test]
@@ -75,7 +75,7 @@ macro_rules! store_tests {
 
                    Ok(())
                };
-               block_on(test)
+               block_on(test)?
            }
         }
     };
