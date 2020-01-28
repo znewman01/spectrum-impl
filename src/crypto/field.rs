@@ -1,9 +1,8 @@
 //! Spectrum implementation.
+use rug::{integer::IsPrime, rand::RandState, Integer};
 use std::fmt::Debug;
 use std::ops;
 use std::rc::Rc;
-use rug::{rand::RandState,Integer, integer::IsPrime};
-
 
 /// prime order field
 #[derive(Clone, PartialEq, Debug)]
@@ -33,7 +32,6 @@ impl Field {
 
     // generates a new random field element
     pub fn rand_element(self, rng: &mut RandState) -> FieldElement {
-        
         // TODO: figure out how to generate a random value
         let random = self.order.clone().random_below(rng);
 
@@ -127,14 +125,16 @@ mod tests {
     // 1) ==, != work as expected
     // 2) all these ops w/ different fields result in panic
 
-
     #[test]
     fn test_field_rand_element() {
         let p = Integer::from(23);
         let field = Field::new(p);
 
         let mut rng = RandState::new();
-        assert_ne!(field.clone().rand_element(&mut rng), field.clone().rand_element(&mut rng));
+        assert_ne!(
+            field.clone().rand_element(&mut rng),
+            field.clone().rand_element(&mut rng)
+        );
     }
 
     #[test]

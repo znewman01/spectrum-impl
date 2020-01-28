@@ -9,7 +9,7 @@ use std::ops;
 use std::rc::Rc;
 
 /// Distributed Point Function
-/// Must generate a set of keys k_1, k_2, ... 
+/// Must generate a set of keys k_1, k_2, ...
 /// such that combine(eval(k_1), eval(k_2), ...) = e_i * msg
 trait DPF {
     fn gen(security_bytes: usize, msg: Bytes, i: usize, n: usize) -> Vec<DPFKey>;
@@ -21,8 +21,7 @@ trait DPF {
 struct PRGBasedDPF {}
 
 impl DPF for PRGBasedDPF {
-
-     /// generate new instance of PRG based DPF with two DPF keys
+    /// generate new instance of PRG based DPF with two DPF keys
     fn gen(security_bytes: usize, msg: Bytes, i: usize, n: usize) -> Vec<DPFKey> {
         let eval_size = msg.len();
 
@@ -52,7 +51,7 @@ impl DPF for PRGBasedDPF {
             }
         }
 
-        let prg_eval_a= prg.eval(&seeds_a[i]);
+        let prg_eval_a = prg.eval(&seeds_a[i]);
         let prg_eval_b = prg.eval(&seeds_b[i]);
 
         // compute G(seed_a) XOR G(seed_b) for the ith seed
@@ -62,8 +61,18 @@ impl DPF for PRGBasedDPF {
         let encoded_msg = xor_bytes(&msg, &xor_eval);
 
         let mut key_tuple = Vec::<DPFKey>::new();
-        key_tuple.push(DPFKey::new(prg.clone(), encoded_msg.clone(), bits_a, seeds_a));
-        key_tuple.push(DPFKey::new(prg.clone(), encoded_msg.clone(), bits_b, seeds_b));
+        key_tuple.push(DPFKey::new(
+            prg.clone(),
+            encoded_msg.clone(),
+            bits_a,
+            seeds_a,
+        ));
+        key_tuple.push(DPFKey::new(
+            prg.clone(),
+            encoded_msg.clone(),
+            bits_b,
+            seeds_b,
+        ));
 
         key_tuple
     }
@@ -72,13 +81,13 @@ impl DPF for PRGBasedDPF {
     fn eval(key: &DPFKey) -> Vec<Bytes> {
         // total number of slots
         let n = key.bits.len();
-    
+
         // vector of slot Bytess
         let mut res: Vec<Bytes> = Vec::<Bytes>::new();
-    
+
         for i in 0..n {
             let prg_eval_i = key.prg.eval(&key.seeds[i]);
-    
+
             if key.bits[i] == 1 {
                 let slot = xor_bytes(&key.encoded_msg.clone(), &prg_eval_i);
                 res.push(slot);
@@ -86,7 +95,7 @@ impl DPF for PRGBasedDPF {
                 res.push(prg_eval_i);
             }
         }
-    
+
         res
     }
 
@@ -112,7 +121,6 @@ pub struct DPFKey {
     seeds: Vec<PRGSeed>,
 }
 
-
 impl DPFKey {
     // generates a new DPF key with the necessary parameters needed for evaluation
     pub fn new(prg: Rc<PRG>, encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<PRGSeed>) -> DPFKey {
@@ -126,7 +134,7 @@ impl DPFKey {
 }
 
 /// xor bytes in place, a = a ^ b
-// TODO: (Performance) xor inplace rather than copying 
+// TODO: (Performance) xor inplace rather than copying
 fn xor_bytes(a: &Bytes, b: &Bytes) -> Bytes {
     assert_eq!(a.len(), b.len());
     a.iter().zip(b.iter()).map(|(&a, &b)| a ^ b).collect()

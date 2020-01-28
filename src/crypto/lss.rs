@@ -23,14 +23,13 @@ impl SecretShare {
     }
 }
 
-impl PartialEq for SecretShare{
+impl PartialEq for SecretShare {
     fn eq(&self, other: &Self) -> bool {
         self.value == other.value
     }
 }
 
 fn share(value: FieldElement, n: usize, rng: &mut RandState) -> Vec<SecretShare> {
-
     if n < 2 {
         panic!("cannot split secret into fewer than two shares!");
     }
@@ -56,7 +55,6 @@ fn share(value: FieldElement, n: usize, rng: &mut RandState) -> Vec<SecretShare>
 }
 
 fn recover(shares: Vec<SecretShare>) -> FieldElement {
-
     if shares.len() < 2 {
         panic!("need at least two shares to recover a secret!");
     }
@@ -117,7 +115,10 @@ mod tests {
         let value = FieldElement::new(Integer::from(100), Rc::<Field>::new(field));
 
         // Share generates different shares each time
-        assert_ne!(share(value.clone(), 10, &mut rng), share(value.clone(), 10, &mut rng));
+        assert_ne!(
+            share(value.clone(), 10, &mut rng),
+            share(value.clone(), 10, &mut rng)
+        );
     }
 
     #[test]
@@ -143,6 +144,6 @@ mod tests {
         let mut rng = RandState::new();
         let field = Field::new(Integer::from(101)); // 101 is prime
         let value = FieldElement::new(Integer::from(100), Rc::<Field>::new(field));
-        share(value.clone(), 1,  &mut rng);
+        share(value.clone(), 1, &mut rng);
     }
 }
