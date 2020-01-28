@@ -1,7 +1,7 @@
 //! Spectrum implementation.
 extern crate rand;
-use crate::crypto::msg::Message;
 use crate::crypto::prg::{PRGSeed, PRG};
+use bytes::Bytes;
 use rand::Rng;
 use rug::{integer::IsPrime, rand::RandState, Integer};
 use std::fmt::Debug;
@@ -17,17 +17,17 @@ pub struct DPF {
 #[derive(Clone, PartialEq, Debug)]
 pub struct DPFKey {
     prg: Rc<PRG>,
-    encoded_msg: Message,
+    encoded_msg: Bytes,
     bits: Vec<u8>,
     seeds: Vec<PRGSeed>,
 }
 
 impl DPF {
     /// generate new field element
-    pub fn new(security_bytes: usize, msg: Message, i: usize, n: usize) -> DPF {
-        let eval_size = msg.data.len();
+    pub fn new(security_bytes: usize, msg: Bytes, i: usize, n: usize) -> DPF {
+        let eval_size = msg.len();
 
-        // make a new PRG going from security -> length of the message
+        // make a new PRG going from security -> length of the Bytes
         let prg = Rc::<PRG>::new(PRG::new(security_bytes, eval_size));
 
         let mut seeds_a: Vec<PRGSeed> = Vec::<PRGSeed>::new();
@@ -53,14 +53,15 @@ impl DPF {
             }
         }
 
-        let prg_eval_a = prg.eval(&seeds_a[i]);
+        let prg_eval_a= prg.eval(&seeds_a[i]);
         let prg_eval_b = prg.eval(&seeds_b[i]);
 
         // compute G(seed_a) XOR G(seed_b) for the ith seed
-        let xor_prgs_eval = prg_eval_a ^ prg_eval_b;
+        let xor_eval = xor_bytes(&prg_eval_a, &prg_eval_b);
 
         // compute m XOR G(seed_a) XOR G(seed_b)
-        let encoded_msg = msg ^ xor_prgs_eval;
+        let encoded_msg = xor_bytes(&msg, &xor_eval);
+
 
         let key_a = DPFKey::new(prg.clone(), encoded_msg.clone(), bits_a, seeds_a);
         let key_b = DPFKey::new(prg.clone(), encoded_msg.clone(), bits_b, seeds_b);
@@ -74,7 +75,7 @@ impl DPF {
 
 impl DPFKey {
     // generates a new field element; v mod field.p
-    pub fn new(prg: Rc<PRG>, encoded_msg: Message, bits: Vec<u8>, seeds: Vec<PRGSeed>) -> DPFKey {
+    pub fn new(prg: Rc<PRG>, encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<PRGSeed>) -> DPFKey {
         DPFKey {
             prg: prg,
             encoded_msg: encoded_msg,
@@ -83,25 +84,32 @@ impl DPFKey {
         }
     }
 
-    pub fn eval(self) -> Vec<Message> {
+    pub fn eval(self) -> Vec<Bytes> {
         // total number of slots
         let n = self.bits.len();
 
-        // vector of slot messages
-        let mut messages: Vec<Message> = Vec::<Message>::new();
+        // vector of slot Bytess
+        let mut res: Vec<Bytes> = Vec::<Bytes>::new();
 
         for i in 0..n {
-            let message_i = self.prg.eval(&self.seeds[i]);
+            let prg_eval_i = self.prg.eval(&self.seeds[i]);
 
             if self.bits[i] == 1 {
-                messages.push(self.encoded_msg.clone() ^ message_i);
+                let slot = xor_bytes(&self.encoded_msg.clone(), &prg_eval_i);
+                res.push(slot);
             } else {
-                messages.push(message_i);
+                res.push(prg_eval_i);
             }
         }
 
-        messages
+        res
     }
+}
+
+/// xor bytes in place, a = a ^ b
+fn xor_bytes(a: &Bytes, b: &Bytes) -> Bytes {
+    assert_eq!(a.len(), b.len());
+    a.iter().zip(b.iter()).map(|(&a, &b)| a ^ b).collect()
 }
 
 #[cfg(test)]
@@ -115,7 +123,7 @@ mod tests {
         let index = 1;
         let n = 20;
 
-        let msg = Message::new(data.clone());
+        let msg = Bytes::from(data);
         let dpf = DPF::new(16, msg, index, n);
 
         // check that dpf seeds and bits differ only at index
@@ -137,7 +145,7 @@ mod tests {
         let index = 1;
         let n = 20;
 
-        let msg = Message::new(data.clone());
+        let msg = Bytes::from(data.clone());
         let dpf = DPF::new(16, msg, index, n);
 
         // check that dpf evaluates correctly
@@ -147,11 +155,11 @@ mod tests {
         // used compare dpf eval for index \neq i
         let null: Vec<u8> = vec![0; data_size];
         for i in 0..n {
-            let eval_res = eval_res_a[i].clone() ^ eval_res_b[i].clone();
+            let eval_res = xor_bytes(&eval_res_a[i], &eval_res_b[i]);
             if i != index {
-                assert_eq!(eval_res.data, null);
+                assert_eq!(eval_res, null);
             } else {
-                assert_eq!(eval_res.data, data);
+                assert_eq!(eval_res, data);
             }
         }
     }

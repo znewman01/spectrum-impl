@@ -1,7 +1,7 @@
 //! Spectrum implementation.
 extern crate crypto;
 
-use crate::crypto::msg::Message;
+use bytes::Bytes;
 use crypto::buffer::{BufferResult, ReadBuffer, WriteBuffer};
 use crypto::{aes, blockmodes, buffer, symmetriccipher};
 use rug::{rand::RandState, Assign, Integer};
@@ -40,7 +40,7 @@ impl PRG {
     }
 
     /// evaluates the PRG on the given seed
-    pub fn eval(&self, seed: &PRGSeed) -> Message {
+    pub fn eval(&self, seed: &PRGSeed) -> Bytes {
         // nonce set to zero: PRG eval should be deterministic
         let iv: [u8; 16] = [0; 16];
 
@@ -90,7 +90,7 @@ impl PRG {
         // the value of the expanded PRG
         final_result.truncate(self.eval_size);
 
-        Message { data: final_result }
+        Bytes::from(final_result)
     }
 }
 
@@ -121,12 +121,12 @@ mod tests {
 
         // PRG output is non-zero
         let seed = prg.new_seed();
-        let eval_msg = prg.eval(&seed);
+        let eval_bytes = prg.eval(&seed);
         let all_zero = vec![0; eval_size];
-        assert_ne!(eval_msg.data, all_zero);
+        assert_ne!(eval_bytes, all_zero);
 
         // PRG output is of the correct size
-        assert_eq!(eval_msg.data.len(), eval_size);
+        assert_eq!(eval_bytes.len(), eval_size);
 
         let prg = PRG::new(seed_size, eval_size);
         let seed = prg.new_seed();
