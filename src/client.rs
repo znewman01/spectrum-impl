@@ -1,7 +1,7 @@
 use crate::config;
+use crate::quorum;
 use config::store::Store;
 use log::{debug, info, trace};
-use std::time::Duration;
 
 pub mod spectrum {
     tonic::include_proto!("spectrum");
@@ -11,18 +11,7 @@ use spectrum::{worker_client::WorkerClient, ClientId, UploadRequest};
 
 pub async fn run<C: Store>(config_store: C) -> Result<(), Box<dyn std::error::Error>> {
     info!("Client starting");
-    loop {
-        if !config_store
-            .list(vec![String::from("workers")])
-            .await?
-            .is_empty()
-        {
-            // shouldn't need to sleep here but worker does stuff sync and weird
-            tokio::time::delay_for(Duration::from_millis(100)).await;
-            break;
-        }
-        tokio::time::delay_for(Duration::from_millis(100)).await; // hack; should use retries
-    }
+    quorum::wait_for_quorum(config_store).await?;
     debug!("Received configuration from configuration server; initializing.");
 
     let worker_addr = "http://127.0.0.1:50051"; // TODO(zjn): get from config server

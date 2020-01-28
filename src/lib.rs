@@ -7,6 +7,7 @@ pub mod publisher;
 pub mod worker;
 
 pub mod config;
+mod quorum;
 
 use log::trace;
 
