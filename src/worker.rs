@@ -1,4 +1,6 @@
 use crate::config;
+use crate::quorum;
+use chrono::prelude::*;
 use config::store::Store;
 use futures::Future;
 use log::{debug, error, info};
@@ -48,11 +50,8 @@ pub async fn run<C: Store, F: Future<Output = ()>>(
     let addr = "127.0.0.1:50051"; // TODO(zjn): use IPv6 if available
     let server = MyWorker::default();
 
-    // TODO: do this more async
-    config_store.put(
-        vec![String::from("workers"), String::from("worker")],
-        String::from(addr),
-    );
+    let dt = DateTime::<FixedOffset>::from(Utc::now()); // TODO(zjn): should be in the future
+    quorum::set_quorum(&config_store, dt).await?;
     debug!("Registered with config server.");
 
     tonic::transport::server::Server::builder()
