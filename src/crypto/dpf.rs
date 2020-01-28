@@ -113,7 +113,7 @@ impl DPF for PRGBasedDPF {
     fn combine(parts: Vec<Vec<Bytes>>) -> Vec<Bytes> {
         // xor all the parts together
         let mut res = parts[0].clone();
-        for part in parts.iter() {
+        for part in parts.iter().skip(1) {
             for j in 0..res.len() {
                 res[j] = xor_bytes(&res[j], &part[j]);
             }
