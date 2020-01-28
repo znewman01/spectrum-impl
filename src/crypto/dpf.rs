@@ -159,27 +159,6 @@ mod tests {
     const SECURITY_BYTES: usize = 16;
 
     #[test]
-    fn test_prg_dpf_gen() {
-        let data: Vec<u8> = vec![0; DATA_SIZE];
-        let index = 1;
-
-        let msg = Bytes::from(data);
-        let dpf = PRGBasedDPF::new(SECURITY_BYTES, NUM_KEYS, NUM_POINTS);
-        let dpf_keys = dpf.gen(msg, index);
-
-        // check that dpf seeds and bits differ only at index
-        for i in 0..NUM_POINTS {
-            if i != index {
-                assert_eq!(dpf_keys[0].seeds[i], dpf_keys[1].seeds[i]);
-                assert_eq!(dpf_keys[0].bits[i], dpf_keys[1].bits[i]);
-            } else {
-                assert_ne!(dpf_keys[0].seeds[i], dpf_keys[1].seeds[i]);
-                assert_ne!(dpf_keys[0].bits[i], dpf_keys[1].bits[i]);
-            }
-        }
-    }
-
-    #[test]
     fn test_prg_dpf_combine() {
         let data: Vec<u8> = vec![0; DATA_SIZE];
         let index = 1;
