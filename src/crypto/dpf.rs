@@ -153,33 +153,49 @@ fn xor_bytes(a: &Bytes, b: &Bytes) -> Bytes {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const DATA_SIZE: usize = (1 << 8) * 4096;
-    const NUM_POINTS: usize = 20;
-    const NUM_KEYS: usize = 2;
+    use proptest::prelude::*;
+
+    const DATA_SIZE: usize = (1 << 10);
+    const MAX_NUM_POINTS: usize = 20;
     const SECURITY_BYTES: usize = 16;
 
-    #[test]
-    fn test_prg_dpf_combine() {
-        let data: Vec<u8> = vec![0; DATA_SIZE];
-        let index = 1;
+    fn num_keys() -> impl Strategy<Value = usize> {
+        Just(2)
+    }
 
-        let msg = Bytes::from(data.clone());
-        let dpf = PRGBasedDPF::new(SECURITY_BYTES, NUM_KEYS, NUM_POINTS);
-        let dpf_keys = dpf.gen(msg, index);
+    fn num_points_and_index() -> impl Strategy<Value = (usize, usize)> {
+        (1..MAX_NUM_POINTS).prop_flat_map(|num_points| (Just(num_points), 0..num_points))
+    }
 
-        // check that dpf evaluates correctly
-        let mut results = Vec::<Vec<Bytes>>::new();
-        results.push(PRGBasedDPF::eval(&dpf_keys[0]));
-        results.push(PRGBasedDPF::eval(&dpf_keys[1]));
+    fn data() -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(any::<u8>(), DATA_SIZE)
+    }
 
-        let eval_res = PRGBasedDPF::combine(results);
-        let null: Vec<u8> = vec![0; DATA_SIZE];
+    proptest! {
+        #[test]
+        fn test_prg_dpf_combine(
+            (num_points, index) in num_points_and_index(),
+            num_keys in num_keys(),
+            data in data()
+        ) {
+            let msg = Bytes::from(data.clone());
+            let dpf = PRGBasedDPF::new(SECURITY_BYTES, num_keys, num_points);
+            let dpf_keys = dpf.gen(msg, index);
 
-        for (i, val) in eval_res.iter().enumerate() {
-            if i != index {
-                assert_eq!(*val, null);
-            } else {
-                assert_eq!(*val, data);
+            // check that dpf evaluates correctly
+            let mut results = Vec::<Vec<Bytes>>::new();
+            results.push(PRGBasedDPF::eval(&dpf_keys[0]));
+            results.push(PRGBasedDPF::eval(&dpf_keys[1]));
+
+            let eval_res = PRGBasedDPF::combine(results);
+            let null: Vec<u8> = vec![0; DATA_SIZE];
+
+            for (i, val) in eval_res.iter().enumerate() {
+                if i != index {
+                    assert_eq!(*val, null);
+                } else {
+                    assert_eq!(*val, data);
+                }
             }
         }
     }
