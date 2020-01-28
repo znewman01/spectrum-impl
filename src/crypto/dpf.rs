@@ -173,30 +173,20 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_prg_dpf_combine(
+        fn test_prg_dpf(
             (num_points, index) in num_points_and_index(),
             num_keys in num_keys(),
             data in data()
         ) {
-            let msg = Bytes::from(data.clone());
             let dpf = PRGBasedDPF::new(SECURITY_BYTES, num_keys, num_points);
-            let dpf_keys = dpf.gen(msg, index);
+            let keys = dpf.gen(Bytes::from(data.clone()), index);
+            let outputs = keys.iter().map(PRGBasedDPF::eval).collect();
+            let actual = PRGBasedDPF::combine(outputs);
 
-            // check that dpf evaluates correctly
-            let mut results = Vec::<Vec<Bytes>>::new();
-            results.push(PRGBasedDPF::eval(&dpf_keys[0]));
-            results.push(PRGBasedDPF::eval(&dpf_keys[1]));
-
-            let eval_res = PRGBasedDPF::combine(results);
-            let null: Vec<u8> = vec![0; DATA_SIZE];
-
-            for (i, val) in eval_res.iter().enumerate() {
-                if i != index {
-                    assert_eq!(*val, null);
-                } else {
-                    assert_eq!(*val, data);
-                }
-            }
+            let zeroes = vec![0 as u8; DATA_SIZE];
+            let mut expected = vec![zeroes; num_points - 1];
+            expected.insert(index, data);
+            assert_eq!(actual, expected);
         }
     }
 }
