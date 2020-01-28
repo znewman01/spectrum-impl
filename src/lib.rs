@@ -2,6 +2,7 @@
 use futures::future::FutureExt;
 
 pub mod client;
+pub mod crypto;
 pub mod leader;
 pub mod publisher;
 pub mod worker;

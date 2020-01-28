@@ -8,12 +8,15 @@ edition = "2018"
 
 [dependencies]
 futures = "0.3"
+rust-crypto = "^0.2"
 prost = "0.6"
+rand = "0.7.3"
 bytes = "0.4"
 tonic = "0.1.1"
 log = "0.4"
 simplelog = "^0.7.4"
 tokio = { version = "0.2", features = [ "macros", "signal" ] }
+rug = "1.6"
 async-trait = "0.1.22"
 chrono = "0.4"
 
@@ -22,3 +25,8 @@ tonic-build = "0.1.1"
 
 [dev-dependencies]
 proptest = "0.9.4"
+criterion = "0.3.0"
+
+[[bench]]
+name = "crypto_benchmarks"
+harness = false
