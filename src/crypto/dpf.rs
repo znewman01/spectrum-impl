@@ -3,38 +3,53 @@ extern crate rand;
 use crate::crypto::prg::{PRGSeed, PRG};
 use bytes::Bytes;
 use rand::Rng;
-use rug::{integer::IsPrime, rand::RandState, Integer};
 use std::fmt::Debug;
-use std::ops;
 use std::rc::Rc;
 
 /// Distributed Point Function
 /// Must generate a set of keys k_1, k_2, ...
 /// such that combine(eval(k_1), eval(k_2), ...) = e_i * msg
 trait DPF {
-    fn gen(security_bytes: usize, msg: Bytes, i: usize, n: usize) -> Vec<DPFKey>;
+    fn new(security_bytes: usize, num_keys: usize, num_points: usize) -> Self;
+    fn gen(&self, msg: Bytes, i: usize) -> Vec<DPFKey>;
     fn eval(key: &DPFKey) -> Vec<Bytes>;
     fn combine(parts: Vec<Vec<Bytes>>) -> Vec<Bytes>;
 }
 
 /// DPF based on PRG
-struct PRGBasedDPF {}
+struct PRGBasedDPF {
+    security_bytes: usize,
+    num_keys: usize,
+    num_points: usize,
+}
 
 impl DPF for PRGBasedDPF {
+    fn new(security_bytes: usize, num_keys: usize, num_points: usize) -> PRGBasedDPF {
+        PRGBasedDPF {
+            security_bytes,
+            num_keys,
+            num_points,
+        }
+    }
+
     /// generate new instance of PRG based DPF with two DPF keys
-    fn gen(security_bytes: usize, msg: Bytes, i: usize, n: usize) -> Vec<DPFKey> {
+    fn gen(&self, msg: Bytes, i: usize) -> Vec<DPFKey> {
+        if self.num_keys != 2 {
+            panic!("not implemented!")
+        }
+
         let eval_size = msg.len();
 
         // make a new PRG going from security -> length of the Bytes
-        let prg = Rc::<PRG>::new(PRG::new(security_bytes, eval_size));
+        let prg = Rc::<PRG>::new(PRG::new(self.security_bytes, eval_size));
 
-        let mut seeds_a: Vec<PRGSeed> = Vec::<PRGSeed>::new();
-        let mut seeds_b: Vec<PRGSeed> = Vec::<PRGSeed>::new();
-        let mut bits_a: Vec<u8> = Vec::<u8>::new();
-        let mut bits_b: Vec<u8> = Vec::<u8>::new();
+        let mut seeds_a: Vec<PRGSeed> = Vec::new();
+        let mut seeds_b: Vec<PRGSeed> = Vec::new();
+        let mut bits_a: Vec<u8> = Vec::new();
+        let mut bits_b: Vec<u8> = Vec::new();
 
         // generate the values distributed to servers A and B
-        for j in 0..n {
+        for j in 0..self.num_points {
             let seed = prg.new_seed();
             let bit = rand::thread_rng().gen_range(0, 2);
 
@@ -67,12 +82,7 @@ impl DPF for PRGBasedDPF {
             bits_a,
             seeds_a,
         ));
-        key_tuple.push(DPFKey::new(
-            prg.clone(),
-            encoded_msg.clone(),
-            bits_b,
-            seeds_b,
-        ));
+        key_tuple.push(DPFKey::new(prg, encoded_msg, bits_b, seeds_b));
 
         key_tuple
     }
@@ -103,9 +113,9 @@ impl DPF for PRGBasedDPF {
     fn combine(parts: Vec<Vec<Bytes>>) -> Vec<Bytes> {
         // xor all the parts together
         let mut res = parts[0].clone();
-        for i in 1..parts.len() {
+        for part in parts.iter() {
             for j in 0..res.len() {
-                res[j] = xor_bytes(&res[j], &parts[i][j]);
+                res[j] = xor_bytes(&res[j], &part[j]);
             }
         }
 
@@ -125,10 +135,10 @@ impl DPFKey {
     // generates a new DPF key with the necessary parameters needed for evaluation
     pub fn new(prg: Rc<PRG>, encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<PRGSeed>) -> DPFKey {
         DPFKey {
-            prg: prg,
-            encoded_msg: encoded_msg,
-            bits: bits,
-            seeds: seeds,
+            prg,
+            encoded_msg,
+            bits,
+            seeds,
         }
     }
 }
@@ -143,19 +153,22 @@ fn xor_bytes(a: &Bytes, b: &Bytes) -> Bytes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const DATA_SIZE: usize = (1 << 8) * 4096;
+    const NUM_POINTS: usize = 20;
+    const NUM_KEYS: usize = 2;
+    const SECURITY_BYTES: usize = 16;
 
     #[test]
     fn test_prg_dpf_gen() {
-        let data_size = (1 << 8) * 4096;
-        let data: Vec<u8> = vec![0; data_size];
+        let data: Vec<u8> = vec![0; DATA_SIZE];
         let index = 1;
-        let n = 20;
 
         let msg = Bytes::from(data);
-        let dpf_keys = PRGBasedDPF::gen(16, msg, index, n);
+        let dpf = PRGBasedDPF::new(SECURITY_BYTES, NUM_KEYS, NUM_POINTS);
+        let dpf_keys = dpf.gen(msg, index);
 
         // check that dpf seeds and bits differ only at index
-        for i in 0..n {
+        for i in 0..NUM_POINTS {
             if i != index {
                 assert_eq!(dpf_keys[0].seeds[i], dpf_keys[1].seeds[i]);
                 assert_eq!(dpf_keys[0].bits[i], dpf_keys[1].bits[i]);
@@ -167,40 +180,13 @@ mod tests {
     }
 
     #[test]
-    fn test_prg_dpf_eval() {
-        let data_size = (1 << 8) * 4096;
-        let data: Vec<u8> = vec![0; data_size];
-        let index = 1;
-        let n = 20;
-
-        let msg = Bytes::from(data.clone());
-        let dpf_keys = PRGBasedDPF::gen(16, msg, index, n);
-
-        // check that dpf evaluates correctly
-        let eval_res_a = PRGBasedDPF::eval(&dpf_keys[0]);
-        let eval_res_b = PRGBasedDPF::eval(&dpf_keys[1]);
-
-        // used compare dpf eval for index \neq i
-        let null: Vec<u8> = vec![0; data_size];
-        for i in 0..n {
-            let eval_res = xor_bytes(&eval_res_a[i], &eval_res_b[i]);
-            if i != index {
-                assert_eq!(eval_res, null);
-            } else {
-                assert_eq!(eval_res, data);
-            }
-        }
-    }
-
-    #[test]
     fn test_prg_dpf_combine() {
-        let data_size = (1 << 8) * 4096;
-        let data: Vec<u8> = vec![0; data_size];
+        let data: Vec<u8> = vec![0; DATA_SIZE];
         let index = 1;
-        let n = 20;
 
         let msg = Bytes::from(data.clone());
-        let dpf_keys = PRGBasedDPF::gen(16, msg, index, n);
+        let dpf = PRGBasedDPF::new(SECURITY_BYTES, NUM_KEYS, NUM_POINTS);
+        let dpf_keys = dpf.gen(msg, index);
 
         // check that dpf evaluates correctly
         let mut results = Vec::<Vec<Bytes>>::new();
@@ -208,13 +194,13 @@ mod tests {
         results.push(PRGBasedDPF::eval(&dpf_keys[1]));
 
         let eval_res = PRGBasedDPF::combine(results);
-        let null: Vec<u8> = vec![0; data_size];
+        let null: Vec<u8> = vec![0; DATA_SIZE];
 
-        for i in 0..n {
+        for (i, val) in eval_res.iter().enumerate() {
             if i != index {
-                assert_eq!(eval_res[i], null);
+                assert_eq!(*val, null);
             } else {
-                assert_eq!(eval_res[i], data);
+                assert_eq!(*val, data);
             }
         }
     }

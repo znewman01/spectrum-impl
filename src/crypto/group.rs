@@ -21,21 +21,15 @@ pub struct GroupElement {
 impl Group {
     /// creates a new group object
     pub fn new(gen: Integer, modulus: Integer) -> Group {
-        Group {
-            gen: gen,
-            modulus: modulus,
-        }
+        Group { gen, modulus }
     }
 }
 
 impl GroupElement {
     /// generates a new group element gen^v mod group.modulus
     pub fn new(v: Integer, group: Rc<Group>) -> GroupElement {
-        let res = group.gen.clone().pow_mod(&v, &group.modulus).unwrap();
-        GroupElement {
-            value: res,
-            group: group,
-        }
+        let value = group.gen.clone().pow_mod(&v, &group.modulus).unwrap();
+        GroupElement { value, group }
     }
 }
 
@@ -61,10 +55,10 @@ mod tests {
         let g = Integer::from(2);
         let group = Rc::<Group>::new(Group::new(g, m));
 
-        let elem1 = GroupElement::new(val1.clone(), group.clone());
-        let elem2 = GroupElement::new(val2.clone(), group.clone());
+        let elem1 = GroupElement::new(val1, group.clone());
+        let elem2 = GroupElement::new(val2, group.clone());
 
-        let expected = GroupElement::new(Integer::from(&elem1.value * &elem2.value), group.clone());
+        let expected = GroupElement::new(Integer::from(&elem1.value * &elem2.value), group);
         let actual = elem1 * elem2;
 
         assert_eq!(actual, expected);

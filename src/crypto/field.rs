@@ -27,7 +27,7 @@ impl Field {
             panic!("field must have prime order!");
         }
 
-        Field { order: order }
+        Field { order }
     }
 
     // generates a new random field element
@@ -47,7 +47,7 @@ impl FieldElement {
     pub fn new(v: Integer, field: Rc<Field>) -> FieldElement {
         FieldElement {
             value: v % &field.order.clone(),
-            field: field,
+            field,
         }
     }
 
@@ -133,7 +133,7 @@ mod tests {
         let mut rng = RandState::new();
         assert_ne!(
             field.clone().rand_element(&mut rng),
-            field.clone().rand_element(&mut rng)
+            field.rand_element(&mut rng)
         );
     }
 

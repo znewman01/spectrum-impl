@@ -1,9 +1,8 @@
 //! Spectrum implementation.
-use crate::crypto::field::{Field, FieldElement};
+use crate::crypto::field::FieldElement;
 use rug::{rand::RandState, Integer};
 use std::fmt::Debug;
 use std::ops;
-use std::rc::Rc;
 
 /// message contains a vector of bytes representing data in spectrum
 /// and is used for easily performing binary operations over bytes
@@ -16,10 +15,7 @@ pub struct SecretShare {
 impl SecretShare {
     /// generates a new field element; value mod field.order
     fn new(value: FieldElement, is_first: bool) -> SecretShare {
-        SecretShare {
-            value: value,
-            is_first: is_first,
-        }
+        SecretShare { value, is_first }
     }
 }
 
@@ -29,7 +25,7 @@ impl PartialEq for SecretShare {
     }
 }
 
-fn share(value: FieldElement, n: usize, rng: &mut RandState) -> Vec<SecretShare> {
+pub fn share(value: FieldElement, n: usize, rng: &mut RandState) -> Vec<SecretShare> {
     if n < 2 {
         panic!("cannot split secret into fewer than two shares!");
     }
@@ -41,7 +37,7 @@ fn share(value: FieldElement, n: usize, rng: &mut RandState) -> Vec<SecretShare>
     let field = value.clone().field().as_ref().clone();
 
     // first share will be value + SUM r_i
-    shares.push(SecretShare::new(value.clone(), true));
+    shares.push(SecretShare::new(value, true));
 
     for _ in 0..n - 1 {
         let rand_i = field.clone().rand_element(rng);
@@ -54,15 +50,15 @@ fn share(value: FieldElement, n: usize, rng: &mut RandState) -> Vec<SecretShare>
     shares
 }
 
-fn recover(shares: Vec<SecretShare>) -> FieldElement {
+pub fn recover(shares: Vec<SecretShare>) -> FieldElement {
     if shares.len() < 2 {
         panic!("need at least two shares to recover a secret!");
     }
 
     // recover the secret by subtracting random shares
     let mut secret = shares[0].value.clone();
-    for i in 1..shares.len() {
-        secret -= shares[i].value.clone();
+    for share in shares.iter().skip(1) {
+        secret -= share.value.clone();
     }
 
     secret
@@ -98,6 +94,8 @@ impl ops::Mul<FieldElement> for SecretShare {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::field::Field;
+    use std::rc::Rc;
 
     #[test]
     fn test_share_recover() {
@@ -117,7 +115,7 @@ mod tests {
         // Share generates different shares each time
         assert_ne!(
             share(value.clone(), 10, &mut rng),
-            share(value.clone(), 10, &mut rng)
+            share(value, 10, &mut rng)
         );
     }
 
@@ -130,7 +128,7 @@ mod tests {
         let rec2 = recover(share(value.clone(), 2, &mut rng));
         let rec3 = recover(share(value.clone(), 3, &mut rng));
         let rec4 = recover(share(value.clone(), 4, &mut rng));
-        let rec5 = recover(share(value.clone(), 5, &mut rng));
+        let rec5 = recover(share(value, 5, &mut rng));
 
         // sharing with different n works
         assert_eq!(rec2, rec3);
@@ -144,6 +142,6 @@ mod tests {
         let mut rng = RandState::new();
         let field = Field::new(Integer::from(101)); // 101 is prime
         let value = FieldElement::new(Integer::from(100), Rc::<Field>::new(field));
-        share(value.clone(), 1, &mut rng);
+        share(value, 1, &mut rng);
     }
 }
