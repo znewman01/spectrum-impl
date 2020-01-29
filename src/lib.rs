@@ -10,8 +10,7 @@ pub mod publisher;
 pub mod worker;
 
 pub mod config;
-mod health;
-mod quorum;
+mod services;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config_store = config::from_env()?;

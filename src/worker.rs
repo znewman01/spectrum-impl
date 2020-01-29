@@ -1,7 +1,8 @@
-use crate::config;
-use crate::health::{wait_for_health, AllGoodHealthServer, HealthServer};
-use crate::quorum::{register, ServiceType};
-use config::store::Store;
+use crate::{
+    config::store::Store,
+    services::discovery::{register, ServiceType},
+    services::health::{wait_for_health, AllGoodHealthServer, HealthServer},
+};
 use futures::Future;
 use log::{debug, error, info, trace};
 use tonic::{Request, Response, Status};
