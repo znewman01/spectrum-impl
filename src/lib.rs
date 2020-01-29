@@ -1,5 +1,7 @@
 //! Spectrum implementation.
 use futures::future::FutureExt;
+use std::sync::Arc;
+use tokio::sync::Barrier;
 
 pub mod client;
 pub mod crypto;
@@ -11,17 +13,16 @@ pub mod config;
 mod health;
 mod quorum;
 
-use log::trace;
-
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config_store = config::from_env()?;
-    let barrier = tokio::sync::Barrier::new(2);
+    let barrier = Arc::new(Barrier::new(2));
+    let barrier2 = barrier.clone();
+    let shutdown = async move {
+        barrier2.wait().await;
+    };
     let _ = futures::join!(
-        client::run(config_store.clone()).then(|_| {
-            trace!("Awaiting barrier -- client.");
-            barrier.wait()
-        }),
-        worker::run(config_store.clone(), barrier.wait().map(|_| ())),
+        client::run(config_store.clone()).then(|_| { barrier.wait() }),
+        worker::run(config_store.clone(), shutdown),
         publisher::run(),
         leader::run()
     );

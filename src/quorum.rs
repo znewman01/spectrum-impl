@@ -31,9 +31,6 @@ async fn wait_for_quorum_helper<C: Store>(
         println!("checking");
         match get_start_time(&config).await? {
             Some(start_time) => {
-                // shouldn't need to sleep here but worker does stuff sync and weird
-                // see e.g. https://github.com/hyperium/tonic/issues/252
-                delay_for(Duration::from_millis(100)).await;
                 return Ok(start_time);
             }
             None => {

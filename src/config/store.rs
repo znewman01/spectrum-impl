@@ -24,6 +24,12 @@ impl fmt::Display for Error {
     }
 }
 
+impl From<String> for Error {
+    fn from(error: String) -> Self {
+        Error::new(&error)
+    }
+}
+
 impl std::error::Error for Error {}
 
 // TODO(zjn): make these return futures

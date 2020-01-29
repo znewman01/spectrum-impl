@@ -1,9 +1,10 @@
 use crate::config;
+use crate::health::{wait_for_health, AllGoodHealthServer, HealthServer};
 use crate::quorum;
 use chrono::prelude::*;
 use config::store::Store;
 use futures::Future;
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use tonic::{Request, Response, Status};
 
 pub mod spectrum {
@@ -42,23 +43,30 @@ impl Worker for MyWorker {
     }
 }
 
-pub async fn run<C: Store, F: Future<Output = ()>>(
-    config_store: C,
-    shutdown: F,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run<C, F>(config_store: C, shutdown: F) -> Result<(), Box<dyn std::error::Error>>
+where
+    C: Store,
+    F: Future<Output = ()> + Send + 'static,
+{
     info!("Worker starting up.");
     let addr = "127.0.0.1:50051"; // TODO(zjn): use IPv6 if available
-    let server = MyWorker::default();
+
+    let server_task = tokio::spawn(
+        tonic::transport::server::Server::builder()
+            .add_service(HealthServer::new(AllGoodHealthServer::default()))
+            .add_service(WorkerServer::new(MyWorker::default()))
+            .serve_with_shutdown(addr.parse()?, shutdown),
+    );
+
+    let url = format!("http://{}", addr);
+    wait_for_health(url).await?;
+    trace!("Worker healthy.");
 
     let dt = DateTime::<FixedOffset>::from(Utc::now()); // TODO(zjn): should be in the future
     quorum::set_quorum(&config_store, dt).await?;
     debug!("Registered with config server.");
 
-    tonic::transport::server::Server::builder()
-        .add_service(WorkerServer::new(server))
-        .serve_with_shutdown(addr.parse().unwrap(), shutdown)
-        .await?;
-
+    server_task.await??;
     info!("Worker shutting down.");
 
     Ok(())
