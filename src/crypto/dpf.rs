@@ -9,11 +9,12 @@ use std::rc::Rc;
 /// Distributed Point Function
 /// Must generate a set of keys k_1, k_2, ...
 /// such that combine(eval(k_1), eval(k_2), ...) = e_i * msg
-trait DPF {
+trait DPF<Key> {
     fn new(security_bytes: usize, num_keys: usize, num_points: usize) -> Self;
-    fn gen(&self, msg: Bytes, i: usize) -> Vec<DPFKey>;
-    fn eval(key: &DPFKey) -> Vec<Bytes>;
-    fn combine(parts: Vec<Vec<Bytes>>) -> Vec<Bytes>;
+    /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
+    fn gen(&self, msg: Bytes, idx: usize) -> Vec<Key>;
+    fn eval(&self, key: &Key) -> Vec<Bytes>;
+    fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes>;
 }
 
 /// DPF based on PRG
@@ -23,7 +24,7 @@ struct PRGBasedDPF {
     num_points: usize,
 }
 
-impl DPF for PRGBasedDPF {
+impl DPF<DPFKey> for PRGBasedDPF {
     fn new(security_bytes: usize, num_keys: usize, num_points: usize) -> PRGBasedDPF {
         PRGBasedDPF {
             security_bytes,
@@ -33,15 +34,13 @@ impl DPF for PRGBasedDPF {
     }
 
     /// generate new instance of PRG based DPF with two DPF keys
-    fn gen(&self, msg: Bytes, i: usize) -> Vec<DPFKey> {
+    fn gen(&self, msg: Bytes, idx: usize) -> Vec<DPFKey> {
         if self.num_keys != 2 {
             panic!("not implemented!")
         }
 
-        let eval_size = msg.len();
-
         // make a new PRG going from security -> length of the Bytes
-        let prg = Rc::<PRG>::new(PRG::new(self.security_bytes, eval_size));
+        let prg = Rc::new(PRG::new(self.security_bytes, msg.len()));
 
         let mut seeds_a: Vec<PRGSeed> = Vec::new();
         let mut seeds_b: Vec<PRGSeed> = Vec::new();
@@ -56,7 +55,7 @@ impl DPF for PRGBasedDPF {
             seeds_a.push(seed.clone());
             bits_a.push(bit);
 
-            if j == i {
+            if j == idx {
                 let seed_prime = prg.new_seed();
                 seeds_b.push(seed_prime);
                 bits_b.push(1 - bit);
@@ -66,11 +65,8 @@ impl DPF for PRGBasedDPF {
             }
         }
 
-        let prg_eval_a = prg.eval(&seeds_a[i]);
-        let prg_eval_b = prg.eval(&seeds_b[i]);
-
         // compute G(seed_a) XOR G(seed_b) for the ith seed
-        let xor_eval = xor_bytes(&prg_eval_a, &prg_eval_b);
+        let xor_eval = xor_bytes(&prg.eval(&seeds_a[idx]), &prg.eval(&seeds_b[idx]));
 
         // compute m XOR G(seed_a) XOR G(seed_b)
         let encoded_msg = xor_bytes(&msg, &xor_eval);
@@ -88,29 +84,24 @@ impl DPF for PRGBasedDPF {
     }
 
     /// evaluates the DPF on a given DPFKey and outputs the resulting data
-    fn eval(key: &DPFKey) -> Vec<Bytes> {
-        // total number of slots
-        let n = key.bits.len();
+    fn eval(&self, key: &DPFKey) -> Vec<Bytes> {
+        key.seeds
+            .iter()
+            .zip(key.bits.iter())
+            .map(|(seed, &bits)| {
+                let prg_eval_i = key.prg.eval(seed);
 
-        // vector of slot Bytess
-        let mut res: Vec<Bytes> = Vec::<Bytes>::new();
-
-        for i in 0..n {
-            let prg_eval_i = key.prg.eval(&key.seeds[i]);
-
-            if key.bits[i] == 1 {
-                let slot = xor_bytes(&key.encoded_msg.clone(), &prg_eval_i);
-                res.push(slot);
-            } else {
-                res.push(prg_eval_i);
-            }
-        }
-
-        res
+                if bits == 1 {
+                    xor_bytes(&key.encoded_msg.clone(), &prg_eval_i)
+                } else {
+                    prg_eval_i
+                }
+            })
+            .collect()
     }
 
     /// combines the results produced by running eval on both keys
-    fn combine(parts: Vec<Vec<Bytes>>) -> Vec<Bytes> {
+    fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes> {
         // xor all the parts together
         let mut res = parts[0].clone();
         for part in parts.iter().skip(1) {
@@ -179,10 +170,12 @@ mod tests {
             data in data()
         ) {
             let dpf = PRGBasedDPF::new(SECURITY_BYTES, num_keys, num_points);
-            let keys = dpf.gen(Bytes::from(data.clone()), index);
-            let outputs = keys.iter().map(PRGBasedDPF::eval).collect();
-            let actual = PRGBasedDPF::combine(outputs);
-
+            let actual = dpf.combine(
+                dpf.gen(Bytes::from(data.clone()), index)
+                    .iter()
+                    .map(|key| dpf.eval(key))
+                    .collect()
+            );
             let zeroes = vec![0 as u8; DATA_SIZE];
             let mut expected = vec![zeroes; num_points - 1];
             expected.insert(index, data);
