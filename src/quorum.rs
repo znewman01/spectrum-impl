@@ -50,20 +50,28 @@ pub async fn wait_for_quorum<C: Store>(config: C) -> Result<DateTime<FixedOffset
 mod test {
     use super::*;
     use crate::config;
+    use futures::FutureExt;
+    use tokio::sync::oneshot::{channel, error::TryRecvError};
+    use tokio::task::yield_now;
 
     #[tokio::test(threaded_scheduler)]
     async fn test_wait_for_quorum() {
         let store = config::factory::from_string("").expect("Failed to create store.");
-        let handle = tokio::spawn(wait_for_quorum_helper(
-            store.clone(),
-            Duration::from_millis(0),
-            2,
-        ));
-        tokio::task::yield_now().await;
-        // TODO(zjn): verify that task isn't done yet
+        let (tx, mut rx) = channel();
+        let handle = tokio::spawn(
+            wait_for_quorum_helper(store.clone(), Duration::from_millis(0), 2)
+                .inspect(|_| tx.send(()).unwrap()),
+        );
+        yield_now().await;
+
+        assert_eq!(
+            rx.try_recv().expect_err("Task not have completed yet."),
+            TryRecvError::Empty
+        );
+
         let dt = DateTime::<FixedOffset>::from(Utc::now());
         set_quorum(&store, dt).await.unwrap();
-        println!("yo done");
+
         let result = handle
             .await
             .expect("Task should have completed without crashing.");
