@@ -1,3 +1,4 @@
+/// Service discovery
 use crate::config;
 
 use chrono::prelude::*;
@@ -7,14 +8,16 @@ use proptest_derive::Arbitrary;
 use std::time::Duration;
 use tokio::time::delay_for;
 
-const RETRY_DELAY: Duration = Duration::from_millis(1000);
+// TODO(zjn): make configurable. Short for local testing; long for real deployments
+const RETRY_DELAY: Duration = Duration::from_millis(100);
 const RETRY_ATTEMPTS: usize = 1000;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 #[cfg_attr(test, derive(Arbitrary))]
-#[allow(dead_code)]
 pub enum ServiceType {
+    #[allow(dead_code)]
     Leader,
+    #[allow(dead_code)]
     Publisher,
     Worker,
 }
@@ -31,7 +34,6 @@ impl ServiceType {
 }
 
 /// Register a server of the given type at the given address.
-#[allow(dead_code)]
 pub async fn register<C: Store>(config: &C, service: ServiceType, addr: &str) -> Result<(), Error> {
     // TODO(zjn): verify not already registered
     let mut prefix = service.to_config_key();
@@ -39,7 +41,6 @@ pub async fn register<C: Store>(config: &C, service: ServiceType, addr: &str) ->
     config.put(prefix, "".to_string()).await
 }
 
-#[allow(dead_code)]
 pub async fn get_addrs<C: Store>(config: &C, service: ServiceType) -> Result<Vec<String>, Error> {
     Ok(config
         .list(service.to_config_key())

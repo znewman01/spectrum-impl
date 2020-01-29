@@ -23,7 +23,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _ = futures::join!(
         client::run(config_store.clone()).then(|_| { barrier.wait() }),
         worker::run(config_store.clone(), shutdown),
-        publisher::run(),
+        publisher::run(config_store.clone()),
         leader::run()
     );
 

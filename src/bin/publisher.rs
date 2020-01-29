@@ -1,6 +1,7 @@
-use futures::executor::block_on;
-use spectrum_impl::publisher;
+use spectrum_impl::{config, publisher};
 
-fn main() {
-    block_on(publisher::run());
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config_store = config::from_env()?;
+    publisher::run(config_store).await
 }
