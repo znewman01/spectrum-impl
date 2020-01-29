@@ -47,8 +47,10 @@ pub(in crate::config) mod tests {
     use proptest::collection::{vec, VecStrategy};
     use proptest::string::{string_regex, RegexGeneratorStrategy};
 
+    pub const KEY: &str = "[[[:word:]]-]+";
+
     pub fn keys() -> VecStrategy<RegexGeneratorStrategy<String>> {
-        vec(string_regex("[[[:word:]]-]+").unwrap(), 0..10usize)
+        vec(string_regex(KEY).unwrap(), 0..10usize)
     }
 
     pub fn values() -> RegexGeneratorStrategy<String> {
