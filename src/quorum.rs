@@ -1,12 +1,53 @@
 use crate::config;
 
 use chrono::prelude::*;
-use config::store::{Error, Store};
+use config::store::{Error, Key, Store};
+#[cfg(test)] // TODO(zjn): move to mod tests (https://github.com/AltSysrq/proptest/pull/106)
+use proptest_derive::Arbitrary;
 use std::time::Duration;
 use tokio::time::delay_for;
 
 const RETRY_DELAY: Duration = Duration::from_millis(1000);
 const RETRY_ATTEMPTS: usize = 1000;
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[cfg_attr(test, derive(Arbitrary))]
+#[allow(dead_code)]
+pub enum ServiceType {
+    Leader,
+    Publisher,
+    Worker,
+}
+
+impl ServiceType {
+    fn to_config_key(self) -> Key {
+        let key = match self {
+            ServiceType::Leader => "leader",
+            ServiceType::Publisher => "publisher",
+            ServiceType::Worker => "worker",
+        };
+        vec![key.to_string()]
+    }
+}
+
+/// Register a server of the given type at the given address.
+#[allow(dead_code)]
+pub async fn register<C: Store>(config: &C, service: ServiceType, addr: &str) -> Result<(), Error> {
+    // TODO(zjn): verify not already registered
+    let mut prefix = service.to_config_key();
+    prefix.push(addr.to_string());
+    config.put(prefix, "".to_string()).await
+}
+
+#[allow(dead_code)]
+pub async fn get_addrs<C: Store>(config: &C, service: ServiceType) -> Result<Vec<String>, Error> {
+    Ok(config
+        .list(service.to_config_key())
+        .await?
+        .iter()
+        .map(|(k, _v)| k.last().unwrap().to_string())
+        .collect())
+}
 
 async fn get_start_time<C: Store>(config: &C) -> Result<Option<DateTime<FixedOffset>>, Error> {
     let key = vec!["experiment".to_string(), "start-time".to_string()];
@@ -50,7 +91,12 @@ pub async fn wait_for_quorum<C: Store>(config: C) -> Result<DateTime<FixedOffset
 mod test {
     use super::*;
     use crate::config;
+    use config::tests::{inmem_stores, KEY};
+    use futures::executor::block_on;
     use futures::FutureExt;
+    use prop::collection::{hash_map, hash_set};
+    use proptest::prelude::*;
+    use std::collections::{HashMap, HashSet};
     use tokio::sync::oneshot::{channel, error::TryRecvError};
     use tokio::task::yield_now;
 
@@ -83,5 +129,33 @@ mod test {
         let store = config::factory::from_string("").expect("Failed to create store.");
         let result = wait_for_quorum_helper(store, Duration::from_millis(0), 1).await;
         result.expect_err("Expected failure, as quorum never reached.");
+    }
+
+    fn service_entries() -> impl Strategy<Value = HashMap<ServiceType, HashSet<String>>> {
+        hash_map(any::<ServiceType>(), hash_set(KEY, 0..10), 0..3)
+    }
+
+    proptest! {
+        #[test]
+        fn test_register_service(store in inmem_stores(), service_entries in service_entries()) {
+            let work = async {
+                for (&service, addrs) in &service_entries {
+                    for addr in addrs {
+                        register(&store, service, &addr).await.unwrap();
+                    }
+                }
+
+                let mut actual = HashMap::<ServiceType, HashSet<String>>::new();
+                for &service in service_entries.keys() {
+                    let mut addrs = HashSet::new();
+                    for addr in get_addrs(&store, service).await.unwrap() {
+                        addrs.insert(addr);
+                    }
+                    actual.insert(service, addrs);
+                }
+                assert_eq!(actual, service_entries);
+            };
+            block_on(work);
+        }
     }
 }

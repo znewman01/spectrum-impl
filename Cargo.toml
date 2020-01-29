@@ -25,6 +25,7 @@ tonic-build = "0.1.1"
 
 [dev-dependencies]
 proptest = "0.9.4"
+proptest-derive = "0.1.2"
 criterion = "0.3.0"
 
 [[bench]]
