@@ -65,13 +65,13 @@ pub async fn set_quorum<C: Store>(config: &C, dt: DateTime<FixedOffset>) -> Resu
 }
 
 async fn wait_for_quorum_helper<C: Store>(
-    config: C,
+    config: &C,
     delay: Duration,
     attempts: usize,
 ) -> Result<DateTime<FixedOffset>, Error> {
     for _ in 0..attempts {
         println!("checking");
-        match get_start_time(&config).await? {
+        match get_start_time(config).await? {
             Some(start_time) => {
                 return Ok(start_time);
             }
@@ -84,7 +84,7 @@ async fn wait_for_quorum_helper<C: Store>(
     Err(Error::new(&msg))
 }
 
-pub async fn wait_for_quorum<C: Store>(config: C) -> Result<DateTime<FixedOffset>, Error> {
+pub async fn wait_for_quorum<C: Store>(config: &C) -> Result<DateTime<FixedOffset>, Error> {
     wait_for_quorum_helper(config, RETRY_DELAY, RETRY_ATTEMPTS).await
 }
 
@@ -104,11 +104,13 @@ mod test {
     #[tokio::test(threaded_scheduler)]
     async fn test_wait_for_quorum() {
         let store = config::factory::from_string("").expect("Failed to create store.");
+        let inner_store = store.clone();
         let (tx, mut rx) = channel();
-        let handle = tokio::spawn(
-            wait_for_quorum_helper(store.clone(), Duration::from_millis(0), 2)
-                .inspect(|_| tx.send(()).unwrap()),
-        );
+        let handle = tokio::spawn(async move {
+            wait_for_quorum_helper(&inner_store, Duration::from_millis(0), 2)
+                .inspect(|_| tx.send(()).unwrap())
+                .await
+        });
         yield_now().await;
 
         assert_eq!(
@@ -128,7 +130,7 @@ mod test {
     #[tokio::test]
     async fn test_wait_for_quorum_failure() {
         let store = config::factory::from_string("").expect("Failed to create store.");
-        let result = wait_for_quorum_helper(store, Duration::from_millis(0), 1).await;
+        let result = wait_for_quorum_helper(&store, Duration::from_millis(0), 1).await;
         result.expect_err("Expected failure, as quorum never reached.");
     }
 
