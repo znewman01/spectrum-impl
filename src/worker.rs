@@ -1,7 +1,6 @@
 use crate::config;
 use crate::health::{wait_for_health, AllGoodHealthServer, HealthServer};
-use crate::quorum;
-use chrono::prelude::*;
+use crate::quorum::{register, ServiceType};
 use config::store::Store;
 use futures::Future;
 use log::{debug, error, info, trace};
@@ -59,11 +58,10 @@ where
     );
 
     let url = format!("http://{}", addr);
-    wait_for_health(url).await?;
+    wait_for_health(url.clone()).await?;
     trace!("Worker healthy.");
 
-    let dt = DateTime::<FixedOffset>::from(Utc::now()); // TODO(zjn): should be in the future
-    quorum::set_quorum(&config_store, dt).await?;
+    register(&config_store, ServiceType::Worker, &url).await?;
     debug!("Registered with config server.");
 
     server_task.await??;
