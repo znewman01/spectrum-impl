@@ -8,6 +8,7 @@ pub mod publisher;
 pub mod worker;
 
 pub mod config;
+mod health;
 mod quorum;
 
 use log::trace;
