@@ -1,7 +1,11 @@
 use crate::{
     config::store::{Error, Store},
     experiment::Experiment,
-    services::{discovery, retry::error_policy},
+    services::{
+        discovery,
+        discovery::ServiceType::{Leader, Publisher, Worker},
+        retry::error_policy,
+    },
 };
 
 use chrono::prelude::*;
@@ -41,14 +45,25 @@ pub async fn wait_for_start_time_set<C: Store>(config: &C) -> Result<DateTime<Fi
     wait_for_start_time_set_helper(config, RETRY_DELAY, RETRY_ATTEMPTS).await
 }
 
-async fn has_quorum<C: Store>(config: &C, _experiment: Experiment) -> Result<(), Error> {
-    // TODO(zjn): flesh out
-    let workers: Vec<String> =
-        discovery::resolve_all(config, discovery::ServiceType::Worker).await?;
-    if workers.is_empty() {
-        Err(Error::new("No workers yet."))
-    } else {
+async fn has_quorum<C: Store>(config: &C, experiment: Experiment) -> Result<(), Error> {
+    let leaders = discovery::resolve_all(config, Leader).await?.len();
+    let workers = discovery::resolve_all(config, Worker).await?.len();
+    let publishers = discovery::resolve_all(config, Publisher).await?.len();
+    let actual = (leaders, workers, publishers);
+
+    let expected_leaders = experiment.num_groups as usize;
+    let expected_workers = (experiment.num_groups * experiment.num_workers_per_group) as usize;
+    let expected_publishers = 1 as usize;
+    let expected = (expected_leaders, expected_workers, expected_publishers);
+
+    if actual == expected {
         Ok(())
+    } else {
+        let msg = format!(
+            "Bad quorum count. Expected {:?}, got {:?} (leaders, workers, publishers).",
+            expected, actual
+        );
+        Err(Error::new(&msg))
     }
 }
 
@@ -73,6 +88,12 @@ pub async fn wait_for_quorum<C: Store>(config: &C, experiment: Experiment) -> Re
 mod test {
     use super::*;
     use crate::config::{factory::from_string, tests::inmem_stores};
+    use core::ops::Range;
+    use discovery::{
+        register,
+        ServiceType::{Leader, Publisher, Worker},
+    };
+    use futures::executor::block_on;
     use proptest::prelude::*;
 
     const NO_TIME: Duration = Duration::from_millis(0);
@@ -155,32 +176,136 @@ mod test {
     async fn test_wait_for_quorum_okay() {
         let config = from_string("").unwrap();
         let experiment = Experiment::new();
-        discovery::register(&config, discovery::ServiceType::Worker, "1")
+        register(&config, discovery::ServiceType::Worker, "1")
             .await
             .unwrap();
+        register(&config, discovery::ServiceType::Leader, "1")
+            .await
+            .unwrap();
+        register(&config, discovery::ServiceType::Publisher, "1")
+            .await
+            .unwrap();
+
         wait_for_quorum_helper(&config, experiment, NO_TIME, 10)
             .await
             .expect("Should succeed if quorum is ready.");
     }
 
-    #[tokio::test]
-    async fn test_has_quorum_no_quorum() {
-        let config = from_string("").unwrap();
-        let experiment = Experiment::new();
-        has_quorum(&config, experiment)
-            .await
-            .expect_err("Should not have quorum.");
+    fn experiments() -> impl Strategy<Value = Experiment> {
+        let num_groups: Range<u16> = 1..20;
+        let num_workers_per_group: Range<u16> = 1..20;
+        (num_groups, num_workers_per_group).prop_flat_map(|(g, w)| {
+            Just(Experiment {
+                num_groups: g,
+                num_workers_per_group: w,
+            })
+        })
     }
 
-    #[tokio::test]
-    async fn test_has_quorum() {
-        let config = from_string("").unwrap();
-        let experiment = Experiment::new();
-        discovery::register(&config, discovery::ServiceType::Worker, "1")
-            .await
-            .unwrap();
-        has_quorum(&config, experiment)
-            .await
-            .expect("Should have quorum.");
+    async fn run_quorum_test<C: Store>(
+        config: &C,
+        experiment: Experiment,
+        num_leaders: u16,
+        num_workers: u16,
+        num_publishers: u16,
+    ) -> Result<(), Error> {
+        for leader_idx in 0..num_leaders {
+            register(config, Leader, &format!("{}", leader_idx)).await?;
+        }
+        for worker_idx in 0..num_workers {
+            register(config, Worker, &format!("{}", worker_idx)).await?;
+        }
+        for publisher_idx in 0..num_publishers {
+            register(config, Publisher, &format!("{}", publisher_idx)).await?;
+        }
+
+        has_quorum(config, experiment).await
+    }
+
+    proptest! {
+        #[test]
+        fn test_has_quorum_no_publisher(
+            config in inmem_stores(),
+            experiment in experiments()
+        ) {
+            let leaders = experiment.num_groups ;
+            let workers = experiment.num_workers_per_group * experiment.num_groups;
+            let publishers = 0;
+            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
+                .expect_err("No publisher--should error.");
+        }
+
+        #[test]
+        fn test_has_quorum_too_few_leaders(
+            config in inmem_stores(),
+            experiment in experiments()
+        ) {
+            let leaders = experiment.num_groups - 1;
+            let workers = experiment.num_workers_per_group * experiment.num_groups;
+            let publishers = 1;
+            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
+                .expect_err("Not enough leaders--should error.");
+        }
+
+        #[test]
+        fn test_has_quorum_too_few_workers(
+            config in inmem_stores(),
+            experiment in experiments()
+        ) {
+            let leaders = experiment.num_groups;
+            let workers = experiment.num_workers_per_group * experiment.num_groups - 1;
+            let publishers = 1;
+            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
+                .expect_err("Not enough workers--should error.");
+        }
+
+        #[test]
+        fn test_has_quorum_just_right(
+            config in inmem_stores(),
+            experiment in experiments()
+        ) {
+            let leaders = experiment.num_groups;
+            let workers = experiment.num_workers_per_group * experiment.num_groups;
+            let publishers = 1;
+            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
+                .expect("Should have quorum.");
+        }
+
+        #[test]
+        fn test_has_quorum_many_publisher(
+            config in inmem_stores(),
+            experiment in experiments()
+        ) {
+            let leaders = experiment.num_groups ;
+            let workers = experiment.num_workers_per_group * experiment.num_groups;
+            let publishers = 2;
+            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
+                .expect_err("Too many publishers.");
+        }
+
+        #[test]
+        fn test_has_quorum_too_many_leaders(
+            config in inmem_stores(),
+            experiment in experiments()
+        ) {
+            let leaders = experiment.num_groups + 1;
+            let workers = experiment.num_workers_per_group * experiment.num_groups;
+            let publishers = 1;
+            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
+                .expect_err("Too many leaders--should error.");
+        }
+
+        #[test]
+        fn test_has_quorum_too_many_workers(
+            config in inmem_stores(),
+            experiment in experiments()
+        ) {
+            let leaders = experiment.num_groups;
+            let workers = experiment.num_workers_per_group * experiment.num_groups + 1;
+            let publishers = 1;
+            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
+                .expect_err("Too many workers--should error.");
+        }
+
     }
 }

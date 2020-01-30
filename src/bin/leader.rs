@@ -1,6 +1,7 @@
-use futures::executor::block_on;
-use spectrum_impl::leader;
+use spectrum_impl::{config, leader};
 
-fn main() {
-    block_on(leader::run());
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = config::from_env()?;
+    leader::run(&config).await
 }

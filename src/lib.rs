@@ -28,7 +28,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         client::run(config_store.clone()).then(|_| { barrier.wait() }),
         worker::run(config_store.clone(), shutdown),
         publisher::run(config_store.clone()),
-        leader::run()
+        leader::run(&config_store)
     );
 
     Ok(())
