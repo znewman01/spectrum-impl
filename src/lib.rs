@@ -10,6 +10,7 @@ pub mod publisher;
 pub mod worker;
 
 pub mod config;
+mod experiment;
 mod services;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
