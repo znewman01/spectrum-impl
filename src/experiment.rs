@@ -23,7 +23,6 @@ impl Experiment {
     }
 }
 
-#[allow(dead_code)]
 pub async fn write_to_store<C: Store>(config: &C, experiment: Experiment) -> Result<(), Error> {
     let json_str =
         serde_json::to_string(&experiment).map_err(|err| Error::new(&err.to_string()))?;
@@ -36,7 +35,6 @@ pub async fn write_to_store<C: Store>(config: &C, experiment: Experiment) -> Res
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn read_from_store<C: Store>(config: &C) -> Result<Experiment, Error> {
     let json_str = config
         .get(vec!["experiment".to_string(), "config".to_string()])
