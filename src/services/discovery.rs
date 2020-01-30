@@ -4,6 +4,7 @@ use config::store::{Error, Key, Store};
 #[cfg(test)] // TODO(zjn): move to mod tests (https://github.com/AltSysrq/proptest/pull/106)
 use proptest_derive::Arbitrary;
 
+// TODO(zjn): make these store group/idx info in them
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum ServiceType {
