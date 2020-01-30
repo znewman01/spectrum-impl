@@ -1,20 +1,24 @@
 use crate::config;
+use crate::services::retry::error_policy;
 
 use chrono::prelude::*;
 use config::store::{Error, Store};
+use futures_retry::FutureRetry;
 use std::time::Duration;
-use tokio::time::delay_for;
 
 // TODO(zjn): make configurable. Short for local testing; long for real deployments
 const RETRY_DELAY: Duration = Duration::from_millis(100);
 const RETRY_ATTEMPTS: usize = 1000;
 
-async fn get_start_time<C: Store>(config: &C) -> Result<Option<DateTime<FixedOffset>>, Error> {
+async fn get_start_time<C: Store>(config: &C) -> Result<DateTime<FixedOffset>, Error> {
     let key = vec!["experiment".to_string(), "start-time".to_string()];
-    let start_time_str: Option<String> = config.get(key).await?;
-    start_time_str
-        .map(|s| DateTime::parse_from_rfc3339(&s).map_err(|err| Error::new(&err.to_string())))
-        .transpose()
+    let start_time_str: String = config
+        .get(key)
+        .await?
+        .ok_or_else(|| Error::new("Empty start time."))?;
+    let start_time = DateTime::parse_from_rfc3339(&start_time_str)
+        .map_err(|err| Error::new(&err.to_string()))?;
+    Ok(start_time)
 }
 
 pub async fn set_start_time<C: Store>(config: &C, dt: DateTime<FixedOffset>) -> Result<(), Error> {
@@ -28,18 +32,7 @@ async fn wait_for_start_time_set_helper<C: Store>(
     delay: Duration,
     attempts: usize,
 ) -> Result<DateTime<FixedOffset>, Error> {
-    for _ in 0..attempts {
-        match get_start_time(config).await? {
-            Some(start_time) => {
-                return Ok(start_time);
-            }
-            None => {
-                delay_for(delay).await;
-            }
-        };
-    }
-    let msg = format!("Start time not observed set after {} attempts", attempts);
-    Err(Error::new(&msg))
+    FutureRetry::new(|| get_start_time(config), error_policy(delay, attempts)).await
 }
 
 pub async fn wait_for_start_time_set<C: Store>(config: &C) -> Result<DateTime<FixedOffset>, Error> {
@@ -49,41 +42,73 @@ pub async fn wait_for_start_time_set<C: Store>(config: &C) -> Result<DateTime<Fi
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::config;
-    use futures::FutureExt;
-    use tokio::sync::oneshot::{channel, error::TryRecvError};
-    use tokio::task::yield_now;
+    use crate::config::{factory::from_string, tests::inmem_stores};
+    use proptest::prelude::*;
 
-    #[tokio::test(threaded_scheduler)]
-    async fn test_wait_for_start_time_set() {
-        let store = config::factory::from_string("").expect("Failed to create store.");
-        let inner_store = store.clone();
-        let (tx, mut rx) = channel();
-        let handle = tokio::spawn(async move {
-            wait_for_start_time_set_helper(&inner_store, Duration::from_millis(0), 2)
-                .inspect(|_| tx.send(()).unwrap())
-                .await
-        });
-        yield_now().await;
+    const NO_TIME: Duration = Duration::from_millis(0);
 
-        assert_eq!(
-            rx.try_recv().expect_err("Task not have completed yet."),
-            TryRecvError::Empty
-        );
+    prop_compose! {
+        fn datetimes()
+            (year in 1970i32..3000i32,
+             month in 1u32..=12u32,
+             day in 1u32..28u32,
+             hours in 0u32..24u32,
+             minutes in 0u32..60u32,
+             seconds in 0u32..60u32) -> DateTime<FixedOffset> {
+                FixedOffset::east(0)
+                    .ymd(year, month, day)
+                    .and_hms(hours, minutes, seconds)
+            }
+    }
 
-        let dt = DateTime::<FixedOffset>::from(Utc::now());
-        set_start_time(&store, dt).await.unwrap();
-
-        let result = handle
-            .await
-            .expect("Task should have completed without crashing.");
-        result.expect("Task should have been successsful.");
+    proptest! {
+        #[test]
+        fn test_set_and_get_start_time(config in inmem_stores(), dt in datetimes()) {
+            futures::executor::block_on(async {
+                set_start_time(&config, dt).await?;
+                assert_eq!(get_start_time(&config).await?, dt);
+                Ok::<(), Error>(())
+            }).unwrap();
+        }
     }
 
     #[tokio::test]
-    async fn test_wait_for_start_time_set_failure() {
-        let store = config::factory::from_string("").expect("Failed to create store.");
-        let result = wait_for_start_time_set_helper(&store, Duration::from_millis(0), 1).await;
-        result.expect_err("Expected failure, as quorum never reached.");
+    async fn test_get_start_time_missing_entry() {
+        let config = from_string("").unwrap();
+        get_start_time(&config)
+            .await
+            .expect_err("Empty config should result in error.");
+    }
+
+    #[tokio::test]
+    async fn test_get_start_time_malformed_entry() {
+        let config = from_string("").unwrap();
+        let key = vec!["experiment".to_string(), "start-time".to_string()];
+        config
+            .put(key, "not a valid RFC 3339 date".to_string())
+            .await
+            .unwrap();
+        get_start_time(&config)
+            .await
+            .expect_err("Malformed entry should result in error.");
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_start_time_set_unset() {
+        let config = from_string("").unwrap();
+        wait_for_start_time_set_helper(&config, NO_TIME, 10)
+            .await
+            .expect_err("Should fail if start time is never set.");
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_start_time_set_okay() {
+        let config = from_string("").unwrap();
+        set_start_time(&config, DateTime::<FixedOffset>::from(Utc::now()))
+            .await
+            .unwrap();
+        wait_for_start_time_set_helper(&config, NO_TIME, 10)
+            .await
+            .expect("Should succeed if start time is set.");
     }
 }
