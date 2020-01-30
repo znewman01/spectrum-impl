@@ -13,8 +13,12 @@ pub mod config;
 mod experiment;
 mod services;
 
+use experiment::Experiment;
+
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config_store = config::from_env()?;
+    let experiment = Experiment::new();
+    experiment::write_to_store(&config_store, experiment).await?;
     let barrier = Arc::new(Barrier::new(2));
     let barrier2 = barrier.clone();
     let shutdown = async move {

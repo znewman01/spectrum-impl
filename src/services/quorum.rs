@@ -1,5 +1,6 @@
 use crate::{
     config::store::{Error, Store},
+    experiment::Experiment,
     services::{discovery, retry::error_policy},
 };
 
@@ -40,7 +41,7 @@ pub async fn wait_for_start_time_set<C: Store>(config: &C) -> Result<DateTime<Fi
     wait_for_start_time_set_helper(config, RETRY_DELAY, RETRY_ATTEMPTS).await
 }
 
-async fn has_quorum<C: Store>(config: &C) -> Result<(), Error> {
+async fn has_quorum<C: Store>(config: &C, _experiment: Experiment) -> Result<(), Error> {
     // TODO(zjn): flesh out
     let workers: Vec<String> =
         discovery::resolve_all(config, discovery::ServiceType::Worker).await?;
@@ -53,14 +54,19 @@ async fn has_quorum<C: Store>(config: &C) -> Result<(), Error> {
 
 async fn wait_for_quorum_helper<C: Store>(
     config: &C,
+    experiment: Experiment,
     delay: Duration,
     attempts: usize,
 ) -> Result<(), Error> {
-    FutureRetry::new(|| has_quorum(config), error_policy(delay, attempts)).await
+    FutureRetry::new(
+        || has_quorum(config, experiment),
+        error_policy(delay, attempts),
+    )
+    .await
 }
 
-pub async fn wait_for_quorum<C: Store>(config: &C) -> Result<(), Error> {
-    wait_for_quorum_helper(config, RETRY_DELAY, RETRY_ATTEMPTS).await
+pub async fn wait_for_quorum<C: Store>(config: &C, experiment: Experiment) -> Result<(), Error> {
+    wait_for_quorum_helper(config, experiment, RETRY_DELAY, RETRY_ATTEMPTS).await
 }
 
 #[cfg(test)]
@@ -139,7 +145,8 @@ mod test {
     #[tokio::test]
     async fn test_wait_for_quorum_not_ready() {
         let config = from_string("").unwrap();
-        wait_for_quorum_helper(&config, NO_TIME, 10)
+        let experiment = Experiment::new();
+        wait_for_quorum_helper(&config, experiment, NO_TIME, 10)
             .await
             .expect_err("Should fail if no quorum.");
     }
@@ -147,10 +154,11 @@ mod test {
     #[tokio::test]
     async fn test_wait_for_quorum_okay() {
         let config = from_string("").unwrap();
+        let experiment = Experiment::new();
         discovery::register(&config, discovery::ServiceType::Worker, "1")
             .await
             .unwrap();
-        wait_for_quorum_helper(&config, NO_TIME, 10)
+        wait_for_quorum_helper(&config, experiment, NO_TIME, 10)
             .await
             .expect("Should succeed if quorum is ready.");
     }
@@ -158,7 +166,8 @@ mod test {
     #[tokio::test]
     async fn test_has_quorum_no_quorum() {
         let config = from_string("").unwrap();
-        has_quorum(&config)
+        let experiment = Experiment::new();
+        has_quorum(&config, experiment)
             .await
             .expect_err("Should not have quorum.");
     }
@@ -166,9 +175,12 @@ mod test {
     #[tokio::test]
     async fn test_has_quorum() {
         let config = from_string("").unwrap();
+        let experiment = Experiment::new();
         discovery::register(&config, discovery::ServiceType::Worker, "1")
             .await
             .unwrap();
-        has_quorum(&config).await.expect("Should have quorum.");
+        has_quorum(&config, experiment)
+            .await
+            .expect("Should have quorum.");
     }
 }
