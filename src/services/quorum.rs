@@ -1,8 +1,9 @@
-use crate::config;
-use crate::services::retry::error_policy;
+use crate::{
+    config::store::{Error, Store},
+    services::{discovery, retry::error_policy},
+};
 
 use chrono::prelude::*;
-use config::store::{Error, Store};
 use futures_retry::FutureRetry;
 use std::time::Duration;
 
@@ -37,6 +38,29 @@ async fn wait_for_start_time_set_helper<C: Store>(
 
 pub async fn wait_for_start_time_set<C: Store>(config: &C) -> Result<DateTime<FixedOffset>, Error> {
     wait_for_start_time_set_helper(config, RETRY_DELAY, RETRY_ATTEMPTS).await
+}
+
+async fn has_quorum<C: Store>(config: &C) -> Result<(), Error> {
+    // TODO(zjn): flesh out
+    let workers: Vec<String> =
+        discovery::resolve_all(config, discovery::ServiceType::Worker).await?;
+    if workers.is_empty() {
+        Err(Error::new("No workers yet."))
+    } else {
+        Ok(())
+    }
+}
+
+async fn wait_for_quorum_helper<C: Store>(
+    config: &C,
+    delay: Duration,
+    attempts: usize,
+) -> Result<(), Error> {
+    FutureRetry::new(|| has_quorum(config), error_policy(delay, attempts)).await
+}
+
+pub async fn wait_for_quorum<C: Store>(config: &C) -> Result<(), Error> {
+    wait_for_quorum_helper(config, RETRY_DELAY, RETRY_ATTEMPTS).await
 }
 
 #[cfg(test)]
@@ -110,5 +134,41 @@ mod test {
         wait_for_start_time_set_helper(&config, NO_TIME, 10)
             .await
             .expect("Should succeed if start time is set.");
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_quorum_not_ready() {
+        let config = from_string("").unwrap();
+        wait_for_quorum_helper(&config, NO_TIME, 10)
+            .await
+            .expect_err("Should fail if no quorum.");
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_quorum_okay() {
+        let config = from_string("").unwrap();
+        discovery::register(&config, discovery::ServiceType::Worker, "1")
+            .await
+            .unwrap();
+        wait_for_quorum_helper(&config, NO_TIME, 10)
+            .await
+            .expect("Should succeed if quorum is ready.");
+    }
+
+    #[tokio::test]
+    async fn test_has_quorum_no_quorum() {
+        let config = from_string("").unwrap();
+        has_quorum(&config)
+            .await
+            .expect_err("Should not have quorum.");
+    }
+
+    #[tokio::test]
+    async fn test_has_quorum() {
+        let config = from_string("").unwrap();
+        discovery::register(&config, discovery::ServiceType::Worker, "1")
+            .await
+            .unwrap();
+        has_quorum(&config).await.expect("Should have quorum.");
     }
 }
