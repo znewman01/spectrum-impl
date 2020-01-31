@@ -9,17 +9,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub struct Experiment {
-    // TODO(zjn): rename
-    pub num_groups: u16,
-    pub num_workers_per_group: u16,
+    pub groups: u16,
+    pub workers_per_group: u16,
 }
 
 impl Experiment {
     pub fn new() -> Experiment {
         // TODO(zjn): validate
         Experiment {
-            num_groups: 1,
-            num_workers_per_group: 1,
+            groups: 1,
+            workers_per_group: 1,
         }
     }
 }
