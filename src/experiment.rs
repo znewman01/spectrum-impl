@@ -1,8 +1,13 @@
 #![allow(clippy::unit_arg)] // weird cargo clippy bug; complains about "derive(Arbitrary)"
 
 use crate::config::store::{Error, Store};
+use crate::services::discovery::{
+    Group, Service,
+    Service::{Leader, Publisher, Worker},
+};
 
 use serde::{Deserialize, Serialize};
+use std::iter::once;
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq)]
 pub struct Experiment {
@@ -23,6 +28,17 @@ impl Experiment {
             groups,
             workers_per_group,
         }
+    }
+
+    pub fn iter_services(self) -> impl Iterator<Item = Service> {
+        let publishers = once(Publisher);
+        let groups = (0..self.groups).map(Group);
+        let leaders = groups.clone().map(|group| Leader { group });
+        let workers = groups.flat_map(move |group| {
+            (0..self.workers_per_group).map(move |idx| Worker { group, idx })
+        });
+
+        publishers.chain(leaders).chain(workers)
     }
 }
 
@@ -68,6 +84,27 @@ pub mod tests {
                     read_from_store(&config).await.unwrap(),
                     experiment);
             });
+        }
+
+        #[test]
+        fn test_experiment_iter_services(experiment in experiments()) {
+            let services: Vec<Service> = experiment.iter_services().collect();
+
+            let mut publishers = vec![];
+            let mut leaders = vec![];
+            let mut workers = vec![];
+            for service in services {
+                match service {
+                    Publisher => { publishers.push(service) },
+                    Leader { .. } => { leaders.push(service) },
+                    Worker { .. } => { workers.push(service) },
+                }
+            }
+            let actual = (publishers.len(), leaders.len(), workers.len());
+            let expected = (1,
+                            experiment.groups as usize,
+                            (experiment.groups * experiment.workers_per_group) as usize);
+            prop_assert_eq!(actual, expected);
         }
     }
 }

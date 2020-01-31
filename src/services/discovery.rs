@@ -81,7 +81,7 @@ pub async fn resolve_all<C: Store>(config: &C) -> Result<Vec<Node>, Error> {
 }
 
 #[cfg(test)]
-mod test {
+pub mod tests {
     use super::*;
     use crate::{config, net::tests::addrs};
     use config::tests::inmem_stores;
@@ -91,7 +91,7 @@ mod test {
     use std::collections::HashSet;
     use std::iter::FromIterator;
 
-    fn services() -> impl Strategy<Value = Service> {
+    pub fn services() -> impl Strategy<Value = Service> {
         prop_oneof![
             Just(Service::Publisher),
             any::<u16>().prop_map(|group| Service::Leader {

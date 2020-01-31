@@ -2,14 +2,15 @@ use crate::{
     config::store::{Error, Store},
     experiment::Experiment,
     services::{
-        discovery,
-        discovery::Service::{Leader, Publisher, Worker},
+        discovery::{resolve_all, Service},
         retry::error_policy,
     },
 };
 
 use chrono::prelude::*;
 use futures_retry::FutureRetry;
+use std::collections::HashSet;
+use std::iter::FromIterator;
 use std::time::Duration;
 
 // TODO(zjn): make configurable. Short for local testing; long for real deployments
@@ -46,41 +47,19 @@ pub async fn wait_for_start_time_set<C: Store>(config: &C) -> Result<DateTime<Fi
 }
 
 async fn has_quorum<C: Store>(config: &C, experiment: Experiment) -> Result<(), Error> {
-    let nodes = discovery::resolve_all(config).await?;
-    let leaders = nodes
-        .iter()
-        .filter(|node| match node.service {
-            Leader { .. } => true,
-            _ => false,
-        })
-        .count();
-    let workers = nodes
-        .iter()
-        .filter(|node| match node.service {
-            Worker { .. } => true,
-            _ => false,
-        })
-        .count();
-    let publishers = nodes
-        .iter()
-        .filter(|node| match node.service {
-            Publisher => true,
-            _ => false,
-        })
-        .count();
-    let actual = (leaders, workers, publishers);
-
-    let expected_leaders = experiment.groups as usize;
-    let expected_workers = (experiment.groups * experiment.workers_per_group) as usize;
-    let expected_publishers = 1 as usize;
-    let expected = (expected_leaders, expected_workers, expected_publishers);
+    let nodes = resolve_all(config).await?;
+    let actual: HashSet<Service> = HashSet::from_iter(nodes.iter().map(|node| node.service));
+    let expected: HashSet<Service> = HashSet::from_iter(experiment.iter_services());
 
     if actual == expected {
         Ok(())
     } else {
         let msg = format!(
-            "Bad quorum count. Expected {:?}, got {:?} (leaders, workers, publishers).",
-            expected, actual
+            "Bad quorum. \n\
+             Expected {:?} but did not see.\n\"
+             Got {:?} but did not expect to.",
+            expected.difference(&actual),
+            actual.difference(&expected)
         );
         Err(Error::new(&msg))
     }
@@ -106,14 +85,17 @@ pub async fn wait_for_quorum<C: Store>(config: &C, experiment: Experiment) -> Re
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::config::{factory::from_string, tests::inmem_stores};
-    use crate::experiment::tests::experiments;
-    use discovery::{
-        register, Group, Node,
-        Service::{Leader, Publisher, Worker},
+    use crate::{
+        config::{factory::from_string, tests::inmem_stores},
+        experiment::tests::experiments,
+        net::tests::addrs,
+        services::discovery::{register, tests::services, Node},
     };
     use futures::executor::block_on;
+    use prop::bits::bool_vec;
     use proptest::prelude::*;
+    use std::fmt::Debug;
+    use std::iter::once;
     use std::net::SocketAddr;
 
     const NO_TIME: Duration = Duration::from_millis(0);
@@ -200,130 +182,84 @@ mod test {
     async fn test_wait_for_quorum_okay() {
         let config = from_string("").unwrap();
         let experiment = Experiment::new(1, 1);
-        register(
-            &config,
-            Node::new(
-                Worker {
-                    group: Group(0),
-                    idx: 0,
-                },
-                addr(),
-            ),
-        )
-        .await
-        .unwrap();
-        register(&config, Node::new(Leader { group: Group(0) }, addr()))
-            .await
-            .unwrap();
-        register(&config, Node::new(Publisher, addr()))
-            .await
-            .unwrap();
+        for service in experiment.iter_services() {
+            let node = Node::new(service, addr());
+            register(&config, node).await.unwrap();
+        }
 
         wait_for_quorum_helper(&config, experiment, NO_TIME, 10)
             .await
             .expect("Should succeed if quorum is ready.");
     }
 
-    async fn run_quorum_test<C: Store>(
+    async fn run_quorum_test<C: Store, I: Iterator<Item = Node>>(
         config: &C,
         experiment: Experiment,
-        leaders: u16,
-        workers: u16,
-        publishers: u16,
+        nodes: I,
     ) -> Result<(), Error> {
-        for leader_idx in 0..leaders {
-            let leader = Leader {
-                group: Group(leader_idx),
-            };
-            register(config, Node::new(leader, addr())).await?;
+        for node in nodes {
+            register(config, node).await?;
         }
-        for worker_idx in 0..workers {
-            let worker = Worker {
-                group: Group(0),
-                idx: worker_idx,
-            };
-            register(config, Node::new(worker, addr())).await?;
-        }
-        for _ in 0..publishers {
-            let publisher = Publisher;
-            register(config, Node::new(publisher, addr())).await?;
-        }
-
         has_quorum(config, experiment).await
+    }
+
+    fn experiments_and_nodes() -> impl Strategy<Value = (Experiment, Vec<Node>)> {
+        experiments().prop_flat_map(|experiment| {
+            let nodes = experiment
+                .iter_services()
+                .map(|service| Node::new(service, addr()))
+                .collect();
+            Just((experiment, nodes))
+        })
+    }
+
+    // Given a vector, return a strategy for generating subsets of that vector.
+    fn subset<T: Debug + Clone>(vec: Vec<T>) -> impl Strategy<Value = Vec<T>> {
+        let count = vec.len();
+        bool_vec::sampled(0..count, 0..count).prop_map(move |bits: Vec<bool>| {
+            bits.iter()
+                .zip(vec.iter().cloned())
+                .filter_map(|(include, item)| match include {
+                    true => Some(item),
+                    false => None,
+                })
+                .collect()
+        })
     }
 
     proptest! {
         #[test]
-        fn test_has_quorum_no_publisher(
+        fn test_has_quorum_too_many(
             config in inmem_stores(),
-            experiment in experiments()
+            (experiment, nodes) in experiments_and_nodes(),
+            extra_service in services(),
+            addr in addrs(),
         ) {
-            let leaders = experiment.groups ;
-            let workers = experiment.workers_per_group * experiment.groups;
-            let publishers = 0;
-            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
-                .expect_err("No publisher--should error.");
+            let services: Vec<Service> =experiment.iter_services().collect();
+            prop_assume!(!services.contains(&extra_service));
+            let nodes = nodes.into_iter().chain(once(Node::new(extra_service, addr)));
+            block_on(run_quorum_test(&config, experiment, nodes))
+                .expect_err("Unexpected nodes--should error.");
         }
 
         #[test]
-        fn test_has_quorum_too_few_leaders(
+        fn test_has_quorum_too_few(
             config in inmem_stores(),
-            experiment in experiments()
+            (experiment, nodes) in experiments_and_nodes().prop_flat_map(|(experiment, nodes)|
+                (Just(experiment), subset(nodes))
+            ),
         ) {
-            let leaders = experiment.groups - 1;
-            let workers = experiment.workers_per_group * experiment.groups;
-            let publishers = 1;
-            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
-                .expect_err("Not enough leaders--should error.");
-        }
-
-        #[test]
-        fn test_has_quorum_too_few_workers(
-            config in inmem_stores(),
-            experiment in experiments()
-        ) {
-            let leaders = experiment.groups;
-            let workers = experiment.workers_per_group * experiment.groups - 1;
-            let publishers = 1;
-            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
-                .expect_err("Not enough workers--should error.");
+            block_on(run_quorum_test(&config, experiment, nodes.into_iter()))
+                .expect_err("Expected nodes missing--should error.");
         }
 
         #[test]
         fn test_has_quorum_just_right(
             config in inmem_stores(),
-            experiment in experiments()
+            (experiment, nodes) in experiments_and_nodes()
         ) {
-            let leaders = experiment.groups;
-            let workers = experiment.workers_per_group * experiment.groups;
-            let publishers = 1;
-            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
+            block_on(run_quorum_test(&config, experiment, nodes.into_iter()))
                 .expect("Should have quorum.");
         }
-
-        #[test]
-        fn test_has_quorum_too_many_leaders(
-            config in inmem_stores(),
-            experiment in experiments()
-        ) {
-            let leaders = experiment.groups + 1;
-            let workers = experiment.workers_per_group * experiment.groups;
-            let publishers = 1;
-            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
-                .expect_err("Too many leaders--should error.");
-        }
-
-        #[test]
-        fn test_has_quorum_too_many_workers(
-            config in inmem_stores(),
-            experiment in experiments()
-        ) {
-            let leaders = experiment.groups;
-            let workers = experiment.workers_per_group * experiment.groups + 1;
-            let publishers = 1;
-            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
-                .expect_err("Too many workers--should error.");
-        }
-
     }
 }
