@@ -1,6 +1,7 @@
 use crate::{
     config::store::Store,
     experiment,
+    net::get_addr,
     services::{
         discovery::{register, Node, Service},
         quorum::{set_start_time, wait_for_quorum},
@@ -8,11 +9,10 @@ use crate::{
 };
 use chrono::prelude::*;
 use log::{debug, info};
-use std::net::SocketAddr;
 
 pub async fn run<C: Store>(config: C) -> Result<(), Box<dyn std::error::Error>> {
     info!("Publisher starting up.");
-    let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), 50053);
+    let addr = get_addr();
 
     let node = Node::new(Service::Publisher, addr);
     register(&config, node).await?;

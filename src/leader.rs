@@ -1,13 +1,13 @@
 use crate::{
     config::store::Store,
+    net::get_addr,
     services::discovery::{register, Group, Node, Service},
 };
 use log::{debug, info};
-use std::net::SocketAddr;
 
 pub async fn run<C: Store>(config: &C) -> Result<(), Box<dyn std::error::Error>> {
     info!("Leader starting up.");
-    let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), 50052);
+    let addr = get_addr();
 
     let node = Node::new(Service::Leader { group: Group(0) }, addr);
     register(config, node).await?;

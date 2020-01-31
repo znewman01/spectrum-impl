@@ -29,7 +29,7 @@ pub async fn run<C: Store>(config_store: C) -> Result<(), Box<dyn std::error::Er
         .unwrap()
         .addr
         .to_string();
-    let mut client = WorkerClient::connect(worker_addr).await?;
+    let mut client = WorkerClient::connect(format!("http://{}", worker_addr)).await?;
 
     let req = tonic::Request::new(UploadRequest {
         client_id: Some(ClientId {
