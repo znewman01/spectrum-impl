@@ -51,8 +51,8 @@ async fn has_quorum<C: Store>(config: &C, experiment: Experiment) -> Result<(), 
     let publishers = discovery::resolve_all(config, Publisher).await?.len();
     let actual = (leaders, workers, publishers);
 
-    let expected_leaders = experiment.num_groups as usize;
-    let expected_workers = (experiment.num_groups * experiment.num_workers_per_group) as usize;
+    let expected_leaders = experiment.groups as usize;
+    let expected_workers = (experiment.groups * experiment.workers_per_group) as usize;
     let expected_publishers = 1 as usize;
     let expected = (expected_leaders, expected_workers, expected_publishers);
 
@@ -192,12 +192,12 @@ mod test {
     }
 
     fn experiments() -> impl Strategy<Value = Experiment> {
-        let num_groups: Range<u16> = 1..20;
-        let num_workers_per_group: Range<u16> = 1..20;
-        (num_groups, num_workers_per_group).prop_flat_map(|(g, w)| {
+        let groups: Range<u16> = 1..20;
+        let workers_per_group: Range<u16> = 1..20;
+        (groups, workers_per_group).prop_flat_map(|(g, w)| {
             Just(Experiment {
-                num_groups: g,
-                num_workers_per_group: w,
+                groups: g,
+                workers_per_group: w,
             })
         })
     }
@@ -205,17 +205,17 @@ mod test {
     async fn run_quorum_test<C: Store>(
         config: &C,
         experiment: Experiment,
-        num_leaders: u16,
-        num_workers: u16,
-        num_publishers: u16,
+        leaders: u16,
+        workers: u16,
+        publishers: u16,
     ) -> Result<(), Error> {
-        for leader_idx in 0..num_leaders {
+        for leader_idx in 0..leaders {
             register(config, Leader, &format!("{}", leader_idx)).await?;
         }
-        for worker_idx in 0..num_workers {
+        for worker_idx in 0..workers {
             register(config, Worker, &format!("{}", worker_idx)).await?;
         }
-        for publisher_idx in 0..num_publishers {
+        for publisher_idx in 0..publishers {
             register(config, Publisher, &format!("{}", publisher_idx)).await?;
         }
 
@@ -228,8 +228,8 @@ mod test {
             config in inmem_stores(),
             experiment in experiments()
         ) {
-            let leaders = experiment.num_groups ;
-            let workers = experiment.num_workers_per_group * experiment.num_groups;
+            let leaders = experiment.groups ;
+            let workers = experiment.workers_per_group * experiment.groups;
             let publishers = 0;
             block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
                 .expect_err("No publisher--should error.");
@@ -240,8 +240,8 @@ mod test {
             config in inmem_stores(),
             experiment in experiments()
         ) {
-            let leaders = experiment.num_groups - 1;
-            let workers = experiment.num_workers_per_group * experiment.num_groups;
+            let leaders = experiment.groups - 1;
+            let workers = experiment.workers_per_group * experiment.groups;
             let publishers = 1;
             block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
                 .expect_err("Not enough leaders--should error.");
@@ -252,8 +252,8 @@ mod test {
             config in inmem_stores(),
             experiment in experiments()
         ) {
-            let leaders = experiment.num_groups;
-            let workers = experiment.num_workers_per_group * experiment.num_groups - 1;
+            let leaders = experiment.groups;
+            let workers = experiment.workers_per_group * experiment.groups - 1;
             let publishers = 1;
             block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
                 .expect_err("Not enough workers--should error.");
@@ -264,8 +264,8 @@ mod test {
             config in inmem_stores(),
             experiment in experiments()
         ) {
-            let leaders = experiment.num_groups;
-            let workers = experiment.num_workers_per_group * experiment.num_groups;
+            let leaders = experiment.groups;
+            let workers = experiment.workers_per_group * experiment.groups;
             let publishers = 1;
             block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
                 .expect("Should have quorum.");
@@ -276,8 +276,8 @@ mod test {
             config in inmem_stores(),
             experiment in experiments()
         ) {
-            let leaders = experiment.num_groups ;
-            let workers = experiment.num_workers_per_group * experiment.num_groups;
+            let leaders = experiment.groups ;
+            let workers = experiment.workers_per_group * experiment.groups;
             let publishers = 2;
             block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
                 .expect_err("Too many publishers.");
@@ -288,8 +288,8 @@ mod test {
             config in inmem_stores(),
             experiment in experiments()
         ) {
-            let leaders = experiment.num_groups + 1;
-            let workers = experiment.num_workers_per_group * experiment.num_groups;
+            let leaders = experiment.groups + 1;
+            let workers = experiment.workers_per_group * experiment.groups;
             let publishers = 1;
             block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
                 .expect_err("Too many leaders--should error.");
@@ -300,8 +300,8 @@ mod test {
             config in inmem_stores(),
             experiment in experiments()
         ) {
-            let leaders = experiment.num_groups;
-            let workers = experiment.num_workers_per_group * experiment.num_groups + 1;
+            let leaders = experiment.groups;
+            let workers = experiment.workers_per_group * experiment.groups + 1;
             let publishers = 1;
             block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
                 .expect_err("Too many workers--should error.");
