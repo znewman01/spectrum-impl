@@ -88,7 +88,7 @@ pub async fn wait_for_quorum<C: Store>(config: &C, experiment: Experiment) -> Re
 mod test {
     use super::*;
     use crate::config::{factory::from_string, tests::inmem_stores};
-    use core::ops::Range;
+    use crate::experiment::tests::experiments;
     use discovery::{
         register,
         ServiceType::{Leader, Publisher, Worker},
@@ -166,7 +166,7 @@ mod test {
     #[tokio::test]
     async fn test_wait_for_quorum_not_ready() {
         let config = from_string("").unwrap();
-        let experiment = Experiment::new();
+        let experiment = Experiment::new(1, 1);
         wait_for_quorum_helper(&config, experiment, NO_TIME, 10)
             .await
             .expect_err("Should fail if no quorum.");
@@ -175,7 +175,7 @@ mod test {
     #[tokio::test]
     async fn test_wait_for_quorum_okay() {
         let config = from_string("").unwrap();
-        let experiment = Experiment::new();
+        let experiment = Experiment::new(1, 1);
         register(&config, discovery::ServiceType::Worker, "1")
             .await
             .unwrap();
@@ -189,17 +189,6 @@ mod test {
         wait_for_quorum_helper(&config, experiment, NO_TIME, 10)
             .await
             .expect("Should succeed if quorum is ready.");
-    }
-
-    fn experiments() -> impl Strategy<Value = Experiment> {
-        let groups: Range<u16> = 1..20;
-        let workers_per_group: Range<u16> = 1..20;
-        (groups, workers_per_group).prop_flat_map(|(g, w)| {
-            Just(Experiment {
-                groups: g,
-                workers_per_group: w,
-            })
-        })
     }
 
     async fn run_quorum_test<C: Store>(

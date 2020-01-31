@@ -17,7 +17,7 @@ use experiment::Experiment;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config_store = config::from_env()?;
-    let experiment = Experiment::new();
+    let experiment = Experiment::new(1, 1);
     experiment::write_to_store(&config_store, experiment).await?;
     let barrier = Arc::new(Barrier::new(2));
     let barrier2 = barrier.clone();
