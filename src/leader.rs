@@ -1,13 +1,14 @@
 use crate::{
     config::store::Store,
-    services::discovery::{register, Service},
+    services::discovery::{register, Group, Node, Service},
 };
 use log::{debug, info};
 
 pub async fn run<C: Store>(config: &C) -> Result<(), Box<dyn std::error::Error>> {
     info!("Leader starting up.");
 
-    register(config, Service::Leader, "1").await?;
+    let node = Node::new(Service::Leader { group: Group(0) }, "".to_string());
+    register(config, node).await?;
     debug!("Registered with config server.");
 
     info!("Leader shutting down.");
