@@ -39,7 +39,11 @@ async fn wait_for_start_time_set_helper<C: Store>(
     delay: Duration,
     attempts: usize,
 ) -> Result<DateTime<FixedOffset>, Error> {
-    FutureRetry::new(|| get_start_time(config), error_policy(delay, attempts)).await
+    FutureRetry::new(
+        move || get_start_time(config),
+        error_policy(delay, attempts),
+    )
+    .await
 }
 
 pub async fn wait_for_start_time_set<C: Store>(config: &C) -> Result<DateTime<FixedOffset>, Error> {
@@ -72,7 +76,7 @@ async fn wait_for_quorum_helper<C: Store>(
     attempts: usize,
 ) -> Result<(), Error> {
     FutureRetry::new(
-        || has_quorum(config, experiment),
+        move || has_quorum(config, experiment),
         error_policy(delay, attempts),
     )
     .await

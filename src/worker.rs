@@ -44,7 +44,10 @@ impl Worker for MyWorker {
     }
 }
 
-pub async fn run<C, F>(config_store: C, shutdown: F) -> Result<(), Box<dyn std::error::Error>>
+pub async fn run<C, F>(
+    config_store: C,
+    shutdown: F,
+) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
     C: Store,
     F: Future<Output = ()> + Send + 'static,

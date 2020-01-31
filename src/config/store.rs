@@ -32,9 +32,8 @@ impl From<String> for Error {
 
 impl std::error::Error for Error {}
 
-// TODO(zjn): make these return futures
 #[async_trait]
-pub trait Store: Clone + fmt::Debug {
+pub trait Store: Clone + Sync + Send + fmt::Debug {
     async fn get(&self, key: Key) -> Result<Option<Value>, Error>;
 
     async fn put(&self, key: Key, value: Value) -> Result<(), Error>;
