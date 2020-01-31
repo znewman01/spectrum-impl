@@ -11,6 +11,7 @@ pub mod worker;
 
 pub mod config;
 mod experiment;
+mod net;
 mod services;
 
 use experiment::Experiment;

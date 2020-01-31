@@ -1,6 +1,7 @@
 use crate::config;
 
 use config::store::{Error, Key, Store};
+use std::net::SocketAddr;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Group(pub u16);
@@ -36,11 +37,11 @@ impl Service {
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct Node {
     pub service: Service,
-    pub addr: String, // TODO(zjn): make a SocketAddr
+    pub addr: SocketAddr,
 }
 
 impl Node {
-    pub fn new(service: Service, addr: String) -> Node {
+    pub fn new(service: Service, addr: SocketAddr) -> Node {
         Node { service, addr }
     }
 }
@@ -74,7 +75,7 @@ pub async fn resolve_all<C: Store>(config: &C) -> Result<Vec<Node>, Error> {
                     panic!(); // TODO(zjn): better error
                 }
             };
-            Node::new(service, addr.to_string())
+            Node::new(service, addr.parse().unwrap())
         })
         .collect())
 }
@@ -82,26 +83,40 @@ pub async fn resolve_all<C: Store>(config: &C) -> Result<Vec<Node>, Error> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::config;
+    use crate::{config, net::tests::addrs};
     use config::tests::inmem_stores;
     use futures::executor::block_on;
-    use prop::collection::hash_set;
-    use prop::strategy::Union;
+    use prop::collection::hash_map;
     use proptest::prelude::*;
     use std::collections::HashSet;
     use std::iter::FromIterator;
 
     fn services() -> impl Strategy<Value = Service> {
-        Union::new(vec![Just(Service::Publisher)].into_iter())
+        prop_oneof![
+            Just(Service::Publisher),
+            any::<u16>().prop_map(|group| Service::Leader {
+                group: Group(group),
+            }),
+            (any::<u16>(), any::<u16>()).prop_map(|(group, idx)| Service::Worker {
+                group: Group(group),
+                idx
+            }),
+        ]
     }
 
-    fn nodes() -> impl Strategy<Value = Node> {
-        services().prop_map(|service| Node::new(service, "".to_string()))
+    fn node_sets() -> impl Strategy<Value = HashSet<Node>> {
+        hash_map(services(), addrs(), ..100).prop_map(|services_to_addrs| {
+            HashSet::from_iter(
+                services_to_addrs
+                    .into_iter()
+                    .map(|(service, addr)| Node::new(service, addr)),
+            )
+        })
     }
 
     proptest! {
         #[test]
-        fn test_register_and_resolve(store in inmem_stores(), nodes in hash_set(nodes(), 0..100)) {
+        fn test_register_and_resolve(store in inmem_stores(), nodes in node_sets()) {
             let work = async {
                 for node in &nodes {
                     register(&store, node.clone()).await.unwrap();
