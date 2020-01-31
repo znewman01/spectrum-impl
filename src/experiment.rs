@@ -13,20 +13,23 @@ use std::iter::once;
 pub struct Experiment {
     // TODO(zjn): when nonzero types hit stable, replace u16 with NonZeroU16.
     // https://github.com/rust-lang/rfcs/blob/master/text/2307-concrete-nonzero-types.md
-    pub groups: u16,
-    pub workers_per_group: u16,
+    groups: u16,
+    workers_per_group: u16,
+    pub clients: u16,
 }
 
 impl Experiment {
-    pub fn new(groups: u16, workers_per_group: u16) -> Experiment {
+    pub fn new(groups: u16, workers_per_group: u16, clients: u16) -> Experiment {
         assert!(groups >= 1, "Expected at least 1 group.");
         assert!(
             workers_per_group >= 1,
             "Expected at least 1 worker per group."
         );
+        assert!(clients >= 1, "Expected at least 1 client.");
         Experiment {
             groups,
             workers_per_group,
+            clients,
         }
     }
 
@@ -66,13 +69,15 @@ pub async fn read_from_store<C: Store>(config: &C) -> Result<Experiment, Error> 
 pub mod tests {
     use super::*;
     use crate::config::tests::inmem_stores;
+    use core::ops::Range;
     use futures::executor::block_on;
     use proptest::prelude::*;
 
     pub fn experiments() -> impl Strategy<Value = Experiment> {
-        let groups: core::ops::Range<u16> = 1..10;
-        let workers_per_group: core::ops::Range<u16> = 1..10;
-        (groups, workers_per_group).prop_map(|(g, w)| Experiment::new(g, w))
+        let groups: Range<u16> = 1..10;
+        let workers_per_group: Range<u16> = 1..10;
+        let clients: Range<u16> = 1..10;
+        (groups, workers_per_group, clients).prop_map(|(g, w, c)| Experiment::new(g, w, c))
     }
 
     proptest! {
