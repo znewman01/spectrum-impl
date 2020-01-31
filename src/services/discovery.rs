@@ -8,9 +8,7 @@ use proptest_derive::Arbitrary;
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum Service {
-    #[allow(dead_code)]
     Leader,
-    #[allow(dead_code)]
     Publisher,
     Worker,
 }
