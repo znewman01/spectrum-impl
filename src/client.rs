@@ -14,7 +14,9 @@ pub mod spectrum {
 
 use spectrum::{worker_client::WorkerClient, ClientId, UploadRequest};
 
-pub async fn run<C: Store>(config_store: C) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run<C: Store>(
+    config_store: C,
+) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     info!("Client starting");
     wait_for_start_time_set(&config_store).await?;
     debug!("Received configuration from configuration server; initializing.");

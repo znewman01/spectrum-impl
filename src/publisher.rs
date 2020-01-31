@@ -10,7 +10,7 @@ use crate::{
 use chrono::prelude::*;
 use log::{debug, info};
 
-pub async fn run<C: Store>(config: C) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run<C: Store>(config: C) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     info!("Publisher starting up.");
     let addr = get_addr();
 

@@ -2,7 +2,7 @@ use simplelog::{CombinedLogger, LevelFilter, TermLogger, TerminalMode, WriteLogg
 use std::fs::File;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     CombinedLogger::init(vec![
         TermLogger::new(
             LevelFilter::Trace,
