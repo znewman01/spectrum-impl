@@ -1,6 +1,5 @@
 //! Spectrum implementation.
 use futures::{FutureExt, TryFutureExt, TryStreamExt};
-use log::debug;
 use std::sync::Arc;
 use tokio::sync::Barrier;
 
@@ -20,14 +19,14 @@ use services::discovery::Service::{Leader, Publisher, Worker};
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config_store = config::from_env()?;
-    let experiment = Experiment::new(1, 1);
+    let experiment = Experiment::new(1, 1, 5);
     experiment::write_to_store(&config_store, experiment).await?;
-    let barrier = Arc::new(Barrier::new(1 + experiment.iter_services().count()));
-    debug!("barrier: {:?}", barrier);
+    let barrier = Arc::new(Barrier::new(
+        experiment.clients as usize + experiment.iter_services().count(),
+    ));
     let handles = futures::stream::FuturesUnordered::new();
 
-    // TODO(zjn): support many clients
-    for _ in 0..1 {
+    for _ in 0..experiment.clients {
         let barrier = barrier.clone();
         let shutdown = async move {
             barrier.wait().await;
@@ -47,6 +46,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
             Ok(())
         };
 
+        // TODO(zjn): parameterize run() methods based on Service
         handles.push(match service {
             Publisher => publisher::run(config_store.clone())
                 .and_then(|_| shutdown)
