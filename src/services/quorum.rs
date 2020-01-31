@@ -46,9 +46,28 @@ pub async fn wait_for_start_time_set<C: Store>(config: &C) -> Result<DateTime<Fi
 }
 
 async fn has_quorum<C: Store>(config: &C, experiment: Experiment) -> Result<(), Error> {
-    let leaders = discovery::resolve_all(config, Leader).await?.len();
-    let workers = discovery::resolve_all(config, Worker).await?.len();
-    let publishers = discovery::resolve_all(config, Publisher).await?.len();
+    let nodes = discovery::resolve_all(config).await?;
+    let leaders = nodes
+        .iter()
+        .filter(|node| match node.service {
+            Leader { .. } => true,
+            _ => false,
+        })
+        .count();
+    let workers = nodes
+        .iter()
+        .filter(|node| match node.service {
+            Worker { .. } => true,
+            _ => false,
+        })
+        .count();
+    let publishers = nodes
+        .iter()
+        .filter(|node| match node.service {
+            Publisher => true,
+            _ => false,
+        })
+        .count();
     let actual = (leaders, workers, publishers);
 
     let expected_leaders = experiment.groups as usize;
@@ -90,7 +109,7 @@ mod test {
     use crate::config::{factory::from_string, tests::inmem_stores};
     use crate::experiment::tests::experiments;
     use discovery::{
-        register,
+        register, Group, Node,
         Service::{Leader, Publisher, Worker},
     };
     use futures::executor::block_on;
@@ -176,13 +195,25 @@ mod test {
     async fn test_wait_for_quorum_okay() {
         let config = from_string("").unwrap();
         let experiment = Experiment::new(1, 1);
-        register(&config, discovery::Service::Worker, "1")
-            .await
-            .unwrap();
-        register(&config, discovery::Service::Leader, "1")
-            .await
-            .unwrap();
-        register(&config, discovery::Service::Publisher, "1")
+        register(
+            &config,
+            Node::new(
+                Worker {
+                    group: Group(0),
+                    idx: 0,
+                },
+                "".to_string(),
+            ),
+        )
+        .await
+        .unwrap();
+        register(
+            &config,
+            Node::new(Leader { group: Group(0) }, "".to_string()),
+        )
+        .await
+        .unwrap();
+        register(&config, Node::new(Publisher, "1".to_string()))
             .await
             .unwrap();
 
@@ -199,13 +230,21 @@ mod test {
         publishers: u16,
     ) -> Result<(), Error> {
         for leader_idx in 0..leaders {
-            register(config, Leader, &format!("{}", leader_idx)).await?;
+            let leader = Leader {
+                group: Group(leader_idx),
+            };
+            register(config, Node::new(leader, "".to_string())).await?;
         }
         for worker_idx in 0..workers {
-            register(config, Worker, &format!("{}", worker_idx)).await?;
+            let worker = Worker {
+                group: Group(0),
+                idx: worker_idx,
+            };
+            register(config, Node::new(worker, "".to_string())).await?;
         }
-        for publisher_idx in 0..publishers {
-            register(config, Publisher, &format!("{}", publisher_idx)).await?;
+        for _ in 0..publishers {
+            let publisher = Publisher;
+            register(config, Node::new(publisher, "".to_string())).await?;
         }
 
         has_quorum(config, experiment).await
@@ -258,18 +297,6 @@ mod test {
             let publishers = 1;
             block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
                 .expect("Should have quorum.");
-        }
-
-        #[test]
-        fn test_has_quorum_many_publisher(
-            config in inmem_stores(),
-            experiment in experiments()
-        ) {
-            let leaders = experiment.groups ;
-            let workers = experiment.workers_per_group * experiment.groups;
-            let publishers = 2;
-            block_on(run_quorum_test(&config, experiment, leaders, workers, publishers))
-                .expect_err("Too many publishers.");
         }
 
         #[test]

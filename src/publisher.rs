@@ -2,7 +2,7 @@ use crate::{
     config::store::Store,
     experiment,
     services::{
-        discovery::{register, Service},
+        discovery::{register, Node, Service},
         quorum::{set_start_time, wait_for_quorum},
     },
 };
@@ -12,7 +12,8 @@ use log::{debug, info};
 pub async fn run<C: Store>(config: C) -> Result<(), Box<dyn std::error::Error>> {
     info!("Publisher starting up.");
 
-    register(&config, Service::Publisher, "1").await?;
+    let node = Node::new(Service::Publisher, "".to_string());
+    register(&config, node).await?;
     debug!("Registered with config server.");
 
     let experiment = experiment::read_from_store(&config).await?;
