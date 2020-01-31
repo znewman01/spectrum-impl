@@ -2,10 +2,8 @@ extern crate spectrum_impl;
 
 use simplelog::{LevelFilter, TermLogger, TerminalMode};
 
-#[test]
-fn test_pass() {
-    // TODO: tokio::run in tokio 0.2.0+
-    #![allow(unused_must_use)]
+#[tokio::test]
+async fn test_pass() {
     TermLogger::init(
         LevelFilter::Trace,
         simplelog::ConfigBuilder::new()
@@ -14,7 +12,5 @@ fn test_pass() {
         TerminalMode::Stderr,
     )
     .unwrap();
-    tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(spectrum_impl::run());
+    spectrum_impl::run().await.unwrap();
 }
