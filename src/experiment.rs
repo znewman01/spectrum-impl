@@ -2,23 +2,26 @@
 
 use crate::config::store::{Error, Store};
 
-#[cfg(test)] // TODO(zjn): move to mod tests (https://github.com/AltSysrq/proptest/pull/106)
-use proptest_derive::Arbitrary;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq)]
-#[cfg_attr(test, derive(Arbitrary))]
 pub struct Experiment {
+    // TODO(zjn): when nonzero types hit stable, replace u16 with NonZeroU16.
+    // https://github.com/rust-lang/rfcs/blob/master/text/2307-concrete-nonzero-types.md
     pub groups: u16,
     pub workers_per_group: u16,
 }
 
 impl Experiment {
-    pub fn new() -> Experiment {
-        // TODO(zjn): validate
+    pub fn new(groups: u16, workers_per_group: u16) -> Experiment {
+        assert!(groups >= 1, "Expected at least 1 group.");
+        assert!(
+            workers_per_group >= 1,
+            "Expected at least 1 worker per group."
+        );
         Experiment {
-            groups: 1,
-            workers_per_group: 1,
+            groups,
+            workers_per_group,
         }
     }
 }
@@ -44,15 +47,21 @@ pub async fn read_from_store<C: Store>(config: &C) -> Result<Experiment, Error> 
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::config::tests::inmem_stores;
     use futures::executor::block_on;
     use proptest::prelude::*;
 
+    pub fn experiments() -> impl Strategy<Value = Experiment> {
+        let groups: core::ops::Range<u16> = 1..10;
+        let workers_per_group: core::ops::Range<u16> = 1..10;
+        (groups, workers_per_group).prop_map(|(g, w)| Experiment::new(g, w))
+    }
+
     proptest! {
         #[test]
-        fn test_experiment_roundtrip(config in inmem_stores(), experiment in any::<Experiment>()) {
+        fn test_experiment_roundtrip(config in inmem_stores(), experiment in experiments()) {
             block_on(async {
                 write_to_store(&config, experiment).await.unwrap();
                 assert_eq!(
