@@ -7,7 +7,6 @@ use std::sync::{
 use std::time::Duration;
 
 // Try `attempts` times, delaying for duration `delay` between each.
-#[allow(dead_code)]
 pub fn error_policy<T>(delay: Duration, attempts: usize) -> impl FnMut(T) -> RetryPolicy<Error> {
     assert!(attempts > 0, "Zero attempts makes no sense.");
     let counter = Mutex::new(AtomicUsize::new(attempts));
