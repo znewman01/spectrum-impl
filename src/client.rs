@@ -1,7 +1,7 @@
 use crate::{
     config,
     services::{
-        discovery::{resolve_all, ServiceType},
+        discovery::{resolve_all, Service},
         quorum::wait_for_start_time_set,
     },
 };
@@ -18,7 +18,7 @@ pub async fn run<C: Store>(config_store: C) -> Result<(), Box<dyn std::error::Er
     info!("Client starting");
     wait_for_start_time_set(&config_store).await?;
     debug!("Received configuration from configuration server; initializing.");
-    let mut worker_addrs: Vec<String> = resolve_all(&config_store, ServiceType::Worker).await?;
+    let mut worker_addrs: Vec<String> = resolve_all(&config_store, Service::Worker).await?;
     let worker_addr = worker_addrs
         .pop()
         .ok_or("Unexpected: start time posted but no workers registered.")?;

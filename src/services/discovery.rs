@@ -7,7 +7,7 @@ use proptest_derive::Arbitrary;
 // TODO(zjn): make these store group/idx info in them
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 #[cfg_attr(test, derive(Arbitrary))]
-pub enum ServiceType {
+pub enum Service {
     #[allow(dead_code)]
     Leader,
     #[allow(dead_code)]
@@ -15,26 +15,26 @@ pub enum ServiceType {
     Worker,
 }
 
-impl ServiceType {
+impl Service {
     fn to_config_key(self) -> Key {
         let key = match self {
-            ServiceType::Leader => "leader",
-            ServiceType::Publisher => "publisher",
-            ServiceType::Worker => "worker",
+            Service::Leader => "leader",
+            Service::Publisher => "publisher",
+            Service::Worker => "worker",
         };
         vec![key.to_string()]
     }
 }
 
 /// Register a server of the given type at the given address.
-pub async fn register<C: Store>(config: &C, service: ServiceType, addr: &str) -> Result<(), Error> {
+pub async fn register<C: Store>(config: &C, service: Service, addr: &str) -> Result<(), Error> {
     // TODO(zjn): verify not already registered
     let mut prefix = service.to_config_key();
     prefix.push(addr.to_string());
     config.put(prefix, "".to_string()).await
 }
 
-pub async fn resolve_all<C: Store>(config: &C, service: ServiceType) -> Result<Vec<String>, Error> {
+pub async fn resolve_all<C: Store>(config: &C, service: Service) -> Result<Vec<String>, Error> {
     Ok(config
         .list(service.to_config_key())
         .await?
@@ -53,8 +53,8 @@ mod test {
     use proptest::prelude::*;
     use std::collections::{HashMap, HashSet};
 
-    fn service_entries() -> impl Strategy<Value = HashMap<ServiceType, HashSet<String>>> {
-        hash_map(any::<ServiceType>(), hash_set(KEY, 0..10), 0..3)
+    fn service_entries() -> impl Strategy<Value = HashMap<Service, HashSet<String>>> {
+        hash_map(any::<Service>(), hash_set(KEY, 0..10), 0..3)
     }
 
     proptest! {
@@ -67,7 +67,7 @@ mod test {
                     }
                 }
 
-                let mut actual = HashMap::<ServiceType, HashSet<String>>::new();
+                let mut actual = HashMap::<Service, HashSet<String>>::new();
                 for &service in service_entries.keys() {
                     let mut addrs = HashSet::new();
                     for addr in resolve_all(&store, service).await.unwrap() {

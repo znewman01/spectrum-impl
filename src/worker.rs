@@ -1,6 +1,6 @@
 use crate::{
     config::store::Store,
-    services::discovery::{register, ServiceType},
+    services::discovery::{register, Service},
     services::health::{wait_for_health, AllGoodHealthServer, HealthServer},
 };
 use futures::Future;
@@ -62,7 +62,7 @@ where
     wait_for_health(url.clone()).await?;
     trace!("Worker healthy.");
 
-    register(&config_store, ServiceType::Worker, &url).await?;
+    register(&config_store, Service::Worker, &url).await?;
     debug!("Registered with config server.");
 
     server_task.await??;
