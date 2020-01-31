@@ -5,6 +5,7 @@ use crate::{
 };
 use futures::Future;
 use log::{debug, error, info, trace};
+use std::net::SocketAddr;
 use tonic::{Request, Response, Status};
 
 pub mod spectrum {
@@ -49,17 +50,16 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     info!("Worker starting up.");
-    let addr = "127.0.0.1:50051"; // TODO(zjn): use IPv6 if available
+    let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), 50051); // TODO(zjn): use IPv6 if available
 
     let server_task = tokio::spawn(
         tonic::transport::server::Server::builder()
             .add_service(HealthServer::new(AllGoodHealthServer::default()))
             .add_service(WorkerServer::new(MyWorker::default()))
-            .serve_with_shutdown(addr.parse()?, shutdown),
+            .serve_with_shutdown(addr, shutdown),
     );
 
-    let url = format!("http://{}", addr);
-    wait_for_health(url.clone()).await?;
+    wait_for_health(format!("http://{}", addr)).await?;
     trace!("Worker healthy.");
 
     let node = Node::new(
@@ -67,7 +67,7 @@ where
             group: Group(0),
             idx: 0,
         },
-        url,
+        addr,
     );
     register(&config_store, node).await?;
     debug!("Registered with config server.");

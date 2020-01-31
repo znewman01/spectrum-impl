@@ -114,8 +114,13 @@ mod test {
     };
     use futures::executor::block_on;
     use proptest::prelude::*;
+    use std::net::SocketAddr;
 
     const NO_TIME: Duration = Duration::from_millis(0);
+
+    fn addr() -> SocketAddr {
+        SocketAddr::new("127.0.0.1".parse().unwrap(), 22)
+    }
 
     prop_compose! {
         fn datetimes()
@@ -202,18 +207,15 @@ mod test {
                     group: Group(0),
                     idx: 0,
                 },
-                "".to_string(),
+                addr(),
             ),
         )
         .await
         .unwrap();
-        register(
-            &config,
-            Node::new(Leader { group: Group(0) }, "".to_string()),
-        )
-        .await
-        .unwrap();
-        register(&config, Node::new(Publisher, "1".to_string()))
+        register(&config, Node::new(Leader { group: Group(0) }, addr()))
+            .await
+            .unwrap();
+        register(&config, Node::new(Publisher, addr()))
             .await
             .unwrap();
 
@@ -233,18 +235,18 @@ mod test {
             let leader = Leader {
                 group: Group(leader_idx),
             };
-            register(config, Node::new(leader, "".to_string())).await?;
+            register(config, Node::new(leader, addr())).await?;
         }
         for worker_idx in 0..workers {
             let worker = Worker {
                 group: Group(0),
                 idx: worker_idx,
             };
-            register(config, Node::new(worker, "".to_string())).await?;
+            register(config, Node::new(worker, addr())).await?;
         }
         for _ in 0..publishers {
             let publisher = Publisher;
-            register(config, Node::new(publisher, "".to_string())).await?;
+            register(config, Node::new(publisher, addr())).await?;
         }
 
         has_quorum(config, experiment).await

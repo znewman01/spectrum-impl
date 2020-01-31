@@ -8,11 +8,13 @@ use crate::{
 };
 use chrono::prelude::*;
 use log::{debug, info};
+use std::net::SocketAddr;
 
 pub async fn run<C: Store>(config: C) -> Result<(), Box<dyn std::error::Error>> {
     info!("Publisher starting up.");
+    let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), 50053);
 
-    let node = Node::new(Service::Publisher, "".to_string());
+    let node = Node::new(Service::Publisher, addr);
     register(&config, node).await?;
     debug!("Registered with config server.");
 
