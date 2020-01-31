@@ -3,7 +3,7 @@ use crate::{
     experiment::Experiment,
     services::{
         discovery,
-        discovery::ServiceType::{Leader, Publisher, Worker},
+        discovery::Service::{Leader, Publisher, Worker},
         retry::error_policy,
     },
 };
@@ -91,7 +91,7 @@ mod test {
     use crate::experiment::tests::experiments;
     use discovery::{
         register,
-        ServiceType::{Leader, Publisher, Worker},
+        Service::{Leader, Publisher, Worker},
     };
     use futures::executor::block_on;
     use proptest::prelude::*;
@@ -176,13 +176,13 @@ mod test {
     async fn test_wait_for_quorum_okay() {
         let config = from_string("").unwrap();
         let experiment = Experiment::new(1, 1);
-        register(&config, discovery::ServiceType::Worker, "1")
+        register(&config, discovery::Service::Worker, "1")
             .await
             .unwrap();
-        register(&config, discovery::ServiceType::Leader, "1")
+        register(&config, discovery::Service::Leader, "1")
             .await
             .unwrap();
-        register(&config, discovery::ServiceType::Publisher, "1")
+        register(&config, discovery::Service::Publisher, "1")
             .await
             .unwrap();
 
