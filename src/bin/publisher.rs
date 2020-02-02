@@ -1,4 +1,4 @@
-use spectrum_impl::{config, publisher, services::discovery::PublisherInfo};
+use spectrum_impl::{config, publisher, services::PublisherInfo};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {

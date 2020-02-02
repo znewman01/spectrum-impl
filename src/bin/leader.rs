@@ -1,6 +1,6 @@
 use spectrum_impl::{
     config, leader,
-    services::discovery::{Group, LeaderInfo},
+    services::{Group, LeaderInfo},
 };
 
 #[tokio::main]
