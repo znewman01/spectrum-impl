@@ -1,14 +1,18 @@
 use crate::{
     config::store::Store,
+    experiment::filter_peers,
     net::get_addr,
     services::{
-        discovery::{register, Node},
+        discovery::{register, resolve_all, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
+        quorum::wait_for_start_time_set,
         WorkerInfo,
     },
+    sync::OneshotCache,
 };
 use futures::Future;
 use log::{debug, error, info, trace};
+use tokio::sync::oneshot;
 use tonic::{Request, Response, Status};
 
 pub mod spectrum {
@@ -20,8 +24,22 @@ use spectrum::{
     UploadRequest, UploadResponse, VerifyRequest, VerifyResponse,
 };
 
-#[derive(Default)]
-pub struct MyWorker {}
+pub struct MyWorker {
+    peers: OneshotCache<Vec<Node>>,
+}
+
+impl MyWorker {
+    fn new(peers_rx: oneshot::Receiver<Vec<Node>>) -> Self {
+        MyWorker {
+            peers: OneshotCache::new(peers_rx),
+        }
+    }
+
+    // Gets this worker's peers, caching the result.
+    async fn get_peers(&self) -> Vec<Node> {
+        self.peers.get().await.to_vec()
+    }
+}
 
 #[tonic::async_trait]
 impl Worker for MyWorker {
@@ -30,6 +48,9 @@ impl Worker for MyWorker {
         request: Request<UploadRequest>,
     ) -> Result<Response<UploadResponse>, Status> {
         debug!("Request! {:?}", request.into_inner());
+
+        let peers = self.get_peers().await;
+        debug!("I have peers! {:?}", peers);
 
         let reply = UploadResponse {};
         Ok(Response::new(reply))
@@ -48,7 +69,7 @@ impl Worker for MyWorker {
 }
 
 pub async fn run<C, F>(
-    config_store: C,
+    config: C,
     info: WorkerInfo,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
@@ -59,10 +80,13 @@ where
     info!("Worker starting up.");
     let addr = get_addr();
 
+    let (peer_tx, peer_rx) = oneshot::channel();
+    let worker = MyWorker::new(peer_rx);
+
     let server_task = tokio::spawn(
         tonic::transport::server::Server::builder()
             .add_service(HealthServer::new(AllGoodHealthServer::default()))
-            .add_service(WorkerServer::new(MyWorker::default()))
+            .add_service(WorkerServer::new(worker))
             .serve_with_shutdown(addr, shutdown),
     );
 
@@ -70,8 +94,12 @@ where
     trace!("Worker {:?} healthy and serving.", info);
 
     let node = Node::new(info.into(), addr);
-    register(&config_store, node).await?;
+    register(&config, node).await?;
     debug!("Registered with config server.");
+
+    wait_for_start_time_set(&config).await?;
+    let peers = filter_peers(info, resolve_all(&config).await?);
+    peer_tx.send(peers).unwrap(); // TODO(zjn): don't unwrap
 
     server_task.await??;
     info!("Worker shutting down.");

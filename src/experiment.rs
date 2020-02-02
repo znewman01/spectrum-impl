@@ -45,7 +45,6 @@ impl Experiment {
 // Get the peer nodes for a worker.
 //
 // These should be all worker nodes in the same group except the worker itself.
-#[allow(dead_code)]
 pub fn filter_peers<I>(info: WorkerInfo, all_nodes: I) -> Vec<Node>
 where
     I: IntoIterator<Item = Node>,
