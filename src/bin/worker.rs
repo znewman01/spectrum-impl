@@ -1,7 +1,7 @@
 use futures::prelude::*;
 use spectrum_impl::{
     config,
-    services::discovery::{Group, Service},
+    services::discovery::{Group, WorkerInfo},
     worker,
 };
 use tokio::signal::ctrl_c;
@@ -10,9 +10,9 @@ use tokio::signal::ctrl_c;
 async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config_store = config::from_env()?;
     // TODO(zjn): construct from environment/args
-    let service = Service::Worker {
+    let info = WorkerInfo {
         group: Group(1),
         idx: 1,
     };
-    worker::run(config_store, service, ctrl_c().map(|_| ())).await
+    worker::run(config_store, info, ctrl_c().map(|_| ())).await
 }

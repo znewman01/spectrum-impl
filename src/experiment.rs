@@ -1,10 +1,7 @@
 #![allow(clippy::unit_arg)] // weird cargo clippy bug; complains about "derive(Arbitrary)"
 
 use crate::config::store::{Error, Store};
-use crate::services::discovery::{
-    Group, Service,
-    Service::{Leader, Publisher, Worker},
-};
+use crate::services::discovery::{Group, LeaderInfo, PublisherInfo, Service, WorkerInfo};
 
 use serde::{Deserialize, Serialize};
 use std::iter::once;
@@ -34,11 +31,11 @@ impl Experiment {
     }
 
     pub fn iter_services(self) -> impl Iterator<Item = Service> {
-        let publishers = once(Publisher);
+        let publishers = once((PublisherInfo {}).into());
         let groups = (0..self.groups).map(Group);
-        let leaders = groups.clone().map(|group| Leader { group });
+        let leaders = groups.clone().map(|group| (LeaderInfo { group }).into());
         let workers = groups.flat_map(move |group| {
-            (0..self.workers_per_group).map(move |idx| Worker { group, idx })
+            (0..self.workers_per_group).map(move |idx| (WorkerInfo { group, idx }).into())
         });
 
         publishers.chain(leaders).chain(workers)
@@ -100,9 +97,9 @@ pub mod tests {
             let mut workers = vec![];
             for service in services {
                 match service {
-                    Publisher => { publishers.push(service) },
-                    Leader { .. } => { leaders.push(service) },
-                    Worker { .. } => { workers.push(service) },
+                    Service::Publisher(_) => { publishers.push(service) },
+                    Service::Leader(_) => { leaders.push(service) },
+                    Service::Worker(_) => { workers.push(service) },
                 }
             }
             let actual = (publishers.len(), leaders.len(), workers.len());

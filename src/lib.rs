@@ -47,15 +47,13 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         };
 
         handles.push(match service {
-            Publisher => publisher::run(config_store.clone(), service)
+            Publisher(info) => publisher::run(config_store.clone(), info)
                 .and_then(|_| shutdown)
                 .boxed(),
-            Leader { .. } => leader::run(config_store.clone(), service)
+            Leader(info) => leader::run(config_store.clone(), info)
                 .and_then(|_| shutdown)
                 .boxed(),
-            Worker { .. } => {
-                worker::run(config_store.clone(), service, shutdown.map(|_| ())).boxed()
-            }
+            Worker(info) => worker::run(config_store.clone(), info, shutdown.map(|_| ())).boxed(),
         });
     }
 
