@@ -3,7 +3,7 @@ use crate::{
     experiment,
     net::get_addr,
     services::{
-        discovery::{register, Node, Service},
+        discovery::{register, Node, PublisherInfo},
         quorum::{set_start_time, wait_for_quorum},
     },
 };
@@ -12,16 +12,12 @@ use log::{debug, info};
 
 pub async fn run<C: Store>(
     config: C,
-    service: Service,
+    info: PublisherInfo,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
-    match service {
-        Service::Publisher => {}
-        _ => panic!("Invalid publisher config."),
-    }
     info!("Publisher starting up.");
     let addr = get_addr();
 
-    let node = Node::new(service, addr);
+    let node = Node::new(info.into(), addr);
     register(&config, node).await?;
     debug!("Registered with config server.");
 

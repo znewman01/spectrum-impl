@@ -6,31 +6,62 @@ use std::net::SocketAddr;
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Group(pub u16);
 
-// TODO(zjn): make these store group/idx info in them
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub struct LeaderInfo {
+    pub group: Group,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub struct WorkerInfo {
+    pub group: Group,
+    pub idx: u16,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub struct PublisherInfo {}
+
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum Service {
-    Leader { group: Group },
-    Publisher,
-    Worker { group: Group, idx: u16 },
+    Leader(LeaderInfo),
+    Publisher(PublisherInfo),
+    Worker(WorkerInfo),
 }
 
 impl Service {
     fn to_config_key(self) -> Key {
         match self {
-            Service::Leader { group } => vec![
+            Service::Leader(LeaderInfo { group }) => vec![
                 "nodes".to_string(),
                 "groups".to_string(),
                 group.0.to_string(),
                 "leader".to_string(),
             ],
-            Service::Publisher => vec!["nodes".to_string(), "publisher".to_string()],
-            Service::Worker { group, idx } => vec![
+            Service::Publisher(_) => vec!["nodes".to_string(), "publisher".to_string()],
+            Service::Worker(WorkerInfo { group, idx }) => vec![
                 "nodes".to_string(),
                 "groups".to_string(),
                 group.0.to_string(),
                 idx.to_string(),
             ],
         }
+    }
+}
+
+impl From<LeaderInfo> for Service {
+    fn from(info: LeaderInfo) -> Self {
+        Service::Leader(info)
+    }
+}
+
+impl From<WorkerInfo> for Service {
+    fn from(info: WorkerInfo) -> Self {
+        Service::Worker(info)
+    }
+}
+
+impl From<PublisherInfo> for Service {
+    fn from(info: PublisherInfo) -> Self {
+        Service::Publisher(info)
     }
 }
 
@@ -61,16 +92,16 @@ pub async fn resolve_all<C: Store>(config: &C) -> Result<Vec<Node>, Error> {
         .map(|(key, addr)| {
             let key: Vec<&str> = key.iter().map(|x| x.as_str()).collect();
             let service = match key[..] {
-                ["nodes", "groups", group, "leader"] => Service::Leader {
+                ["nodes", "groups", group, "leader"] => Service::from(LeaderInfo {
                     group: Group(group.parse().unwrap()),
-                },
+                }),
                 ["nodes", "groups", group, idx] => {
-                    Service::Worker {
+                    Service::from(WorkerInfo {
                         group: Group(group.parse().unwrap()),
                         idx: idx.parse().unwrap(), // TODO(zjn): don't unwrap
-                    }
+                    })
                 }
-                ["nodes", "publisher"] => Service::Publisher,
+                ["nodes", "publisher"] => Service::from(PublisherInfo {}),
                 _ => {
                     panic!(); // TODO(zjn): better error
                 }
@@ -93,14 +124,14 @@ pub mod tests {
 
     pub fn services() -> impl Strategy<Value = Service> {
         prop_oneof![
-            Just(Service::Publisher),
-            any::<u16>().prop_map(|group| Service::Leader {
+            Just(Service::Publisher(PublisherInfo {})),
+            any::<u16>().prop_map(|group| Service::Leader(LeaderInfo {
                 group: Group(group),
-            }),
-            (any::<u16>(), any::<u16>()).prop_map(|(group, idx)| Service::Worker {
+            })),
+            (any::<u16>(), any::<u16>()).prop_map(|(group, idx)| Service::from(WorkerInfo {
                 group: Group(group),
                 idx
-            }),
+            })),
         ]
     }
 
