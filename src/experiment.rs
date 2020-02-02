@@ -1,10 +1,10 @@
 #![allow(clippy::unit_arg)] // weird cargo clippy bug; complains about "derive(Arbitrary)"
 
 use crate::config::store::{Error, Store};
-use crate::services::{Group, LeaderInfo, PublisherInfo, Service, WorkerInfo};
+use crate::services::{discovery::Node, Group, LeaderInfo, PublisherInfo, Service, WorkerInfo};
 
 use serde::{Deserialize, Serialize};
-use std::iter::once;
+use std::iter::{once, IntoIterator};
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq)]
 pub struct Experiment {
@@ -40,6 +40,27 @@ impl Experiment {
 
         publishers.chain(leaders).chain(workers)
     }
+}
+
+// Get the peer nodes for a worker.
+//
+// These should be all worker nodes in the same group except the worker itself.
+#[allow(dead_code)]
+pub fn filter_peers<I>(info: WorkerInfo, all_nodes: I) -> Vec<Node>
+where
+    I: IntoIterator<Item = Node>,
+{
+    let my_info = info;
+    all_nodes
+        .into_iter()
+        .filter(|node| {
+            if let Service::Worker(their_info) = node.service {
+                their_info != my_info && their_info.group == my_info.group
+            } else {
+                false
+            }
+        })
+        .collect()
 }
 
 pub async fn write_to_store<C: Store>(config: &C, experiment: Experiment) -> Result<(), Error> {
@@ -107,6 +128,36 @@ pub mod tests {
                             experiment.groups as usize,
                             (experiment.groups * experiment.workers_per_group) as usize);
             prop_assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_filter_peers(experiment in experiments()) {
+            let services: Vec<Service> = experiment.iter_services().collect();
+            let nodes = services.iter().map(|&service| Node::new(service, "127.0.0.1:22".parse().unwrap()));
+
+            let info = *services
+                .iter()
+                .filter_map(|service| match service {
+                    Service::Worker(info) => Some(info),
+                    _ => None
+                })
+                .next()
+                .expect("Should have at least one worker.");
+
+            let peers = filter_peers(info, nodes);
+
+            for peer in &peers {
+                if let Service::Worker(other_info) = peer.service {
+                    assert_ne!(other_info, info,
+                               "A node is not a peer of itself.");
+                    assert_eq!(other_info.group, info.group,
+                               "A peer must be in the same group.");
+                } else {
+                    panic!("Peers must be Workers.");
+                }
+            }
+            assert_eq!(peers.len(), (experiment.workers_per_group - 1) as usize,
+                       "All workers in the group except the node itself should be peers.");
         }
     }
 }
