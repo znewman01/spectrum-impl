@@ -31,11 +31,11 @@ impl Experiment {
     }
 
     pub fn iter_services(self) -> impl Iterator<Item = Service> {
-        let publishers = once((PublisherInfo {}).into());
-        let groups = (0..self.groups).map(Group);
-        let leaders = groups.clone().map(|group| (LeaderInfo { group }).into());
+        let publishers = once((PublisherInfo::new()).into());
+        let groups = (0..self.groups).map(Group::new);
+        let leaders = groups.clone().map(LeaderInfo::new).map(Service::from);
         let workers = groups.flat_map(move |group| {
-            (0..self.workers_per_group).map(move |idx| (WorkerInfo { group, idx }).into())
+            (0..self.workers_per_group).map(move |idx| (WorkerInfo::new(group, idx)).into())
         });
 
         publishers.chain(leaders).chain(workers)
