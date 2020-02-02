@@ -1,7 +1,7 @@
 use crate::{
     config::store::Store,
     net::get_addr,
-    services::discovery::{register, Group, Node, Service},
+    services::discovery::{register, Node, Service},
     services::health::{wait_for_health, AllGoodHealthServer, HealthServer},
 };
 use futures::Future;
@@ -46,12 +46,17 @@ impl Worker for MyWorker {
 
 pub async fn run<C, F>(
     config_store: C,
+    service: Service,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
 {
+    match service {
+        Service::Worker { .. } => {}
+        _ => panic!("Invalid worker config."),
+    }
     info!("Worker starting up.");
     let addr = get_addr();
 
@@ -65,13 +70,7 @@ where
     wait_for_health(format!("http://{}", addr)).await?;
     trace!("Worker healthy.");
 
-    let node = Node::new(
-        Service::Worker {
-            group: Group(0),
-            idx: 0,
-        },
-        addr,
-    );
+    let node = Node::new(service, addr);
     register(&config_store, node).await?;
     debug!("Registered with config server.");
 

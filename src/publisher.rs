@@ -10,11 +10,18 @@ use crate::{
 use chrono::prelude::*;
 use log::{debug, info};
 
-pub async fn run<C: Store>(config: C) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
+pub async fn run<C: Store>(
+    config: C,
+    service: Service,
+) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
+    match service {
+        Service::Publisher => {}
+        _ => panic!("Invalid publisher config."),
+    }
     info!("Publisher starting up.");
     let addr = get_addr();
 
-    let node = Node::new(Service::Publisher, addr);
+    let node = Node::new(service, addr);
     register(&config, node).await?;
     debug!("Registered with config server.");
 

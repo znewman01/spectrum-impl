@@ -12,14 +12,14 @@ pub mod worker;
 pub mod config;
 mod experiment;
 mod net;
-mod services;
+pub mod services;
 
 use experiment::Experiment;
 use services::discovery::Service::{Leader, Publisher, Worker};
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config_store = config::from_env()?;
-    let experiment = Experiment::new(1, 1, 5);
+    let experiment = Experiment::new(2, 2, 5);
     experiment::write_to_store(&config_store, experiment).await?;
     let barrier = Arc::new(Barrier::new(
         experiment.clients as usize + experiment.iter_services().count(),
@@ -46,15 +46,16 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
             Ok(())
         };
 
-        // TODO(zjn): parameterize run() methods based on Service
         handles.push(match service {
-            Publisher => publisher::run(config_store.clone())
+            Publisher => publisher::run(config_store.clone(), service)
                 .and_then(|_| shutdown)
                 .boxed(),
-            Leader { .. } => leader::run(config_store.clone())
+            Leader { .. } => leader::run(config_store.clone(), service)
                 .and_then(|_| shutdown)
                 .boxed(),
-            Worker { .. } => worker::run(config_store.clone(), shutdown.map(|_| ())).boxed(),
+            Worker { .. } => {
+                worker::run(config_store.clone(), service, shutdown.map(|_| ())).boxed()
+            }
         });
     }
 
