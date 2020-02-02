@@ -67,7 +67,7 @@ where
     );
 
     wait_for_health(format!("http://{}", addr)).await?;
-    trace!("Worker healthy.");
+    trace!("Worker {:?} healthy and serving.", info);
 
     let node = Node::new(info.into(), addr);
     register(&config_store, node).await?;
