@@ -69,7 +69,8 @@ where
     let experiment = experiment::read_from_store(&config).await?;
     wait_for_quorum(&config, experiment).await?;
 
-    let dt = DateTime::<FixedOffset>::from(Utc::now()); // TODO(zjn): should be in the future
+    // TODO(zjn): should be more in the future
+    let dt = DateTime::<FixedOffset>::from(Utc::now()) + chrono::Duration::milliseconds(100);
     info!("Registering experiment start time: {}", dt);
     set_start_time(&config, dt).await?;
 

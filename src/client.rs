@@ -1,6 +1,10 @@
 use crate::{
     config,
-    services::{discovery::resolve_all, quorum::wait_for_start_time_set, Service},
+    services::{
+        discovery::resolve_all,
+        quorum::{delay_until, wait_for_start_time_set},
+        Service,
+    },
 };
 use config::store::Store;
 use log::{debug, info, trace};
@@ -15,7 +19,7 @@ pub async fn run<C: Store>(
     config_store: C,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     info!("Client starting");
-    wait_for_start_time_set(&config_store).await?;
+    let start_time = wait_for_start_time_set(&config_store).await?;
     debug!("Received configuration from configuration server; initializing.");
 
     let worker_addr = resolve_all(&config_store)
@@ -29,6 +33,8 @@ pub async fn run<C: Store>(
         .addr
         .to_string();
     let mut client = WorkerClient::connect(format!("http://{}", worker_addr)).await?;
+
+    delay_until(start_time).await;
 
     let req = tonic::Request::new(UploadRequest {
         client_id: Some(ClientId {

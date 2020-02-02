@@ -49,7 +49,6 @@ pub async fn wait_for_start_time_set<C: Store>(config: &C) -> Result<DateTime<Fi
     wait_for_start_time_set_helper(config, RETRY_DELAY, RETRY_ATTEMPTS).await
 }
 
-#[allow(dead_code)]
 pub async fn delay_until(dt: DateTime<FixedOffset>) {
     let diff = dt - DateTime::<FixedOffset>::from(Utc::now());
     if diff < chrono::Duration::zero() {
