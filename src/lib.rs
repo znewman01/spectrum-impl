@@ -14,6 +14,7 @@ pub mod config;
 mod experiment;
 mod net;
 pub mod services;
+mod sync;
 
 use experiment::Experiment;
 use services::Service::{Leader, Publisher, Worker};
