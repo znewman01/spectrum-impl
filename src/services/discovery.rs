@@ -8,18 +8,18 @@ use std::net::SocketAddr;
 
 fn to_config_key(service: Service) -> Key {
     match service {
-        Service::Leader(LeaderInfo { group }) => vec![
+        Service::Leader(info) => vec![
             "nodes".to_string(),
             "groups".to_string(),
-            group.0.to_string(),
+            info.group.idx.to_string(),
             "leader".to_string(),
         ],
         Service::Publisher(_) => vec!["nodes".to_string(), "publisher".to_string()],
-        Service::Worker(WorkerInfo { group, idx }) => vec![
+        Service::Worker(info) => vec![
             "nodes".to_string(),
             "groups".to_string(),
-            group.0.to_string(),
-            idx.to_string(),
+            info.group.idx.to_string(),
+            info.idx.to_string(),
         ],
     }
 }
@@ -50,17 +50,15 @@ pub async fn resolve_all<C: Store>(config: &C) -> Result<Vec<Node>, Error> {
         .iter()
         .map(|(key, addr)| {
             let key: Vec<&str> = key.iter().map(|x| x.as_str()).collect();
+            // TODO(zjn): don't unwrap
             let service = match key[..] {
-                ["nodes", "groups", group, "leader"] => Service::from(LeaderInfo {
-                    group: Group(group.parse().unwrap()),
-                }),
-                ["nodes", "groups", group, idx] => {
-                    Service::from(WorkerInfo {
-                        group: Group(group.parse().unwrap()),
-                        idx: idx.parse().unwrap(), // TODO(zjn): don't unwrap
-                    })
+                ["nodes", "groups", group, "leader"] => {
+                    LeaderInfo::new(Group::new(group.parse().unwrap())).into()
                 }
-                ["nodes", "publisher"] => Service::from(PublisherInfo {}),
+                ["nodes", "groups", group, idx] => {
+                    WorkerInfo::new(Group::new(group.parse().unwrap()), idx.parse().unwrap()).into()
+                }
+                ["nodes", "publisher"] => PublisherInfo::new().into(),
                 _ => {
                     panic!(); // TODO(zjn): better error
                 }
@@ -83,14 +81,14 @@ pub mod tests {
 
     pub fn services() -> impl Strategy<Value = Service> {
         prop_oneof![
-            Just(Service::Publisher(PublisherInfo {})),
-            any::<u16>().prop_map(|group| Service::Leader(LeaderInfo {
-                group: Group(group),
-            })),
-            (any::<u16>(), any::<u16>()).prop_map(|(group, idx)| Service::from(WorkerInfo {
-                group: Group(group),
-                idx
-            })),
+            Just(PublisherInfo::new()).prop_map(Service::from),
+            any::<u16>()
+                .prop_map(Group::new)
+                .prop_map(LeaderInfo::new)
+                .prop_map(Service::from),
+            (any::<u16>(), any::<u16>())
+                .prop_map(|(group, idx)| WorkerInfo::new(Group::new(group), idx))
+                .prop_map(Service::from),
         ]
     }
 
