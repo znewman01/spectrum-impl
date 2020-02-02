@@ -1,10 +1,7 @@
 use crate::{
     config::store::{Error, Store},
     experiment::Experiment,
-    services::{
-        discovery::{resolve_all, Service},
-        retry::error_policy,
-    },
+    services::{discovery::resolve_all, retry::error_policy, Service},
 };
 
 use chrono::prelude::*;

@@ -1,67 +1,26 @@
-use crate::config;
+use crate::{
+    config,
+    services::{Group, LeaderInfo, PublisherInfo, Service, WorkerInfo},
+};
 
 use config::store::{Error, Key, Store};
 use std::net::SocketAddr;
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub struct Group(pub u16);
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub struct LeaderInfo {
-    pub group: Group,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub struct WorkerInfo {
-    pub group: Group,
-    pub idx: u16,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub struct PublisherInfo {}
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub enum Service {
-    Leader(LeaderInfo),
-    Publisher(PublisherInfo),
-    Worker(WorkerInfo),
-}
-
-impl Service {
-    fn to_config_key(self) -> Key {
-        match self {
-            Service::Leader(LeaderInfo { group }) => vec![
-                "nodes".to_string(),
-                "groups".to_string(),
-                group.0.to_string(),
-                "leader".to_string(),
-            ],
-            Service::Publisher(_) => vec!["nodes".to_string(), "publisher".to_string()],
-            Service::Worker(WorkerInfo { group, idx }) => vec![
-                "nodes".to_string(),
-                "groups".to_string(),
-                group.0.to_string(),
-                idx.to_string(),
-            ],
-        }
-    }
-}
-
-impl From<LeaderInfo> for Service {
-    fn from(info: LeaderInfo) -> Self {
-        Service::Leader(info)
-    }
-}
-
-impl From<WorkerInfo> for Service {
-    fn from(info: WorkerInfo) -> Self {
-        Service::Worker(info)
-    }
-}
-
-impl From<PublisherInfo> for Service {
-    fn from(info: PublisherInfo) -> Self {
-        Service::Publisher(info)
+fn to_config_key(service: Service) -> Key {
+    match service {
+        Service::Leader(LeaderInfo { group }) => vec![
+            "nodes".to_string(),
+            "groups".to_string(),
+            group.0.to_string(),
+            "leader".to_string(),
+        ],
+        Service::Publisher(_) => vec!["nodes".to_string(), "publisher".to_string()],
+        Service::Worker(WorkerInfo { group, idx }) => vec![
+            "nodes".to_string(),
+            "groups".to_string(),
+            group.0.to_string(),
+            idx.to_string(),
+        ],
     }
 }
 
@@ -80,7 +39,7 @@ impl Node {
 /// Register a server of the given type at the given address.
 pub async fn register<C: Store>(config: &C, node: Node) -> Result<(), Error> {
     config
-        .put(node.service.to_config_key(), node.addr.to_string())
+        .put(to_config_key(node.service), node.addr.to_string())
         .await
 }
 

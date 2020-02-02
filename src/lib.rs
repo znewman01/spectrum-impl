@@ -15,7 +15,7 @@ mod net;
 pub mod services;
 
 use experiment::Experiment;
-use services::discovery::Service::{Leader, Publisher, Worker};
+use services::Service::{Leader, Publisher, Worker};
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config_store = config::from_env()?;

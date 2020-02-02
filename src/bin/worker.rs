@@ -1,7 +1,7 @@
 use futures::prelude::*;
 use spectrum_impl::{
     config,
-    services::discovery::{Group, WorkerInfo},
+    services::{Group, WorkerInfo},
     worker,
 };
 use tokio::signal::ctrl_c;

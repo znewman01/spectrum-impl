@@ -1,7 +1,7 @@
 #![allow(clippy::unit_arg)] // weird cargo clippy bug; complains about "derive(Arbitrary)"
 
 use crate::config::store::{Error, Store};
-use crate::services::discovery::{Group, LeaderInfo, PublisherInfo, Service, WorkerInfo};
+use crate::services::{Group, LeaderInfo, PublisherInfo, Service, WorkerInfo};
 
 use serde::{Deserialize, Serialize};
 use std::iter::once;

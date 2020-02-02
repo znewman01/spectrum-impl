@@ -3,8 +3,9 @@ use crate::{
     experiment,
     net::get_addr,
     services::{
-        discovery::{register, Node, PublisherInfo},
+        discovery::{register, Node},
         quorum::{set_start_time, wait_for_quorum},
+        PublisherInfo,
     },
 };
 use chrono::prelude::*;

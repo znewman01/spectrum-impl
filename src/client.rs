@@ -1,9 +1,6 @@
 use crate::{
     config,
-    services::{
-        discovery::{resolve_all, Service},
-        quorum::wait_for_start_time_set,
-    },
+    services::{discovery::resolve_all, quorum::wait_for_start_time_set, Service},
 };
 use config::store::Store;
 use log::{debug, info, trace};

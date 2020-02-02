@@ -1,8 +1,11 @@
 use crate::{
     config::store::Store,
     net::get_addr,
-    services::discovery::{register, Node, WorkerInfo},
-    services::health::{wait_for_health, AllGoodHealthServer, HealthServer},
+    services::{
+        discovery::{register, Node},
+        health::{wait_for_health, AllGoodHealthServer, HealthServer},
+        WorkerInfo,
+    },
 };
 use futures::Future;
 use log::{debug, error, info, trace};

@@ -1,7 +1,8 @@
 use crate::{
     config::store::Store,
     net::get_addr,
-    services::discovery::{register, LeaderInfo, Node},
+    services::discovery::{register, Node},
+    services::LeaderInfo,
 };
 use log::{debug, info};
 
