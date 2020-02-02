@@ -90,7 +90,7 @@ message AggregateWorkerResponse {
 }
 
 service Publisher {
-  rpc AggregateGroup(AggregateGroupResponse) returns (AggregateGroupResponse) {}
+  rpc AggregateGroup(AggregateGroupRequest) returns (AggregateGroupResponse) {}
 }
 
 message AggregateGroupRequest {
