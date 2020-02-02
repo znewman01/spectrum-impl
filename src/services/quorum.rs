@@ -6,9 +6,11 @@ use crate::{
 
 use chrono::prelude::*;
 use futures_retry::FutureRetry;
+use log::{debug, warn};
 use std::collections::HashSet;
 use std::iter::FromIterator;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tokio::time::delay_until as tokio_delay_until;
 
 // TODO(zjn): make configurable. Short for local testing; long for real deployments
 const RETRY_DELAY: Duration = Duration::from_millis(100);
@@ -45,6 +47,19 @@ async fn wait_for_start_time_set_helper<C: Store>(
 
 pub async fn wait_for_start_time_set<C: Store>(config: &C) -> Result<DateTime<FixedOffset>, Error> {
     wait_for_start_time_set_helper(config, RETRY_DELAY, RETRY_ATTEMPTS).await
+}
+
+#[allow(dead_code)]
+pub async fn delay_until(dt: DateTime<FixedOffset>) {
+    let diff = dt - DateTime::<FixedOffset>::from(Utc::now());
+    if diff < chrono::Duration::zero() {
+        warn!("Tried to delay until a time in the past!");
+        return;
+    }
+    debug!("Delaying for {}", diff);
+    let diff = diff.to_std().expect("Already checked >0.");
+    let start_time_local = Instant::now() + diff;
+    tokio_delay_until(start_time_local.into()).await;
 }
 
 async fn has_quorum<C: Store>(config: &C, experiment: Experiment) -> Result<(), Error> {
@@ -214,6 +229,7 @@ mod test {
         })
     }
 
+    // TODO(zjn): use proptest::sample::subsequence
     // Given a vector, return a strategy for generating subsets of that vector.
     fn subset<T: Debug + Clone>(vec: Vec<T>) -> impl Strategy<Value = Vec<T>> {
         let count = vec.len();
