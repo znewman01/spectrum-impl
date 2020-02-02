@@ -1,5 +1,6 @@
 //! Spectrum implementation.
-use futures::{FutureExt, TryFutureExt, TryStreamExt};
+use futures::prelude::*;
+use log::error;
 use std::sync::Arc;
 use tokio::sync::Barrier;
 
@@ -48,8 +49,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         });
     }
 
-    // TODO(zjn): log better
-    handles.try_for_each(|_| futures::future::ok(())).await?;
+    handles
+        .for_each(|result| async {
+            result.unwrap_or_else(|err| error!("Task resulted in error: {:?}", err));
+        })
+        .await;
 
     Ok(())
 }
