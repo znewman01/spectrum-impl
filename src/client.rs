@@ -58,23 +58,27 @@ pub async fn run<C: Store>(
     let start_time = wait_for_start_time_set(&config_store).await?;
     debug!("Received configuration from configuration server; initializing.");
 
-    let shards = pick_worker_shards(resolve_all(&config_store).await?);
-    let worker_addr = shards.iter().next().unwrap().addr; // TODO(zjn): should send to all!
-    let mut client = WorkerClient::connect(format!("http://{}", worker_addr)).await?;
+    let shards: Vec<Node> = pick_worker_shards(resolve_all(&config_store).await?);
+    let mut clients = vec![];
+    for shard in shards {
+        clients.push(WorkerClient::connect(format!("http://{}", shard.addr)).await?);
+    }
 
     delay_until(start_time).await;
 
-    let req = tonic::Request::new(UploadRequest {
+    let req = UploadRequest {
         client_id: Some(ClientId {
             client_id: "1".to_string(),
         }),
         share_and_proof: None,
-    });
+    };
 
-    trace!("About to send upload request.");
-    let response = client.upload(req).await?;
-
-    debug!("RESPONSE={:?}", response.into_inner());
+    for mut client in clients {
+        let req = tonic::Request::new(req.clone());
+        trace!("About to send upload request.");
+        let response = client.upload(req).await?;
+        debug!("RESPONSE={:?}", response.into_inner());
+    }
 
     Ok(())
 }
