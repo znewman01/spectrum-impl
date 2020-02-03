@@ -1,5 +1,6 @@
 //! Spectrum implementation.
 extern crate rand;
+use crate::crypto::byte_utils::xor_bytes;
 use crate::crypto::prg::{PRGSeed, PRG};
 use bytes::Bytes;
 use rand::Rng;
@@ -9,19 +10,30 @@ use std::rc::Rc;
 /// Distributed Point Function
 /// Must generate a set of keys k_1, k_2, ...
 /// such that combine(eval(k_1), eval(k_2), ...) = e_i * msg
-trait DPF<Key> {
+pub trait DPF<Key> {
     fn new(security_bytes: usize, num_keys: usize, num_points: usize) -> Self;
     /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
     fn gen(&self, msg: Bytes, idx: usize) -> Vec<Key>;
     fn eval(&self, key: &Key) -> Vec<Bytes>;
+    fn compressed_eval(&self, key: &Key, tokens: &[Bytes]) -> Bytes;
     fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes>;
 }
 
 /// DPF based on PRG
-struct PRGBasedDPF {
+#[derive(Clone, PartialEq, Debug)]
+pub struct PRGBasedDPF {
     security_bytes: usize,
     num_keys: usize,
     num_points: usize,
+}
+
+// DPF key for PRGBasedDPF
+#[derive(Clone, PartialEq, Debug)]
+pub struct DPFKey {
+    prg: Rc<PRG>,
+    pub encoded_msg: Bytes,
+    pub bits: Vec<u8>,
+    pub seeds: Vec<PRGSeed>,
 }
 
 impl DPF<DPFKey> for PRGBasedDPF {
@@ -100,6 +112,23 @@ impl DPF<DPFKey> for PRGBasedDPF {
             .collect()
     }
 
+    /// evaluates the DPF on a given DPFKey to generate a set a point vector
+    // TODO(sss): find a better / more representative name for this functionality
+    fn compressed_eval(&self, key: &DPFKey, tokens: &[Bytes]) -> Bytes {
+        assert_eq!(key.bits.len(), tokens.len());
+
+        let mut res = Bytes::from(vec![0; key.prg.seed_size]);
+
+        for (i, (seed, bit)) in key.seeds.iter().zip(key.bits.iter()).enumerate() {
+            if *bit != 0 {
+                res = xor_bytes(&res, seed.raw_bytes());
+                res = xor_bytes(&res, &tokens[i]);
+            }
+        }
+
+        res
+    }
+
     /// combines the results produced by running eval on both keys
     fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes> {
         // xor all the parts together
@@ -114,14 +143,6 @@ impl DPF<DPFKey> for PRGBasedDPF {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub struct DPFKey {
-    prg: Rc<PRG>,
-    encoded_msg: Bytes,
-    bits: Vec<u8>,
-    seeds: Vec<PRGSeed>,
-}
-
 impl DPFKey {
     // generates a new DPF key with the necessary parameters needed for evaluation
     pub fn new(prg: Rc<PRG>, encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<PRGSeed>) -> DPFKey {
@@ -132,13 +153,6 @@ impl DPFKey {
             seeds,
         }
     }
-}
-
-/// xor bytes in place, a = a ^ b
-// TODO: (Performance) xor inplace rather than copying
-fn xor_bytes(a: &Bytes, b: &Bytes) -> Bytes {
-    assert_eq!(a.len(), b.len());
-    a.iter().zip(b.iter()).map(|(&a, &b)| a ^ b).collect()
 }
 
 #[cfg(test)]

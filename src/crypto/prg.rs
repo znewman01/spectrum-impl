@@ -9,14 +9,14 @@ use rand::prelude::*;
 /// PRG uses AES to expand a seed to desired length
 #[derive(Clone, PartialEq, Debug)]
 pub struct PRG {
-    seed_size: usize,
-    eval_size: usize,
+    pub seed_size: usize,
+    pub eval_size: usize,
 }
 
 /// seed for a specific PRG
 #[derive(Clone, PartialEq, Debug)]
 pub struct PRGSeed {
-    bytes: Vec<u8>,
+    bytes: Bytes,
 }
 
 impl PRG {
@@ -34,7 +34,18 @@ impl PRG {
         let mut key = vec![0; self.seed_size];
         thread_rng().fill_bytes(&mut key);
 
-        PRGSeed { bytes: key }
+        PRGSeed {
+            bytes: Bytes::from(key),
+        }
+    }
+
+    /// generates a new seed set to zero
+    pub fn new_zero_seed(&self) -> PRGSeed {
+        // all bytes set to zero
+        let key = vec![0; self.seed_size];
+        PRGSeed {
+            bytes: Bytes::from(key),
+        }
     }
 
     /// evaluates the PRG on the given seed
@@ -87,6 +98,12 @@ impl PRG {
         final_result.truncate(self.eval_size);
 
         Bytes::from(final_result)
+    }
+}
+
+impl PRGSeed {
+    pub fn raw_bytes(&self) -> &Bytes {
+        &self.bytes
     }
 }
 
