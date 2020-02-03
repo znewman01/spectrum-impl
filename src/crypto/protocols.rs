@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 extern crate rand;
-use crate::crypto::byte_utils::{xor_all_bytes, xor_bytes};
+use crate::crypto::byte_utils::{xor_all_bytes, xor_bytes_list};
 use crate::crypto::dpf::{DPFKey, PRGBasedDPF, DPF};
 use bytes::Bytes;
 use rand::prelude::*;
@@ -69,7 +69,7 @@ impl CryptoParams {
             .iter()
             .map(|key| self.dpf.compressed_eval(key, &channel_keys))
             .collect();
-        let proof = xor_all_bytes(eval_bytes);
+        let proof = xor_bytes_list(eval_bytes);
 
         let mut shares: Vec<ClientProofShare> = Vec::new();
 
