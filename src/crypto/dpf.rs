@@ -112,7 +112,8 @@ impl DPF<DPFKey> for PRGBasedDPF {
             .collect()
     }
 
-    /// evaluates the DPF on a given DPFKey to generate a set a point vector
+    /// evaluates the DPF keys to produce a "compressed" DPF output that
+    /// is smaller (bit-wise) than the fully expanded DPF
     // TODO(sss): find a better / more representative name for this functionality
     fn compressed_eval(&self, key: &DPFKey, tokens: &[Bytes]) -> Bytes {
         assert_eq!(key.bits.len(), tokens.len());
