@@ -29,9 +29,7 @@ pub struct MyWorker {
 
 impl MyWorker {
     fn new(peers_rx: watch::Receiver<Option<Vec<Node>>>) -> Self {
-        MyWorker {
-            peers_rx
-        }
+        MyWorker { peers_rx }
     }
 }
 
@@ -41,13 +39,35 @@ impl Worker for MyWorker {
         &self,
         request: Request<UploadRequest>,
     ) -> Result<Response<UploadResponse>, Status> {
-        debug!("Request! {:?}", request.into_inner());
+        let request = request.into_inner();
+        debug!("Request! {:?}", request);
 
-        {
-            let peers_ref = self.peers_rx.borrow();
-            let peers = peers_ref.as_ref().expect("By the time Worker receieves requests, it should know its peers.");
-            debug!("I have peers! {:?}", peers);
-        }
+        // read lock; ok to hold onto indefinitely because we only send one value in this channel
+        let peers_lock = self.peers_rx.borrow();
+        let peers = peers_lock
+            .as_ref()
+            .expect("By the time Worker receives requests, it should know its peers.")
+            .clone();
+
+        tokio::spawn(async move {
+            let num_peers = peers.len();
+            let checks = tokio::task::spawn_blocking(move || {
+                debug!("I would be computing an audit for {:?} now.", request);
+                return vec![num_peers];
+            })
+            .await
+            .unwrap();
+
+            assert_eq!(checks.len(), num_peers);
+            for (peer, check) in peers.into_iter().zip(checks.into_iter()) {
+                tokio::spawn(async move {
+                    debug!(
+                        "I would be sending check {:?} to peer {:?} now.",
+                        check, peer
+                    );
+                });
+            }
+        });
 
         let reply = UploadResponse {};
         Ok(Response::new(reply))
