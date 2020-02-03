@@ -8,11 +8,10 @@ use crate::{
         quorum::wait_for_start_time_set,
         WorkerInfo,
     },
-    sync::OneshotCache,
 };
 use futures::Future;
 use log::{debug, error, info, trace};
-use tokio::sync::oneshot;
+use tokio::sync::watch;
 use tonic::{Request, Response, Status};
 
 pub mod spectrum {
@@ -25,19 +24,14 @@ use spectrum::{
 };
 
 pub struct MyWorker {
-    peers: OneshotCache<Vec<Node>>,
+    peers_rx: watch::Receiver<Option<Vec<Node>>>,
 }
 
 impl MyWorker {
-    fn new(peers_rx: oneshot::Receiver<Vec<Node>>) -> Self {
+    fn new(peers_rx: watch::Receiver<Option<Vec<Node>>>) -> Self {
         MyWorker {
-            peers: OneshotCache::new(peers_rx),
+            peers_rx
         }
-    }
-
-    // Gets this worker's peers, caching the result.
-    async fn get_peers(&self) -> Vec<Node> {
-        self.peers.get().await.to_vec()
     }
 }
 
@@ -49,8 +43,11 @@ impl Worker for MyWorker {
     ) -> Result<Response<UploadResponse>, Status> {
         debug!("Request! {:?}", request.into_inner());
 
-        let peers = self.get_peers().await;
-        debug!("I have peers! {:?}", peers);
+        {
+            let peers_ref = self.peers_rx.borrow();
+            let peers = peers_ref.as_ref().expect("By the time Worker receieves requests, it should know its peers.");
+            debug!("I have peers! {:?}", peers);
+        }
 
         let reply = UploadResponse {};
         Ok(Response::new(reply))
@@ -80,7 +77,7 @@ where
     info!("Worker starting up.");
     let addr = get_addr();
 
-    let (peer_tx, peer_rx) = oneshot::channel();
+    let (peer_tx, peer_rx) = watch::channel(None);
     let worker = MyWorker::new(peer_rx);
 
     let server_task = tokio::spawn(
@@ -99,7 +96,7 @@ where
 
     wait_for_start_time_set(&config).await?;
     let peers = filter_peers(info, resolve_all(&config).await?);
-    peer_tx.send(peers).unwrap(); // TODO(zjn): don't unwrap
+    peer_tx.broadcast(Some(peers))?;
 
     server_task.await??;
     info!("Worker shutting down.");
