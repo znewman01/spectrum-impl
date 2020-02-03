@@ -9,7 +9,7 @@ pub fn xor_bytes(a: &Bytes, b: &Bytes) -> Bytes {
     a.iter().zip(b.iter()).map(|(&a, &b)| a ^ b).collect()
 }
 
-pub fn xor_all_bytes(parts: Vec<Bytes>) -> Bytes {
+pub fn xor_bytes_list(parts: Vec<Bytes>) -> Bytes {
     // xor all the parts together
     let mut res = Bytes::from(vec![0; parts[0].len()]);
     for part in parts {
