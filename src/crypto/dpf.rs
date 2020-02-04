@@ -15,7 +15,6 @@ pub trait DPF<Key> {
     /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
     fn gen(&self, msg: Bytes, idx: usize) -> Vec<Key>;
     fn eval(&self, key: &Key) -> Vec<Bytes>;
-    fn compressed_eval(&self, key: &Key, tokens: &[Bytes]) -> Bytes;
     fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes>;
 }
 
@@ -110,24 +109,6 @@ impl DPF<DPFKey> for PRGBasedDPF {
                 }
             })
             .collect()
-    }
-
-    /// evaluates the DPF keys to produce a "compressed" DPF output that
-    /// is smaller (bit-wise) than the fully expanded DPF
-    // TODO(sss): find a better / more representative name for this functionality
-    fn compressed_eval(&self, key: &DPFKey, tokens: &[Bytes]) -> Bytes {
-        assert_eq!(key.bits.len(), tokens.len());
-
-        let mut res = Bytes::from(vec![0; key.prg.seed_size]);
-
-        for (i, (seed, bit)) in key.seeds.iter().zip(key.bits.iter()).enumerate() {
-            if *bit != 0 {
-                res = xor_bytes(&res, seed.raw_bytes());
-                res = xor_bytes(&res, &tokens[i]);
-            }
-        }
-
-        res
     }
 
     /// combines the results produced by running eval on both keys
