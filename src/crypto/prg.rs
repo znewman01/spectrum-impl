@@ -102,8 +102,8 @@ impl PRG {
 }
 
 impl PRGSeed {
-    pub fn raw_bytes(&self) -> &Bytes {
-        &self.bytes
+    pub fn raw_bytes(&self) -> Bytes {
+        self.bytes.clone()
     }
 }
 

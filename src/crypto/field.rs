@@ -1,4 +1,6 @@
 //! Spectrum implementation.
+use bytes::Bytes;
+use hex;
 use rug::{integer::IsPrime, rand::RandState, Integer};
 use std::fmt::Debug;
 use std::ops;
@@ -29,30 +31,63 @@ impl Field {
 
         Field { order }
     }
-
-    // generates a new random field element
-    pub fn rand_element(self, rng: &mut RandState) -> FieldElement {
-        // TODO: figure out how to generate a random value
-        let random = self.order.clone().random_below(rng);
-
-        FieldElement {
-            value: random,
-            field: Rc::<Field>::new(self),
-        }
-    }
 }
 
 impl FieldElement {
     /// generates a new field element; value mod field.order
     pub fn new(v: Integer, field: Rc<Field>) -> FieldElement {
         FieldElement {
-            value: v % &field.order.clone(),
+            value: modulo_reduce(v, field.order.clone()),
             field,
         }
     }
 
+    pub fn zero(field: Rc<Field>) -> FieldElement {
+        FieldElement {
+            value: Integer::from(0),
+            field,
+        }
+    }
+
+    // generates a new random field element
+    pub fn rand_element(rng: &mut RandState, field: Rc<Field>) -> FieldElement {
+        // TODO: figure out how to generate a random value
+        let random = field.order.clone().random_below(rng);
+
+        FieldElement {
+            value: random,
+            field,
+        }
+    }
+
+    // generates a new random field element
+    pub fn from_bytes(bytes: Bytes, field: Rc<Field>) -> FieldElement {
+        let byte_str = hex::encode(bytes);
+        let val = Integer::from_str_radix(&byte_str, 16).unwrap();
+        FieldElement {
+            value: val % field.order.clone(),
+            field,
+        }
+    }
+
+    pub fn scalar_mul(self, scalar: u8) -> FieldElement {
+        FieldElement::new(
+            Integer::from(&self.value * scalar) % &self.field.order.clone(),
+            self.field,
+        )
+    }
+
     pub fn field(self) -> Rc<Field> {
         self.field
+    }
+}
+
+fn modulo_reduce(v: Integer, order: Integer) -> Integer{
+    if v.cmp0() ==  std::cmp::Ordering::Less {
+        Integer::from(order.clone() + v) % order
+        
+    } else {
+        v % order
     }
 }
 
@@ -63,7 +98,7 @@ impl ops::Add<FieldElement> for FieldElement {
     fn add(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
         FieldElement::new(
-            Integer::from(&self.value + &other.value) % &other.field.order.clone(),
+            modulo_reduce(self.value + other.value, other.field.order.clone()),
             other.field,
         )
     }
@@ -76,7 +111,7 @@ impl ops::Sub<FieldElement> for FieldElement {
     fn sub(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
         FieldElement::new(
-            Integer::from(&self.value - &other.value) % &other.field.order.clone(),
+            modulo_reduce(self.value - other.value, other.field.order.clone()),
             other.field,
         )
     }
@@ -89,8 +124,20 @@ impl ops::Mul<FieldElement> for FieldElement {
     fn mul(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
         FieldElement::new(
-            Integer::from(&self.value * &other.value) % &other.field.order.clone(),
+            modulo_reduce(self.value * &other.value, other.field.order.clone()),
             other.field,
+        )
+    }
+}
+
+/// override negation of field element
+impl ops::Neg for FieldElement {
+    type Output = FieldElement;
+
+    fn neg(self) -> FieldElement {
+        FieldElement::new(
+            modulo_reduce(-self.value, self.field.order.clone()),
+            self.field,
         )
     }
 }
@@ -100,7 +147,7 @@ impl ops::AddAssign<FieldElement> for FieldElement {
     fn add_assign(&mut self, other: FieldElement) {
         assert_eq!(self.field, other.field);
         *self = Self {
-            value: self.value.clone() + other.value,
+            value: modulo_reduce(self.value.clone() + other.value, other.field.order.clone()),
             field: other.field,
         };
     }
@@ -111,7 +158,7 @@ impl ops::SubAssign<FieldElement> for FieldElement {
     fn sub_assign(&mut self, other: FieldElement) {
         assert_eq!(self.field, other.field);
         *self = Self {
-            value: self.value.clone() - other.value,
+            value: modulo_reduce(self.value.clone() - other.value, other.field.order.clone()),
             field: other.field,
         };
     }
@@ -128,19 +175,19 @@ mod tests {
     #[test]
     fn test_field_rand_element() {
         let p = Integer::from(23);
-        let field = Field::new(p);
+        let field = Rc::<Field>::new(Field::new(p));
 
         let mut rng = RandState::new();
         assert_ne!(
-            field.clone().rand_element(&mut rng),
-            field.rand_element(&mut rng)
+            FieldElement::rand_element(&mut rng, field.clone()),
+            FieldElement::rand_element(&mut rng, field)
         );
     }
 
     #[test]
     fn test_field_element_add() {
-        let val1 = Integer::from(20);
-        let val2 = Integer::from(10);
+        let val1 = Integer::from(10);
+        let val2 = Integer::from(20);
         let p = Integer::from(23);
         let field = Rc::<Field>::new(Field::new(p));
 
@@ -167,8 +214,8 @@ mod tests {
 
     #[test]
     fn test_field_element_mul() {
-        let val1 = Integer::from(20);
-        let val2 = Integer::from(10);
+        let val1 = Integer::from(10);
+        let val2 = Integer::from(20);
         let p = Integer::from(23);
         let field = Rc::<Field>::new(Field::new(p));
 
@@ -176,6 +223,18 @@ mod tests {
         let elem2 = FieldElement::new(Integer::from(&val2), field.clone());
         let actual = (elem1 * elem2).value;
         let expected = Integer::from(&val1 * &val2) % field.order.clone();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_field_element_neg() {
+        let val = Integer::from(20);
+        let p = Integer::from(23);
+        let field = Rc::<Field>::new(Field::new(p));
+
+        let elem1 = FieldElement::new(Integer::from(&val), field.clone());
+        let actual = -elem1;
+        let expected = FieldElement::new(field.order.clone() - val, field);
         assert_eq!(actual, expected);
     }
 
