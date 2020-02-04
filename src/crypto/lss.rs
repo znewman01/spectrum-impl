@@ -1,8 +1,9 @@
 //! Spectrum implementation.
-use crate::crypto::field::FieldElement;
+use crate::crypto::field::{Field, FieldElement};
 use rug::{rand::RandState, Integer};
 use std::fmt::Debug;
 use std::ops;
+use std::rc::Rc;
 
 /// message contains a vector of bytes representing data in spectrum
 /// and is used for easily performing binary operations over bytes
@@ -34,13 +35,13 @@ pub fn share(value: FieldElement, n: usize, rng: &mut RandState) -> Vec<SecretSh
     let mut rand_sum = FieldElement::new(Integer::from(0), value.clone().field());
 
     // TODO: simplify this; something is probably being done incorrectly.
-    let field = value.clone().field().as_ref().clone();
+    let field: Rc<Field> = Rc::new(value.clone().field().as_ref().clone());
 
     // first share will be value + SUM r_i
     shares.push(SecretShare::new(value, true));
 
     for _ in 0..n - 1 {
-        let rand_i = field.clone().rand_element(rng);
+        let rand_i = FieldElement::rand_element(rng, field.clone());
         shares.push(SecretShare::new(rand_i.clone(), false));
         rand_sum += rand_i;
     }
