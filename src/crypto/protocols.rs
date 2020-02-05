@@ -167,8 +167,8 @@ impl CryptoParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bytes::Bytes;
     use crate::crypto::dpf::DPF;
+    use bytes::Bytes;
 
     fn random_field() -> Rc<Field> {
         let mut p = Integer::from(800_000_000);
