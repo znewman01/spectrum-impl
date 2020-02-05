@@ -82,10 +82,9 @@ impl FieldElement {
     }
 }
 
-fn modulo_reduce(v: Integer, order: Integer) -> Integer{
-    if v.cmp0() ==  std::cmp::Ordering::Less {
-        Integer::from(order.clone() + v) % order
-        
+fn modulo_reduce(v: Integer, order: Integer) -> Integer {
+    if v.cmp0() == std::cmp::Ordering::Less {
+        (order.clone() + v) % order
     } else {
         v % order
     }
