@@ -20,7 +20,7 @@ use services::Service::{Leader, Publisher, Worker};
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;
-    let experiment = Experiment::new(2, 2, 5);
+    let experiment = Experiment::new(2, 2, 2);
     experiment::write_to_store(&config, experiment).await?;
     let barrier = Arc::new(Barrier::new(
         experiment.clients as usize + experiment.iter_services().count(),

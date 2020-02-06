@@ -16,7 +16,7 @@ pub mod spectrum {
     tonic::include_proto!("spectrum");
 }
 
-use spectrum::{worker_client::WorkerClient, ClientId, UploadRequest};
+use spectrum::{worker_client::WorkerClient, ClientId, RegisterClientRequest, UploadRequest};
 
 // Picks one worker from each group.
 fn pick_worker_shards(nodes: Vec<Node>) -> Vec<Node> {
@@ -61,7 +61,10 @@ pub async fn run<C: Store>(
     let shards: Vec<Node> = pick_worker_shards(resolve_all(&config_store).await?);
     let mut clients = vec![];
     for shard in shards {
-        clients.push(WorkerClient::connect(format!("http://{}", shard.addr)).await?);
+        let mut client = WorkerClient::connect(format!("http://{}", shard.addr)).await?;
+        let req = tonic::Request::new(RegisterClientRequest::default());
+        client.register_client(req).await?;
+        clients.push(client);
     }
 
     delay_until(start_time).await;
