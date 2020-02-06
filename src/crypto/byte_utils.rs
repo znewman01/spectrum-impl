@@ -2,7 +2,7 @@
 
 use bytes::Bytes;
 
-/// xor bytes in place, a = a ^ b
+/// xor bytes, a = a ^ b
 // TODO: (Performance) xor inplace rather than copying
 pub fn xor_bytes(a: &Bytes, b: &Bytes) -> Bytes {
     assert_eq!(a.len(), b.len());

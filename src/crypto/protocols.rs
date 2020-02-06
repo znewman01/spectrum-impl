@@ -2,9 +2,11 @@
 #![allow(dead_code)]
 
 extern crate rand;
-use crate::crypto::dpf::{DPFKey, PRGBasedDPF};
+use crate::crypto::byte_utils::xor_bytes;
+use crate::crypto::dpf::{DPFKey, PRGBasedDPF, DPF};
 use crate::crypto::field::{Field, FieldElement};
 use crate::crypto::lss::{SecretShare, LSS};
+use bytes::Bytes;
 use rug::{rand::RandState, Integer};
 use std::rc::Rc;
 
@@ -12,8 +14,16 @@ use std::rc::Rc;
 struct CryptoParams {
     num_channels: usize,
     num_servers: usize,
+    msg_size_in_bytes: usize,
     dpf: PRGBasedDPF,
     field: Rc<Field>,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+struct ChannelTable {
+    params: CryptoParams,
+    channel_keys: Vec<FieldElement>,
+    slots: Vec<Bytes>,
 }
 
 // TODO: make sure it matches with protobufs
@@ -30,16 +40,50 @@ struct ClientProofShare {
     seed_proof_share: SecretShare,
 }
 
+impl ChannelTable {
+    pub fn new(params: CryptoParams, channel_keys: Vec<FieldElement>) -> ChannelTable {
+        let zero = vec![0; params.msg_size_in_bytes];
+        let slots: Vec<Bytes> = vec![Bytes::from(zero); params.num_channels];
+        ChannelTable {
+            params,
+            channel_keys,
+            slots,
+        }
+    }
+
+    pub fn process_write(&mut self, key: &DPFKey) {
+        let values = self.params.dpf.eval(key);
+        for (i, slot) in self.slots.iter_mut().enumerate() {
+            *slot = xor_bytes(&slot, &values[i]);
+        }
+    }
+}
+
+fn combine_tables(params: CryptoParams, tables: Vec<ChannelTable>) -> Vec<Bytes> {
+    let zero = vec![0; params.msg_size_in_bytes];
+    let mut channels: Vec<Bytes> = vec![Bytes::from(zero); params.num_channels];
+
+    for table in tables.iter() {
+        for (i, slot) in table.slots.iter().enumerate() {
+            channels[i] = xor_bytes(&channels[i], &slot);
+        }
+    }
+
+    channels
+}
+
 impl CryptoParams {
     pub fn new(
         num_channels: usize,
         num_servers: usize,
+        msg_size_in_bytes: usize,
         dpf: PRGBasedDPF,
         field: Rc<Field>,
     ) -> CryptoParams {
         CryptoParams {
             num_channels,
             num_servers,
+            msg_size_in_bytes,
             dpf,
             field,
         }
@@ -169,12 +213,14 @@ mod tests {
     use super::*;
     use crate::crypto::dpf::DPF;
     use bytes::Bytes;
+    use rand::prelude::*;
 
     fn random_field() -> Rc<Field> {
         let mut p = Integer::from(800_000_000);
         p.next_prime_mut();
         Rc::<Field>::new(Field::new(p))
     }
+
     #[test]
     fn test_audit_check_correct() {
         let mut rng = RandState::new();
@@ -183,12 +229,13 @@ mod tests {
         let num_servers = 2;
         let chan_idx = 5;
         let sec_bytes = 16;
+        let msg_size_in_bytes = sec_bytes * 10;
         let field = random_field();
 
         let channel_keys = vec![FieldElement::rand_element(&mut rng, field.clone()); num_chan];
         let dpf = PRGBasedDPF::new(sec_bytes, num_servers, num_chan);
-        let dpf_keys = dpf.gen(Bytes::from(vec![0; sec_bytes * 10]), chan_idx);
-        let params = CryptoParams::new(num_chan, num_servers, dpf, field);
+        let dpf_keys = dpf.gen(Bytes::from(vec![0; msg_size_in_bytes]), chan_idx);
+        let params = CryptoParams::new(num_chan, num_servers, msg_size_in_bytes, dpf, field);
 
         let client_proof_shares =
             params.gen_proof_shares(chan_idx, channel_keys[chan_idx].clone(), dpf_keys.clone());
@@ -205,5 +252,42 @@ mod tests {
         );
 
         assert_eq!(params.check_audit(token_a, token_b), true);
+    }
+
+    #[test]
+    fn test_write_to_slot_table() {
+        let mut rng = RandState::new();
+
+        let num_chan = 100;
+        let num_servers = 2;
+        let chan_idx = 5;
+        let sec_bytes = 16;
+        let msg_size_in_bytes = sec_bytes * 10;
+        let field = random_field();
+
+        let mut message = vec![0; msg_size_in_bytes];
+        thread_rng().fill_bytes(&mut message);
+
+        let channel_keys = vec![FieldElement::rand_element(&mut rng, field.clone()); num_chan];
+        let dpf = PRGBasedDPF::new(sec_bytes, num_servers, num_chan);
+        let dpf_keys = dpf.gen(Bytes::from(message.clone()), chan_idx);
+        let params = CryptoParams::new(num_chan, num_servers, msg_size_in_bytes, dpf, field);
+
+        let mut channel_table_a = ChannelTable::new(params.clone(), channel_keys.clone());
+        let mut channel_table_b = ChannelTable::new(params.clone(), channel_keys);
+
+        channel_table_a.process_write(&dpf_keys[0]);
+        channel_table_b.process_write(&dpf_keys[1]);
+
+        let channels = combine_tables(params.clone(), vec![channel_table_a, channel_table_b]);
+
+        let zero = Bytes::from(vec![0; params.msg_size_in_bytes]);
+        for (i, chan) in channels.iter().enumerate() {
+            if i == chan_idx {
+                assert_eq!(*chan, message);
+            } else {
+                assert_eq!(*chan, zero);
+            }
+        }
     }
 }
