@@ -20,7 +20,8 @@ pub mod spectrum {
 
 use spectrum::{
     worker_server::{Worker, WorkerServer},
-    UploadRequest, UploadResponse, VerifyRequest, VerifyResponse,
+    RegisterClientRequest, RegisterClientResponse, UploadRequest, UploadResponse, VerifyRequest,
+    VerifyResponse,
 };
 
 pub struct MyWorker {
@@ -77,6 +78,17 @@ impl Worker for MyWorker {
         &self,
         _request: Request<VerifyRequest>,
     ) -> Result<Response<VerifyResponse>, Status> {
+        error!("Not implemented.");
+        Err(Status::new(
+            tonic::Code::Unimplemented,
+            "Not implemented".to_string(),
+        ))
+    }
+
+    async fn register_client(
+        &self,
+        _request: Request<RegisterClientRequest>,
+    ) -> Result<Response<RegisterClientResponse>, Status> {
         error!("Not implemented.");
         Err(Status::new(
             tonic::Code::Unimplemented,

@@ -10,6 +10,11 @@ message ClientId {
   string client_id = 1;
 }
 
+message WorkerId {
+  uint32 group = 1;
+  uint32 idx = 2;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Security Protocol
 ////////////////////////////////////////////////////////////////////////////////
@@ -55,11 +60,18 @@ message ShareCheck {
 ////////////////////////////////////////////////////////////////////////////////
 
 service Worker {
+  rpc RegisterClient(RegisterClientRequest) returns (RegisterClientResponse);
   rpc Upload(UploadRequest) returns (UploadResponse) {}
   rpc Verify(VerifyRequest) returns (VerifyResponse) {}
 }
 
+message RegisterClientRequest {
+  ClientId client_id = 1;
+  repeated WorkerId shards = 2;
+}
 
+message RegisterClientResponse {
+}
 
 message UploadRequest {
   ClientId client_id = 1;
