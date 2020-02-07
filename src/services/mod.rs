@@ -121,3 +121,17 @@ impl From<WorkerInfo> for WorkerId {
         }
     }
 }
+
+// TODO(zjn): maybe TryFrom and cast safely?
+impl From<WorkerId> for WorkerInfo {
+    fn from(worker: WorkerId) -> WorkerInfo {
+        WorkerInfo::new(Group::new(worker.group as u16), worker.idx as u16)
+    }
+}
+
+impl From<ClientId> for ClientInfo {
+    fn from(client: ClientId) -> ClientInfo {
+        // TODO(zjn): change proto type of client_id from string to uint32
+        ClientInfo::new(client.client_id.parse().expect("Should parse as number"))
+    }
+}

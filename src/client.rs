@@ -1,4 +1,4 @@
-use crate::proto::{worker_client::WorkerClient, ClientId, RegisterClientRequest, UploadRequest};
+use crate::proto::{worker_client::WorkerClient, RegisterClientRequest, UploadRequest};
 use crate::{
     config,
     services::{
@@ -82,9 +82,7 @@ where
     delay_until(start_time).await;
 
     let req = UploadRequest {
-        client_id: Some(ClientId {
-            client_id: "1".to_string(),
-        }),
+        client_id: Some(info.into()),
         share_and_proof: None,
     };
 

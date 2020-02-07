@@ -10,7 +10,7 @@ use crate::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
         quorum::{delay_until, wait_for_start_time_set},
-        Group, WorkerInfo,
+        ClientInfo, WorkerInfo,
     },
 };
 
@@ -21,8 +21,7 @@ use tokio::sync::{watch, RwLock};
 use tonic::{Request, Response, Status};
 
 pub struct MyWorker {
-    // TODO(zjn): replace () with ClientInfo
-    clients_peers: RwLock<HashMap<(), Vec<WorkerInfo>>>,
+    clients_peers: RwLock<HashMap<ClientInfo, Vec<WorkerInfo>>>,
     start_rx: watch::Receiver<bool>,
 }
 
@@ -46,12 +45,14 @@ impl Worker for MyWorker {
 
         let client_id = request
             .client_id
-            .map(|_| ()) // TODO(zjn): replace with ClientInfo
+            .map(ClientInfo::from)
             .ok_or_else(|| Status::invalid_argument("Client ID must be set."))?;
         let clients_peers = self.clients_peers.read().await;
         let peers: Vec<WorkerInfo> = clients_peers
             .get(&client_id)
-            .ok_or_else(|| Status::failed_precondition("Client ID not registered."))?
+            .ok_or_else(|| {
+                Status::failed_precondition(format!("Client ID {:?} not registered.", client_id))
+            })?
             .clone();
         let share_and_proof = request.share_and_proof;
 
@@ -62,7 +63,7 @@ impl Worker for MyWorker {
                     "I would be computing an audit for {:?} now.",
                     share_and_proof
                 );
-                return vec![0; num_peers];
+                return vec![0u32; num_peers];
             })
             .await
             .unwrap();
@@ -107,22 +108,16 @@ impl Worker for MyWorker {
         }
 
         let request = request.into_inner();
-        trace!("Registering client {:?}", request.client_id);
-
         let client_id = request
             .client_id
-            .map(|_| ()) // TODO(zjn): replace with ClientInfo
+            .map(ClientInfo::from)
             .ok_or_else(|| Status::invalid_argument("Client ID must be set."))?;
 
+        let shards = request.shards.into_iter().map(WorkerInfo::from).collect();
+        trace!("Registering client {:?}", client_id);
+        trace!("Client shards: {:?}", shards);
         let mut clients_peers = self.clients_peers.write().await;
-        clients_peers.insert(
-            client_id,
-            request
-                .shards
-                .iter()
-                .map(|_shard| WorkerInfo::new(Group::new(0), 0)) // TODO(zjn): create valid WorkerId
-                .collect(),
-        ); // TODO(zjn): ensure none; client shouldn't register twice
+        clients_peers.insert(client_id, shards); // TODO(zjn): ensure none; client shouldn't register twice
 
         let reply = RegisterClientResponse {};
         Ok(Response::new(reply))
