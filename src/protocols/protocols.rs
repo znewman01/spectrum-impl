@@ -106,8 +106,7 @@ impl CryptoParams {
         for (i, (seed, bit)) in dpf_key.seeds.iter().zip(dpf_key.bits.iter()).enumerate() {
             assert!(*bit == 0 || *bit == 1);
 
-            res_seed -= channel_keys[i].clone()
-                * FieldElement::from_bytes(seed.raw_bytes(), self.field.clone());
+            res_seed -= channel_keys[i].clone() * seed.to_field_element(self.field.clone());
 
             if *bit == 1 {
                 res_bit += channel_keys[i].clone();
@@ -172,7 +171,7 @@ impl CryptoParams {
             .enumerate()
         {
             assert!(*bit == 0 || *bit == 1);
-            res_seed_a += FieldElement::from_bytes(seed.raw_bytes(), self.field.clone());
+            res_seed_a += seed.to_field_element(self.field.clone());
 
             if i == channel_index && *bit == 1 {
                 proof_correction = -1;
@@ -181,7 +180,7 @@ impl CryptoParams {
 
         for (seed, bit) in dpf_key_b.seeds.iter().zip(dpf_key_b.bits.iter()) {
             assert!(*bit == 0 || *bit == 1);
-            res_seed_b += FieldElement::from_bytes(seed.raw_bytes(), self.field.clone());
+            res_seed_b += seed.to_field_element(self.field.clone());
         }
 
         /* 2) split the proof into secret shares */
