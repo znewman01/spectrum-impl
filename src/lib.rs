@@ -23,30 +23,13 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let experiment = Experiment::new(2, 2, 2);
     experiment::write_to_store(&config, experiment).await?;
     let barrier = Arc::new(Barrier::new(
-        experiment.clients as usize + experiment.iter_services().count(),
+        experiment.iter_clients().count() + experiment.iter_services().count(),
     ));
+
     let handles = futures::stream::FuturesUnordered::new();
-
-    for client in experiment.iter_clients() {
-        if let Client(info) = client {
-            let barrier = barrier.clone();
-            let shutdown = async move {
-                barrier.wait().await;
-                Ok(())
-            };
-            handles.push(
-                client::run(config.clone(), info)
-                    .and_then(|_| shutdown)
-                    .boxed(),
-            );
-        } else {
-            panic!("non-client in iter_clients()");
-        }
-    }
-    // TODO(zjn): combine these loops
-
-    for service in experiment.iter_services() {
+    for service in experiment.iter_services().chain(experiment.iter_clients()) {
         let barrier = barrier.clone();
+        // TODO(zjn): shutdown should have timeout too
         let shutdown = async move {
             barrier.wait().await;
         };
@@ -55,9 +38,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
             Publisher(info) => publisher::run(config.clone(), info, shutdown).boxed(),
             Leader(info) => leader::run(config.clone(), info, shutdown).boxed(),
             Worker(info) => worker::run(config.clone(), info, shutdown).boxed(),
-            Client(_) => {
-                panic!("Need to handle clients.");
-            }
+            Client(info) => client::run(config.clone(), info, shutdown).boxed(),
         });
     }
 

@@ -7,6 +7,7 @@ use crate::{
     },
 };
 use config::store::Store;
+use futures::prelude::*;
 use log::{debug, info, trace};
 use rand::{seq::IteratorRandom, thread_rng};
 use std::collections::HashSet;
@@ -51,10 +52,15 @@ fn pick_worker_shards(nodes: Vec<Node>) -> Vec<Node> {
     shards
 }
 
-pub async fn run<C: Store>(
+pub async fn run<C, F>(
     config_store: C,
     _info: ClientInfo,
-) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
+    shutdown: F,
+) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
+where
+    C: Store,
+    F: Future<Output = ()> + Send + 'static,
+{
     info!("Client starting");
     let start_time = wait_for_start_time_set(&config_store).await?;
     debug!("Received configuration from configuration server; initializing.");
@@ -83,6 +89,8 @@ pub async fn run<C: Store>(
         let response = client.upload(req).await?;
         debug!("RESPONSE={:?}", response.into_inner());
     }
+
+    shutdown.await;
 
     Ok(())
 }
