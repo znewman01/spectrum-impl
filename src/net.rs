@@ -47,6 +47,10 @@ pub mod tests {
 
     #[test]
     fn test_get_socket_addr() {
+        if pick_unused_port().is_none() {
+            return; // no unused ports; this happens on e.g. Travis sometimes
+        }
+
         assert!(get_addr().ip().is_loopback());
     }
 }
