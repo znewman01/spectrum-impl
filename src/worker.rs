@@ -62,7 +62,7 @@ impl Worker for MyWorker {
                     "I would be computing an audit for {:?} now.",
                     share_and_proof
                 );
-                return vec![num_peers];
+                return vec![0; num_peers];
             })
             .await
             .unwrap();

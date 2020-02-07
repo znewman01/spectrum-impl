@@ -3,6 +3,8 @@ pub mod health;
 pub mod quorum;
 mod retry;
 
+use crate::proto::{ClientId, WorkerId};
+
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Group {
     pub idx: u16,
@@ -99,5 +101,23 @@ impl From<PublisherInfo> for Service {
 impl From<ClientInfo> for Service {
     fn from(info: ClientInfo) -> Self {
         Service::Client(info)
+    }
+}
+
+// TODO(zjn): merge these more closely
+impl From<ClientInfo> for ClientId {
+    fn from(info: ClientInfo) -> ClientId {
+        ClientId {
+            client_id: info.idx.to_string(),
+        }
+    }
+}
+
+impl From<WorkerInfo> for WorkerId {
+    fn from(info: WorkerInfo) -> WorkerId {
+        WorkerId {
+            group: info.group.idx as u32,
+            idx: info.idx as u32,
+        }
     }
 }

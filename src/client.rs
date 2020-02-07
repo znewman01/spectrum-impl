@@ -49,7 +49,7 @@ fn pick_worker_shards(nodes: Vec<Node>) -> Vec<Node> {
 
 pub async fn run<C, F>(
     config_store: C,
-    _info: ClientInfo,
+    info: ClientInfo,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
@@ -62,9 +62,19 @@ where
 
     let shards: Vec<Node> = pick_worker_shards(resolve_all(&config_store).await?);
     let mut clients = vec![];
+    let req = RegisterClientRequest {
+        client_id: Some(info.into()),
+        shards: shards
+            .iter()
+            .map(|shard| match shard.service {
+                Service::Worker(worker_info) => worker_info.into(),
+                _ => panic!("Non-worker node."),
+            })
+            .collect(),
+    };
     for shard in shards {
         let mut client = WorkerClient::connect(format!("http://{}", shard.addr)).await?;
-        let req = tonic::Request::new(RegisterClientRequest::default());
+        let req = tonic::Request::new(req.clone());
         client.register_client(req).await?;
         clients.push(client);
     }
