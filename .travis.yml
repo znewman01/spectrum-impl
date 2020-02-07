@@ -7,7 +7,6 @@ jobs:
   allow_failures:
     - rust: nightly
   fast_finish: true
-cache: cargo
 before_script:
   - rustup component add rustfmt
   - rustup component add clippy || cargo install --git https://github.com/rust-lang/rust-clippy/ --force clippy
