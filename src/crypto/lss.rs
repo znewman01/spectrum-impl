@@ -105,6 +105,7 @@ impl ops::Mul<FieldElement> for SecretShare {
 mod tests {
     use super::*;
     use crate::crypto::field::Field;
+    use proptest::prelude::*;
     use std::rc::Rc;
 
     #[test]
@@ -207,22 +208,27 @@ mod tests {
         assert_eq!(value * constant, LSS::recover(shares));
     }
 
-    #[test]
-    fn test_share_different_n() {
-        let mut rng = RandState::new();
-        let field = Field::new(101.into()); // 101 is prime
-        let value = FieldElement::new(100.into(), Rc::<Field>::new(field));
+    const MAX_SPLIT: usize = 100;
 
-        // share with 2-5 way splits and make sure the shares are recoverable
-        let rec2 = LSS::recover(LSS::share(value.clone(), 2, &mut rng));
-        let rec3 = LSS::recover(LSS::share(value.clone(), 3, &mut rng));
-        let rec4 = LSS::recover(LSS::share(value.clone(), 4, &mut rng));
-        let rec5 = LSS::recover(LSS::share(value, 5, &mut rng));
+    fn split_factor() -> impl Strategy<Value = usize> {
+        (2..MAX_SPLIT)
+    }
 
-        // sharing with different n works
-        assert_eq!(rec2, rec3);
-        assert_eq!(rec3, rec4);
-        assert_eq!(rec4, rec5);
+    proptest! {
+        #[test]
+        fn test_share_different_n(
+            split in split_factor()
+        ) {
+            let mut rng = RandState::new();
+            let field = Field::new(101.into()); // 101 is prime
+            let value = FieldElement::new(100.into(), Rc::<Field>::new(field));
+
+            // share the value {split}
+            let rec = LSS::recover(LSS::share(value.clone(), split, &mut rng));
+
+            // sharing with different n works
+            assert_eq!(rec, value);
+        }
     }
 
     #[test]
