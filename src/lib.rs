@@ -27,14 +27,23 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     ));
     let handles = futures::stream::FuturesUnordered::new();
 
-    for _ in 0..experiment.clients {
-        let barrier = barrier.clone();
-        let shutdown = async move {
-            barrier.wait().await;
-            Ok(())
-        };
-        handles.push(client::run(config.clone()).and_then(|_| shutdown).boxed());
+    for client in experiment.iter_clients() {
+        if let Client(info) = client {
+            let barrier = barrier.clone();
+            let shutdown = async move {
+                barrier.wait().await;
+                Ok(())
+            };
+            handles.push(
+                client::run(config.clone(), info)
+                    .and_then(|_| shutdown)
+                    .boxed(),
+            );
+        } else {
+            panic!("non-client in iter_clients()");
+        }
     }
+    // TODO(zjn): combine these loops
 
     for service in experiment.iter_services() {
         let barrier = barrier.clone();

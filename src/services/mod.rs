@@ -95,3 +95,9 @@ impl From<PublisherInfo> for Service {
         Service::Publisher(info)
     }
 }
+
+impl From<ClientInfo> for Service {
+    fn from(info: ClientInfo) -> Self {
+        Service::Client(info)
+    }
+}

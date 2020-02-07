@@ -3,7 +3,7 @@ use crate::{
     services::{
         discovery::{resolve_all, Node},
         quorum::{delay_until, wait_for_start_time_set},
-        Group, Service,
+        ClientInfo, Group, Service,
     },
 };
 use config::store::Store;
@@ -53,6 +53,7 @@ fn pick_worker_shards(nodes: Vec<Node>) -> Vec<Node> {
 
 pub async fn run<C: Store>(
     config_store: C,
+    _info: ClientInfo,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     info!("Client starting");
     let start_time = wait_for_start_time_set(&config_store).await?;

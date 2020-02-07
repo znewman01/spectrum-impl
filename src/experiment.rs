@@ -1,7 +1,9 @@
 #![allow(clippy::unit_arg)] // weird cargo clippy bug; complains about "derive(Arbitrary)"
 
 use crate::config::store::{Error, Store};
-use crate::services::{discovery::Node, Group, LeaderInfo, PublisherInfo, Service, WorkerInfo};
+use crate::services::{
+    discovery::Node, ClientInfo, Group, LeaderInfo, PublisherInfo, Service, WorkerInfo,
+};
 
 use serde::{Deserialize, Serialize};
 use std::iter::{once, IntoIterator};
@@ -39,6 +41,11 @@ impl Experiment {
         });
 
         publishers.chain(leaders).chain(workers)
+    }
+
+    // TODO(zjn): combine with iter_services
+    pub fn iter_clients(self) -> impl Iterator<Item = Service> {
+        (0..self.clients).map(ClientInfo::new).map(Service::from)
     }
 }
 
@@ -131,6 +138,20 @@ pub mod tests {
                             experiment.groups as usize,
                             (experiment.groups * experiment.workers_per_group) as usize);
             prop_assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_experiment_iter_clients(experiment in experiments()) {
+            let clients: Vec<Service> = experiment.iter_clients().collect();
+
+            for client in &clients {
+                match client {
+                    Service::Client(_) => {}
+                    _ => { panic!("Only clients expected in iter_clients()."); }
+                }
+            }
+
+            prop_assert_eq!(clients.len(), experiment.clients as usize);
         }
 
         #[test]
