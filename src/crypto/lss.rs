@@ -210,14 +210,10 @@ mod tests {
 
     const MAX_SPLIT: usize = 100;
 
-    fn split_factor() -> impl Strategy<Value = usize> {
-        (2..MAX_SPLIT)
-    }
-
     proptest! {
         #[test]
         fn test_share_different_n(
-            split in split_factor()
+            split in (2..MAX_SPLIT)
         ) {
             let mut rng = RandState::new();
             let field = Field::new(101.into()); // 101 is prime
