@@ -17,6 +17,10 @@ pub mod services;
 
 use experiment::Experiment;
 use services::Service::{Client, Leader, Publisher, Worker};
+use std::time::Duration;
+use tokio::time::delay_for;
+
+const TIMEOUT: Duration = Duration::from_secs(2);
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;
@@ -29,9 +33,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let handles = futures::stream::FuturesUnordered::new();
     for service in experiment.iter_services().chain(experiment.iter_clients()) {
         let barrier = barrier.clone();
-        // TODO(zjn): shutdown should have timeout too
         let shutdown = async move {
-            barrier.wait().await;
+            futures::select! {
+                _ = barrier.wait().fuse() => (),
+                _ = delay_for(TIMEOUT).fuse() => (),
+            };
         };
 
         handles.push(match service {
