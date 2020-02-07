@@ -32,6 +32,13 @@ impl Field {
 
         Field { order }
     }
+
+    pub fn zero(self: Rc<Field>) -> FieldElement {
+        FieldElement {
+            value: 0.into(),
+            field: self,
+        }
+    }
 }
 
 impl FieldElement {
@@ -39,13 +46,6 @@ impl FieldElement {
     pub fn new(v: Integer, field: Rc<Field>) -> FieldElement {
         FieldElement {
             value: reduce_modulo(v, field.order.clone()),
-            field,
-        }
-    }
-
-    pub fn zero(field: Rc<Field>) -> FieldElement {
-        FieldElement {
-            value: 0.into(),
             field,
         }
     }
@@ -62,7 +62,7 @@ impl FieldElement {
     }
 
     // generates a new random field element
-    pub fn from_bytes(bytes: Bytes, field: Rc<Field>) -> FieldElement {
+    pub fn from_bytes(bytes: &Bytes, field: Rc<Field>) -> FieldElement {
         let byte_str = hex::encode(bytes);
         let val = Integer::from_str_radix(&byte_str, 16).unwrap();
         FieldElement {
