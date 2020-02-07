@@ -2,16 +2,28 @@
 #![allow(dead_code)]
 
 extern crate rand;
-use crate::crypto::byte_utils::xor_bytes;
-use crate::crypto::dpf::{DPFKey, PRGBasedDPF, DPF};
+use crate::crypto::dpf::{DPFKey, PRGBasedDPF};
 use crate::crypto::field::{Field, FieldElement};
 use crate::crypto::lss::{SecretShare, LSS};
-use bytes::Bytes;
 use rug::{rand::RandState, Integer};
 use std::rc::Rc;
 
+// TODO: make sure it matches with protobufs
 #[derive(Clone, PartialEq, Debug)]
-struct CryptoParams {
+pub struct ServerAuditToken {
+    bit_check_token: SecretShare,
+    seed_check_token: SecretShare,
+    msg_check_token: FieldElement,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct ClientProofShare {
+    bit_proof_share: SecretShare,
+    seed_proof_share: SecretShare,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct AuditParams {
     num_channels: usize,
     num_servers: usize,
     msg_size_in_bytes: usize,
@@ -19,68 +31,15 @@ struct CryptoParams {
     field: Rc<Field>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
-struct ChannelTable {
-    params: CryptoParams,
-    channel_keys: Vec<FieldElement>,
-    slots: Vec<Bytes>,
-}
-
-// TODO: make sure it matches with protobufs
-#[derive(Clone, PartialEq, Debug)]
-struct ServerAuditToken {
-    bit_check_token: SecretShare,
-    seed_check_token: SecretShare,
-    msg_check_token: FieldElement,
-}
-
-#[derive(Clone, PartialEq, Debug)]
-struct ClientProofShare {
-    bit_proof_share: SecretShare,
-    seed_proof_share: SecretShare,
-}
-
-impl ChannelTable {
-    pub fn new(params: CryptoParams, channel_keys: Vec<FieldElement>) -> ChannelTable {
-        let zero = vec![0; params.msg_size_in_bytes];
-        let slots: Vec<Bytes> = vec![Bytes::from(zero); params.num_channels];
-        ChannelTable {
-            params,
-            channel_keys,
-            slots,
-        }
-    }
-
-    pub fn process_write(&mut self, key: &DPFKey) {
-        let values = self.params.dpf.eval(key);
-        for (i, slot) in self.slots.iter_mut().enumerate() {
-            *slot = xor_bytes(&slot, &values[i]);
-        }
-    }
-}
-
-fn combine_tables(params: CryptoParams, tables: Vec<ChannelTable>) -> Vec<Bytes> {
-    let zero = vec![0; params.msg_size_in_bytes];
-    let mut channels: Vec<Bytes> = vec![Bytes::from(zero); params.num_channels];
-
-    for table in tables.iter() {
-        for (i, slot) in table.slots.iter().enumerate() {
-            channels[i] = xor_bytes(&channels[i], &slot);
-        }
-    }
-
-    channels
-}
-
-impl CryptoParams {
+impl AuditParams {
     pub fn new(
         num_channels: usize,
         num_servers: usize,
         msg_size_in_bytes: usize,
         dpf: PRGBasedDPF,
         field: Rc<Field>,
-    ) -> CryptoParams {
-        CryptoParams {
+    ) -> AuditParams {
+        AuditParams {
             num_channels,
             num_servers,
             msg_size_in_bytes,
@@ -88,7 +47,9 @@ impl CryptoParams {
             field,
         }
     }
+}
 
+impl AuditParams {
     /// generates an audit token based on the provided DPF key
     /// and proof share
     pub fn gen_audit_token(
@@ -132,9 +93,6 @@ impl CryptoParams {
     /// checks that the set of audit tokens sums to zero in which case
     /// the audit succeeds
     pub fn check_audit(&self, token_a: ServerAuditToken, token_b: ServerAuditToken) -> bool {
-        // let sum_bits = token_a.bit_check_token - token_b.bit_check_token;
-        // let sum_seeds = token_a.seed_check_token - token_b.seed_check_token;
-
         let bit_check = LSS::recover(vec![token_a.bit_check_token, token_b.bit_check_token]);
         let seed_check = LSS::recover(vec![token_a.seed_check_token, token_b.seed_check_token]);
 
@@ -210,9 +168,9 @@ impl CryptoParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::dpf::DPF;
     use bytes::Bytes;
-    use rand::prelude::*;
+    use proptest::prelude::*;
+    use crate::crypto::dpf::DPF;
 
     fn random_field() -> Rc<Field> {
         let mut p = Integer::from(800_000_000);
@@ -220,73 +178,47 @@ mod tests {
         Rc::<Field>::new(Field::new(p))
     }
 
-    #[test]
-    fn test_audit_check_correct() {
-        let mut rng = RandState::new();
+    const MAX_NUM_CHANNELS: usize = 100;
+    const MAX_SECURITY: usize = 100; // in bytes
+    const MIN_SECURITY: usize = 16; // in bytes
 
-        let num_chan = 100;
-        let num_servers = 2;
-        let chan_idx = 5;
-        let sec_bytes = 16;
-        let msg_size_in_bytes = sec_bytes * 10;
-        let field = random_field();
-
-        let channel_keys = vec![FieldElement::rand_element(&mut rng, field.clone()); num_chan];
-        let dpf = PRGBasedDPF::new(sec_bytes, num_servers, num_chan);
-        let dpf_keys = dpf.gen(Bytes::from(vec![0; msg_size_in_bytes]), chan_idx);
-        let params = CryptoParams::new(num_chan, num_servers, msg_size_in_bytes, dpf, field);
-
-        let client_proof_shares =
-            params.gen_proof_shares(chan_idx, channel_keys[chan_idx].clone(), dpf_keys.clone());
-
-        let token_a = params.gen_audit_token(
-            channel_keys.clone(),
-            dpf_keys[0].clone(),
-            client_proof_shares[0].clone(),
-        );
-        let token_b = params.gen_audit_token(
-            channel_keys,
-            dpf_keys[1].clone(),
-            client_proof_shares[1].clone(),
-        );
-
-        assert_eq!(params.check_audit(token_a, token_b), true);
+    fn num_chanels_and_channel_index() -> impl Strategy<Value = (usize, usize)> {
+        (1..MAX_NUM_CHANNELS).prop_flat_map(|num_chan| (Just(num_chan), 0..num_chan))
     }
+    proptest! {
 
-    #[test]
-    fn test_write_to_slot_table() {
-        let mut rng = RandState::new();
+        fn test_audit_check_correct(
+            (num_chan, chan_idx) in num_chanels_and_channel_index(),
+            num_servers in Just(2),
+            sec_bytes in MIN_SECURITY..MAX_SECURITY
+        ) {
+            let mut rng = RandState::new();
 
-        let num_chan = 100;
-        let num_servers = 2;
-        let chan_idx = 5;
-        let sec_bytes = 16;
-        let msg_size_in_bytes = sec_bytes * 10;
-        let field = random_field();
+            //TODO(sss) proptest these
+            let msg_size_in_bytes = sec_bytes * 10;
+            let field = random_field();
 
-        let mut message = vec![0; msg_size_in_bytes];
-        thread_rng().fill_bytes(&mut message);
+            let channel_keys = vec![FieldElement::rand_element(&mut rng, field.clone()); num_chan];
+            let dpf = PRGBasedDPF::new(sec_bytes, num_servers, num_chan);
+            let dpf_keys = dpf.gen(Bytes::from(vec![0; msg_size_in_bytes]), chan_idx);
+            let params = AuditParams::new(num_chan, num_servers, msg_size_in_bytes, dpf, field);
 
-        let channel_keys = vec![FieldElement::rand_element(&mut rng, field.clone()); num_chan];
-        let dpf = PRGBasedDPF::new(sec_bytes, num_servers, num_chan);
-        let dpf_keys = dpf.gen(Bytes::from(message.clone()), chan_idx);
-        let params = CryptoParams::new(num_chan, num_servers, msg_size_in_bytes, dpf, field);
+            let client_proof_shares =
+                params.gen_proof_shares(chan_idx, channel_keys[chan_idx].clone(), dpf_keys.clone());
 
-        let mut channel_table_a = ChannelTable::new(params.clone(), channel_keys.clone());
-        let mut channel_table_b = ChannelTable::new(params.clone(), channel_keys);
+            let token_a = params.gen_audit_token(
+                channel_keys.clone(),
+                dpf_keys[0].clone(),
+                client_proof_shares[0].clone(),
+            );
+            let token_b = params.gen_audit_token(
+                channel_keys,
+                dpf_keys[1].clone(),
+                client_proof_shares[1].clone(),
+            );
 
-        channel_table_a.process_write(&dpf_keys[0]);
-        channel_table_b.process_write(&dpf_keys[1]);
-
-        let channels = combine_tables(params.clone(), vec![channel_table_a, channel_table_b]);
-
-        let zero = Bytes::from(vec![0; params.msg_size_in_bytes]);
-        for (i, chan) in channels.iter().enumerate() {
-            if i == chan_idx {
-                assert_eq!(*chan, message);
-            } else {
-                assert_eq!(*chan, zero);
-            }
+            assert_eq!(params.check_audit(token_a, token_b), true);
         }
+
     }
 }
