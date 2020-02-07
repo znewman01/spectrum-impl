@@ -2,6 +2,7 @@
 use bytes::Bytes;
 use hex;
 use rug::{integer::IsPrime, rand::RandState, Integer};
+use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops;
 use std::rc::Rc;
@@ -37,14 +38,14 @@ impl FieldElement {
     /// generates a new field element; value mod field.order
     pub fn new(v: Integer, field: Rc<Field>) -> FieldElement {
         FieldElement {
-            value: modulo_reduce(v, field.order.clone()),
+            value: reduce_modulo(v, field.order.clone()),
             field,
         }
     }
 
     pub fn zero(field: Rc<Field>) -> FieldElement {
         FieldElement {
-            value: Integer::from(0),
+            value: 0.into(),
             field,
         }
     }
@@ -70,20 +71,16 @@ impl FieldElement {
         }
     }
 
-    pub fn scalar_mul(self, scalar: u8) -> FieldElement {
-        FieldElement::new(
-            Integer::from(&self.value * scalar) % &self.field.order.clone(),
-            self.field,
-        )
-    }
-
     pub fn field(self) -> Rc<Field> {
         self.field
     }
 }
 
-fn modulo_reduce(v: Integer, order: Integer) -> Integer {
-    if v.cmp0() == std::cmp::Ordering::Less {
+// perform modulo reducation after a field operation.
+// note: different from % given that reduce_modulo compares
+// to zero rather than just take the remainder.
+fn reduce_modulo(v: Integer, order: Integer) -> Integer {
+    if v.cmp0() == Ordering::Less {
         (order.clone() + v) % order
     } else {
         v % order
@@ -97,7 +94,7 @@ impl ops::Add<FieldElement> for FieldElement {
     fn add(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
         FieldElement::new(
-            modulo_reduce(self.value + other.value, other.field.order.clone()),
+            reduce_modulo(self.value + other.value, other.field.order.clone()),
             other.field,
         )
     }
@@ -110,7 +107,7 @@ impl ops::Sub<FieldElement> for FieldElement {
     fn sub(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
         FieldElement::new(
-            modulo_reduce(self.value - other.value, other.field.order.clone()),
+            reduce_modulo(self.value - other.value, other.field.order.clone()),
             other.field,
         )
     }
@@ -123,8 +120,20 @@ impl ops::Mul<FieldElement> for FieldElement {
     fn mul(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
         FieldElement::new(
-            modulo_reduce(self.value * &other.value, other.field.order.clone()),
+            reduce_modulo(self.value * &other.value, other.field.order.clone()),
             other.field,
+        )
+    }
+}
+
+/// override * operation: want result.value = element1.value * element2.value mod field.order
+impl ops::Mul<u8> for FieldElement {
+    type Output = FieldElement;
+
+    fn mul(self, scalar: u8) -> FieldElement {
+        FieldElement::new(
+            reduce_modulo(self.value * scalar, self.field.order.clone()),
+            self.field,
         )
     }
 }
@@ -135,7 +144,7 @@ impl ops::Neg for FieldElement {
 
     fn neg(self) -> FieldElement {
         FieldElement::new(
-            modulo_reduce(-self.value, self.field.order.clone()),
+            reduce_modulo(-self.value, self.field.order.clone()),
             self.field,
         )
     }
@@ -146,7 +155,7 @@ impl ops::AddAssign<FieldElement> for FieldElement {
     fn add_assign(&mut self, other: FieldElement) {
         assert_eq!(self.field, other.field);
         *self = Self {
-            value: modulo_reduce(self.value.clone() + other.value, other.field.order.clone()),
+            value: reduce_modulo(self.value.clone() + other.value, other.field.order.clone()),
             field: other.field,
         };
     }
@@ -157,7 +166,7 @@ impl ops::SubAssign<FieldElement> for FieldElement {
     fn sub_assign(&mut self, other: FieldElement) {
         assert_eq!(self.field, other.field);
         *self = Self {
-            value: modulo_reduce(self.value.clone() - other.value, other.field.order.clone()),
+            value: reduce_modulo(self.value.clone() - other.value, other.field.order.clone()),
             field: other.field,
         };
     }
