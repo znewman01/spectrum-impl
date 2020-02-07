@@ -95,7 +95,7 @@ impl PRG {
 
 impl PRGSeed {
     pub fn to_field_element(&self, field: Rc<Field>) -> FieldElement {
-        FieldElement::from_bytes(self.bytes.clone(), field.clone())
+        FieldElement::from_bytes(self.bytes.clone(), field)
     }
 }
 
