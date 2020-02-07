@@ -14,6 +14,9 @@ pub mod config;
 mod experiment;
 mod net;
 pub mod services;
+mod proto {
+    tonic::include_proto!("spectrum");
+}
 
 use experiment::Experiment;
 use services::Service::{Client, Leader, Publisher, Worker};

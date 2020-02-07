@@ -1,3 +1,4 @@
+use crate::proto::{worker_client::WorkerClient, ClientId, RegisterClientRequest, UploadRequest};
 use crate::{
     config,
     services::{
@@ -12,12 +13,6 @@ use log::{debug, info, trace};
 use rand::{seq::IteratorRandom, thread_rng};
 use std::collections::HashSet;
 use std::iter::FromIterator;
-
-pub mod spectrum {
-    tonic::include_proto!("spectrum");
-}
-
-use spectrum::{worker_client::WorkerClient, ClientId, RegisterClientRequest, UploadRequest};
 
 // Picks one worker from each group.
 fn pick_worker_shards(nodes: Vec<Node>) -> Vec<Node> {

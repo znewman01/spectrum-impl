@@ -1,3 +1,7 @@
+use crate::proto::{
+    leader_server::{Leader, LeaderServer},
+    AggregateWorkerRequest, AggregateWorkerResponse,
+};
 use crate::{
     config::store::Store,
     net::get_addr,
@@ -11,15 +15,6 @@ use crate::{
 use futures::Future;
 use log::{debug, error, info, trace};
 use tonic::{Request, Response, Status};
-
-pub mod spectrum {
-    tonic::include_proto!("spectrum");
-}
-
-use spectrum::{
-    leader_server::{Leader, LeaderServer},
-    AggregateWorkerRequest, AggregateWorkerResponse,
-};
 
 #[derive(Default)]
 pub struct MyLeader {}

@@ -1,3 +1,7 @@
+use crate::proto::{
+    publisher_server::{Publisher, PublisherServer},
+    AggregateGroupRequest, AggregateGroupResponse,
+};
 use crate::{
     config::store::Store,
     experiment,
@@ -14,15 +18,6 @@ use chrono::prelude::*;
 use futures::Future;
 use log::{debug, error, info, trace};
 use tonic::{Request, Response, Status};
-
-pub mod spectrum {
-    tonic::include_proto!("spectrum");
-}
-
-use spectrum::{
-    publisher_server::{Publisher, PublisherServer},
-    AggregateGroupRequest, AggregateGroupResponse,
-};
 
 #[derive(Default)]
 pub struct MyPublisher {}

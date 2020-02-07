@@ -1,3 +1,8 @@
+use crate::proto::{
+    worker_server::{Worker, WorkerServer},
+    RegisterClientRequest, RegisterClientResponse, UploadRequest, UploadResponse, VerifyRequest,
+    VerifyResponse,
+};
 use crate::{
     config::store::Store,
     net::get_addr,
@@ -8,21 +13,12 @@ use crate::{
         Group, WorkerInfo,
     },
 };
+
 use futures::Future;
 use log::{debug, error, info, trace};
 use std::collections::HashMap;
 use tokio::sync::{watch, RwLock};
 use tonic::{Request, Response, Status};
-
-pub mod spectrum {
-    tonic::include_proto!("spectrum");
-}
-
-use spectrum::{
-    worker_server::{Worker, WorkerServer},
-    RegisterClientRequest, RegisterClientResponse, UploadRequest, UploadResponse, VerifyRequest,
-    VerifyResponse,
-};
 
 pub struct MyWorker {
     // TODO(zjn): replace () with ClientInfo
