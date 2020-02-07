@@ -93,10 +93,15 @@ impl ops::Add<FieldElement> for FieldElement {
 
     fn add(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
-        FieldElement::new(
-            reduce_modulo(self.value + other.value, other.field.order.clone()),
-            other.field,
-        )
+
+        let mut value = self.value + other.value;
+
+        // perform modulo reduction after adding
+        if value >= self.field.order {
+            value -= self.field.order.clone()
+        }
+
+        FieldElement::new(value, other.field)
     }
 }
 
@@ -106,10 +111,16 @@ impl ops::Sub<FieldElement> for FieldElement {
 
     fn sub(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
-        FieldElement::new(
-            reduce_modulo(self.value - other.value, other.field.order.clone()),
-            other.field,
-        )
+        let mut value = self.value - other.value;
+
+        // perform modulo reduction after subtracting
+        if value >= self.field.order {
+            value -= self.field.order.clone()
+        } else if value <= -self.field.order.clone() {
+            value += self.field.order.clone()
+        }
+
+        FieldElement::new(value, other.field)
     }
 }
 
