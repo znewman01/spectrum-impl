@@ -1,4 +1,5 @@
-use portpicker::pick_unused_port;
+// TODO(zjn): use portpicker when https://github.com/Dentosal/portpicker-rs/pull/1 merged
+use port_check::free_local_port;
 use std::net::SocketAddr;
 
 // Pick a loopback address with
@@ -7,7 +8,7 @@ pub fn get_addr() -> SocketAddr {
     // TODO(zjn): use IPv6 if available
     SocketAddr::new(
         "127.0.0.1".parse().unwrap(),
-        pick_unused_port().expect("No ports free."),
+        free_local_port().expect("No ports free."),
     )
 }
 
@@ -47,10 +48,6 @@ pub mod tests {
 
     #[test]
     fn test_get_socket_addr() {
-        if pick_unused_port().is_none() {
-            return; // no unused ports; this happens on e.g. Travis sometimes
-        }
-
         assert!(get_addr().ip().is_loopback());
     }
 }
