@@ -7,6 +7,7 @@ use tokio::sync::Barrier;
 pub mod client;
 pub mod crypto;
 pub mod leader;
+pub mod protocols;
 pub mod publisher;
 pub mod worker;
 
