@@ -1,11 +1,12 @@
 //! Spectrum implementation.
 extern crate crypto;
 
+use crate::crypto::field::{Field, FieldElement};
 use bytes::Bytes;
 use crypto::buffer::{BufferResult, ReadBuffer, WriteBuffer};
 use crypto::{aes, blockmodes, buffer};
 use rand::prelude::*;
-
+use std::rc::Rc;
 /// PRG uses AES to expand a seed to desired length
 #[derive(Clone, PartialEq, Debug)]
 pub struct PRG {
@@ -93,8 +94,8 @@ impl PRG {
 }
 
 impl PRGSeed {
-    pub fn raw_bytes(&self) -> Bytes {
-        self.bytes.clone()
+    pub fn to_field_element(&self, field: Rc<Field>) -> FieldElement {
+        FieldElement::from_bytes(self.bytes.clone(), field.clone())
     }
 }
 
