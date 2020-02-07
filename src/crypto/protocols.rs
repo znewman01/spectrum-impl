@@ -116,8 +116,8 @@ impl CryptoParams {
 
         let mut bit_check_token = client_proof.bit_proof_share.clone();
         let mut seed_check_token = client_proof.seed_proof_share;
-        bit_check_token.scalar_add(res_bit);
-        seed_check_token.scalar_add(res_seed);
+        bit_check_token = bit_check_token + res_bit;
+        seed_check_token = seed_check_token + res_seed;
 
         // TODO(sss): actually hash the message?
         let msg_check_token = FieldElement::from_bytes(dpf_key.encoded_msg, self.field.clone());
