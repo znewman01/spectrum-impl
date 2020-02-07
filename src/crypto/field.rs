@@ -116,8 +116,6 @@ impl ops::Sub<FieldElement> for FieldElement {
         // perform modulo reduction after subtracting
         if value >= self.field.order {
             value -= self.field.order.clone()
-        } else if value <= -self.field.order.clone() {
-            value += self.field.order.clone()
         }
 
         FieldElement::new(value, other.field)
