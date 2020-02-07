@@ -1,35 +1,45 @@
 use crate::proto::{
+    worker_client::WorkerClient,
     worker_server::{Worker, WorkerServer},
     RegisterClientRequest, RegisterClientResponse, UploadRequest, UploadResponse, VerifyRequest,
     VerifyResponse,
 };
 use crate::{
-    config::store::Store,
+    config::store::{Error, Store},
     net::get_addr,
     services::{
-        discovery::{register, Node},
+        discovery::{register, resolve_all, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
         quorum::{delay_until, wait_for_start_time_set},
-        ClientInfo, WorkerInfo,
+        ClientInfo, Service, WorkerInfo,
     },
 };
 
 use futures::Future;
 use log::{debug, error, info, trace};
 use std::collections::HashMap;
-use tokio::sync::{watch, RwLock};
-use tonic::{Request, Response, Status};
+use std::sync::Arc;
+use tokio::sync::{watch, Mutex, RwLock};
+use tonic::{transport::Channel, Request, Response, Status};
+
+type SharedClient = Arc<Mutex<WorkerClient<Channel>>>;
+type ClientRegistry = HashMap<WorkerInfo, SharedClient>;
 
 pub struct MyWorker {
     clients_peers: RwLock<HashMap<ClientInfo, Vec<WorkerInfo>>>,
     start_rx: watch::Receiver<bool>,
+    clients_rx: watch::Receiver<Option<ClientRegistry>>,
 }
 
 impl MyWorker {
-    fn new(start_rx: watch::Receiver<bool>) -> Self {
+    fn new(
+        start_rx: watch::Receiver<bool>,
+        clients_rx: watch::Receiver<Option<ClientRegistry>>,
+    ) -> Self {
         MyWorker {
             clients_peers: RwLock::new(HashMap::new()),
             start_rx,
+            clients_rx,
         }
     }
 }
@@ -45,15 +55,25 @@ impl Worker for MyWorker {
 
         let client_id = request
             .client_id
-            .map(ClientInfo::from)
             .ok_or_else(|| Status::invalid_argument("Client ID must be set."))?;
+        let client_info = ClientInfo::from(client_id.clone());
         let clients_peers = self.clients_peers.read().await;
-        let peers: Vec<WorkerInfo> = clients_peers
-            .get(&client_id)
+        let clients_registry_lock = self.clients_rx.borrow();
+        let peers: Vec<Arc<Mutex<WorkerClient<_>>>> = clients_peers
+            .get(&client_info)
             .ok_or_else(|| {
-                Status::failed_precondition(format!("Client ID {:?} not registered.", client_id))
+                Status::failed_precondition(format!("Client info {:?} not registered.", client_info))
             })?
-            .clone();
+            .clone()
+            .iter()
+            .map(|info| {
+                (*clients_registry_lock).as_ref()
+                    .expect("Client registry should be initialized by the time we get cupload requests.")
+                    .get(info)
+                    .expect("All requested workers should be in the worker client registry")
+                    .clone()
+            })
+            .collect();
         let share_and_proof = request.share_and_proof;
 
         tokio::spawn(async move {
@@ -70,11 +90,14 @@ impl Worker for MyWorker {
 
             assert_eq!(checks.len(), num_peers);
             for (peer, check) in peers.into_iter().zip(checks.into_iter()) {
+                let client_id = client_id.clone();
                 tokio::spawn(async move {
-                    debug!(
-                        "I would be sending check {:?} to peer {:?} now.",
-                        check, peer
-                    );
+                    debug!("I would be sending check {:?} now.", check);
+                    let req = tonic::Request::new(VerifyRequest {
+                        client_id: Some(client_id),
+                        check: None,
+                    });
+                    peer.lock().await.verify(req).await.unwrap();
                 });
             }
         });
@@ -85,10 +108,13 @@ impl Worker for MyWorker {
 
     async fn verify(
         &self,
-        _request: Request<VerifyRequest>,
+        request: Request<VerifyRequest>,
     ) -> Result<Response<VerifyResponse>, Status> {
-        error!("Not implemented.");
-        Err(Status::unimplemented("Not implemented"))
+        trace!("Request: {:?}", request.into_inner());
+
+        // TODO(zjn): implement me
+        let reply = VerifyResponse {};
+        Ok(Response::new(reply))
     }
 
     async fn register_client(
@@ -137,7 +163,8 @@ where
     let addr = get_addr();
 
     let (start_tx, start_rx) = watch::channel(false);
-    let worker = MyWorker::new(start_rx);
+    let (clients_tx, clients_rx) = watch::channel(None);
+    let worker = MyWorker::new(start_rx, clients_rx);
 
     let server_task = tokio::spawn(
         tonic::transport::server::Server::builder()
@@ -154,6 +181,20 @@ where
     debug!("Registered with config server.");
 
     let start_time = wait_for_start_time_set(&config).await?;
+
+    let mut clients_registry = HashMap::new();
+    for node in resolve_all(&config).await? {
+        if let Service::Worker(info) = node.service {
+            let client = WorkerClient::connect(format!("http://{}", node.addr)).await?;
+            clients_registry.insert(info, Arc::new(Mutex::new(client)));
+        }
+    }
+    if clients_tx.broadcast(Some(clients_registry)).is_err() {
+        return Err(Box::new(Error::new(
+            "Failed to broadcast clients_registry.",
+        )));
+    }
+
     delay_until(start_time).await;
     start_tx.broadcast(true)?;
 
