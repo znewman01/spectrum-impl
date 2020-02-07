@@ -58,11 +58,24 @@ impl PublisherInfo {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Default)]
+pub struct ClientInfo {
+    pub idx: u16,
+    _private: (),
+}
+
+impl ClientInfo {
+    pub fn new(idx: u16) -> Self {
+        ClientInfo { idx, _private: () }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum Service {
     Leader(LeaderInfo),
     Publisher(PublisherInfo),
     Worker(WorkerInfo),
+    Client(ClientInfo),
 }
 
 impl From<LeaderInfo> for Service {

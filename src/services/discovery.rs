@@ -21,6 +21,9 @@ fn to_config_key(service: Service) -> Key {
             info.group.idx.to_string(),
             info.idx.to_string(),
         ],
+        Service::Client(_) => {
+            panic!("Clients are not stored in the config registry.");
+        }
     }
 }
 

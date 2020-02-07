@@ -16,7 +16,7 @@ mod net;
 pub mod services;
 
 use experiment::Experiment;
-use services::Service::{Leader, Publisher, Worker};
+use services::Service::{Client, Leader, Publisher, Worker};
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;
@@ -46,6 +46,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
             Publisher(info) => publisher::run(config.clone(), info, shutdown).boxed(),
             Leader(info) => leader::run(config.clone(), info, shutdown).boxed(),
             Worker(info) => worker::run(config.clone(), info, shutdown).boxed(),
+            Client(_) => {
+                panic!("Need to handle clients.");
+            }
         });
     }
 

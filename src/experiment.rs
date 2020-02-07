@@ -121,6 +121,9 @@ pub mod tests {
                     Service::Publisher(_) => { publishers.push(service) },
                     Service::Leader(_) => { leaders.push(service) },
                     Service::Worker(_) => { workers.push(service) },
+                    Service::Client(_) => {
+                        panic!("Clients not (yet) in iter_services");
+                    }
                 }
             }
             let actual = (publishers.len(), leaders.len(), workers.len());
