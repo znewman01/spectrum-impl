@@ -39,15 +39,6 @@ impl PRG {
         }
     }
 
-    /// generates a new seed set to zero
-    pub fn new_zero_seed(&self) -> PRGSeed {
-        // all bytes set to zero
-        let key = vec![0; self.seed_size];
-        PRGSeed {
-            bytes: Bytes::from(key),
-        }
-    }
-
     /// evaluates the PRG on the given seed
     pub fn eval(&self, seed: &PRGSeed) -> Bytes {
         // nonce set to zero: PRG eval should be deterministic
