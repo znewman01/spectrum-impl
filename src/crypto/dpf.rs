@@ -1,5 +1,4 @@
 //! Spectrum implementation.
-extern crate rand;
 use crate::crypto::byte_utils::xor_bytes;
 use crate::crypto::prg::{PRGSeed, PRG};
 use bytes::Bytes;
