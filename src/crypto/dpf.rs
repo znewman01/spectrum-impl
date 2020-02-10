@@ -50,7 +50,7 @@ impl DPF<DPFKey> for PRGBasedDPF {
         }
 
         // make a new PRG going from security -> length of the Bytes
-        let prg = Rc::new(PRG::new(self.security_bytes, msg.len()));
+        let prg = Rc::new(PRG::new());
 
         let mut seeds_a: Vec<PRGSeed> = Vec::new();
         let mut seeds_b: Vec<PRGSeed> = Vec::new();
@@ -76,7 +76,10 @@ impl DPF<DPFKey> for PRGBasedDPF {
         }
 
         // compute G(seed_a) XOR G(seed_b) for the ith seed
-        let xor_eval = xor_bytes(&prg.eval(&seeds_a[idx]), &prg.eval(&seeds_b[idx]));
+        let xor_eval = xor_bytes(
+            &prg.eval(&seeds_a[idx], msg.len()),
+            &prg.eval(&seeds_b[idx], msg.len()),
+        );
 
         // compute m XOR G(seed_a) XOR G(seed_b)
         let encoded_msg = xor_bytes(&msg, &xor_eval);
@@ -99,7 +102,7 @@ impl DPF<DPFKey> for PRGBasedDPF {
             .iter()
             .zip(key.bits.iter())
             .map(|(seed, &bits)| {
-                let prg_eval_i = key.prg.eval(seed);
+                let prg_eval_i = key.prg.eval(seed, key.encoded_msg.len());
 
                 if bits == 1 {
                     xor_bytes(&key.encoded_msg.clone(), &prg_eval_i)
