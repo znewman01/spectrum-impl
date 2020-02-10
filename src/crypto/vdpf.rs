@@ -10,7 +10,7 @@ use std::fmt::Debug;
 pub trait VDPF<Key, AuthKey, ProofShare, Token> {
     fn gen_proofs(&self, auth_key: &AuthKey, point_idx: usize, dpf_keys: &[Key])
         -> Vec<ProofShare>;
-    fn gen_audit(&self, auth_keys: &[AuthKey], dpf_key: &Key, proof_share: ProofShare) -> Token;
+    fn gen_audit(&self, auth_keys: &[AuthKey], dpf_key: &Key, proof_share: &ProofShare) -> Token;
     fn check_audit(&self, tokens: Vec<Token>) -> bool;
 }
 
@@ -21,7 +21,7 @@ pub struct PRGBasedVDPF<'a> {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-struct PRGAuditToken {
+pub struct PRGAuditToken {
     bit_check_share: SecretShare,
     seed_check_share: SecretShare,
     data_check_share: FieldElement,
@@ -34,7 +34,7 @@ pub struct PRGProofShare {
 }
 
 impl PRGBasedVDPF<'_> {
-    fn new(dpf: &PRGBasedDPF) -> PRGBasedVDPF {
+    pub fn new(dpf: &PRGBasedDPF) -> PRGBasedVDPF {
         PRGBasedVDPF { dpf }
     }
 }
@@ -70,6 +70,9 @@ impl VDPF<DPFKey, FieldElement, PRGProofShare, PRGAuditToken> for PRGBasedVDPF<'
             assert!(*bit == 0 || *bit == 1);
             res_seed_a += seed.to_field_element(field.clone());
 
+            // If the bit is `1` for server A
+            // then we need to negate the share
+            // so as to ensure that (bit_A - bit_B = 1)*key = -key and not key
             if i == point_idx && *bit == 1 {
                 proof_correction = -1;
             }
@@ -106,7 +109,7 @@ impl VDPF<DPFKey, FieldElement, PRGProofShare, PRGAuditToken> for PRGBasedVDPF<'
         &self,
         auth_keys: &[FieldElement],
         dpf_key: &DPFKey,
-        proof_share: PRGProofShare,
+        proof_share: &PRGProofShare,
     ) -> PRGAuditToken {
         // get the field from auth keys
         let field = auth_keys
@@ -130,7 +133,7 @@ impl VDPF<DPFKey, FieldElement, PRGProofShare, PRGAuditToken> for PRGBasedVDPF<'
         }
 
         let mut bit_check_share = proof_share.bit_proof_share.clone();
-        let mut seed_check_share = proof_share.seed_proof_share;
+        let mut seed_check_share = proof_share.seed_proof_share.clone();
 
         // TODO(sss): implement += for this!
         bit_check_share = bit_check_share + res_bit;
@@ -200,7 +203,7 @@ mod tests {
             let dpf_keys = dpf.gen(Bytes::from(vec![0; data_size_in_bytes]), point_idx);
 
             let proof_shares = vdpf.gen_proofs(&auth_keys[point_idx],  point_idx, &dpf_keys);
-            let audit_tokens: Vec<PRGAuditToken> = dpf_keys.iter().zip(proof_shares.into_iter()).map(|(dpf_key, proof_share)| {
+            let audit_tokens: Vec<PRGAuditToken> = dpf_keys.iter().zip(proof_shares.iter()).map(|(dpf_key, proof_share)| {
                 vdpf.gen_audit(&auth_keys, dpf_key, proof_share)
             }).collect();
 
