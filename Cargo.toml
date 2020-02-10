@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 hex = "0.4"
 futures = "0.3"
-rust-crypto = "^0.2"
+openssl = "0.10.28"
 prost = "0.6"
 rand = "0.7.3"
 bytes = "0.4"
