@@ -257,7 +257,7 @@ impl Worker for MyWorker {
         self.check_not_started()?;
 
         let request = request.into_inner();
-        let client_id = ClientInfo::from(expect_field(request.client_id, "Client ID")?);
+        let client_info = ClientInfo::from(expect_field(request.client_id, "Client ID")?);
 
         let shards = request
             .shards
@@ -265,9 +265,11 @@ impl Worker for MyWorker {
             .map(WorkerInfo::from)
             .filter(|&info| info != self.info)
             .collect();
-        trace!("Registering client {:?}; shards: {:?}", client_id, shards);
+        trace!("Registering client {:?}; shards: {:?}", client_info, shards);
         let mut clients_peers = self.clients_peers.write().await;
-        clients_peers.insert(client_id, shards); // TODO(zjn): ensure none; client shouldn't register twice
+        if clients_peers.insert(client_info, shards).is_some() {
+            warn!("Client registered twice: {:?}", client_info);
+        }
 
         let reply = RegisterClientResponse {};
         Ok(Response::new(reply))
