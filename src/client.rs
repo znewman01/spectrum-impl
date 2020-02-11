@@ -1,4 +1,6 @@
-use crate::proto::{worker_client::WorkerClient, RegisterClientRequest, UploadRequest};
+use crate::proto::{
+    worker_client::WorkerClient, RegisterClientRequest, ShareWithProof, UploadRequest,
+};
 use crate::{
     config,
     services::{
@@ -83,7 +85,10 @@ where
 
     let req = UploadRequest {
         client_id: Some(info.into()),
-        share_and_proof: None,
+        share_and_proof: Some(ShareWithProof {
+            share: None,
+            proof: None,
+        }),
     };
 
     for mut client in clients {
