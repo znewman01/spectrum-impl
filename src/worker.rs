@@ -34,16 +34,18 @@ type SharedClient = Arc<Mutex<WorkerClient<Channel>>>;
 #[derive(Default, Clone)]
 struct ClientRegistry(HashMap<WorkerInfo, SharedClient>);
 
-async fn find_peer_workers<C: Store>(config: &C) -> Result<Vec<(WorkerInfo, SocketAddr)>, Error> {
+async fn find_peer_workers<C: Store>(
+    config: &C,
+    worker: WorkerInfo,
+) -> Result<Vec<(WorkerInfo, SocketAddr)>, Error> {
     Ok(resolve_all(config)
         .await?
         .iter()
-        .filter_map(|node| {
-            match node.service {
-                // TODO(zjn): I'm not my own peer
-                Service::Worker(info) => Some((info, node.addr)),
-                _ => None,
-            }
+        .filter_map(|node| match node.service {
+            Service::Worker(info) => Some(info)
+                .filter(|&info| info != worker)
+                .map(|info| (info, node.addr)),
+            _ => None,
         })
         .collect())
 }
@@ -62,9 +64,12 @@ impl ClientRegistry {
         client.clone()
     }
 
-    async fn from_config<C: Store>(config: &C) -> Result<ClientRegistry, Error> {
+    async fn from_config<C: Store>(
+        config: &C,
+        worker: WorkerInfo,
+    ) -> Result<ClientRegistry, Error> {
         let mut registry = ClientRegistry::default();
-        for (worker_info, addr) in find_peer_workers(config).await? {
+        for (worker_info, addr) in find_peer_workers(config, worker).await? {
             let client = WorkerClient::connect(format!("http://{}", addr)).await?;
             registry.insert(worker_info, client);
         }
@@ -106,6 +111,7 @@ pub struct MyWorker {
     start_rx: watch::Receiver<bool>,
     clients_rx: watch::Receiver<Option<ClientRegistry>>,
     check_registry: Arc<CheckRegistry>,
+    info: WorkerInfo,
 }
 
 impl MyWorker {
@@ -113,12 +119,14 @@ impl MyWorker {
         start_rx: watch::Receiver<bool>,
         clients_rx: watch::Receiver<Option<ClientRegistry>>,
         num_clients: u16,
+        info: WorkerInfo,
     ) -> Self {
         MyWorker {
             clients_peers: RwLock::default(),
             start_rx,
             clients_rx,
             check_registry: Arc::new(CheckRegistry::new(num_clients)),
+            info,
         }
     }
 
@@ -251,7 +259,12 @@ impl Worker for MyWorker {
         let request = request.into_inner();
         let client_id = ClientInfo::from(expect_field(request.client_id, "Client ID")?);
 
-        let shards = request.shards.into_iter().map(WorkerInfo::from).collect();
+        let shards = request
+            .shards
+            .into_iter()
+            .map(WorkerInfo::from)
+            .filter(|&info| info != self.info)
+            .collect();
         trace!("Registering client {:?}; shards: {:?}", client_id, shards);
         let mut clients_peers = self.clients_peers.write().await;
         clients_peers.insert(client_id, shards); // TODO(zjn): ensure none; client shouldn't register twice
@@ -271,7 +284,7 @@ where
 
     let (start_tx, start_rx) = watch::channel(false);
     let (clients_tx, clients_rx) = watch::channel(None);
-    let worker = MyWorker::new(start_rx, clients_rx, 2); // TODO(zjn): don't hardcode 2!
+    let worker = MyWorker::new(start_rx, clients_rx, 2, info); // TODO(zjn): don't hardcode 2!
 
     let server = tonic::transport::server::Server::builder()
         .add_service(HealthServer::new(AllGoodHealthServer::default()))
@@ -286,7 +299,7 @@ where
     let start_time = wait_for_start_time_set(&config).await.unwrap();
     spawn(delay_until(start_time).then(|_| async move { start_tx.broadcast(true) }));
 
-    let client_registry = ClientRegistry::from_config(&config).await?;
+    let client_registry = ClientRegistry::from_config(&config, info).await?;
     clients_tx
         .broadcast(Some(client_registry))
         .or_else(|_| Err("Error sending client registry."))?;
@@ -371,7 +384,10 @@ mod tests {
     #[tokio::test]
     async fn test_find_peer_workers_empty() {
         let config = config::factory::from_string("").unwrap();
-        let peers = find_peer_workers(&config).await.unwrap();
+        let info = WorkerInfo::new(Group::new(0), 0);
+
+        let peers = find_peer_workers(&config, info).await.unwrap();
+
         assert_eq!(peers.len(), 0);
     }
 
@@ -385,7 +401,16 @@ mod tests {
             register(&config, node).await.unwrap()
         }
 
-        let peers = find_peer_workers(&config).await.unwrap();
-        assert_eq!(peers.len(), 4);
+        let worker = experiment
+            .iter_services()
+            .filter_map(|service| match service {
+                Service::Worker(info) => Some(info),
+                _ => None,
+            })
+            .next()
+            .unwrap();
+
+        let peers = find_peer_workers(&config, worker).await.unwrap();
+        assert_eq!(peers.len(), 3);
     }
 }
