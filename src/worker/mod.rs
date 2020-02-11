@@ -25,9 +25,11 @@ use tokio::{
 };
 use tonic::{Request, Response, Status};
 
+mod aggregator;
 mod check_registry;
 mod client_registry;
 
+use aggregator::Aggregator;
 use check_registry::CheckRegistry;
 use client_registry::{ClientRegistry, SharedClient};
 
@@ -38,6 +40,7 @@ pub struct MyWorker {
     start_rx: watch::Receiver<bool>,
     clients_rx: watch::Receiver<Option<ClientRegistry>>,
     check_registry: Arc<CheckRegistry>,
+    channel_aggregator: Arc<Aggregator<Option<String>>>,
     info: WorkerInfo,
 }
 
@@ -46,6 +49,7 @@ impl MyWorker {
         start_rx: watch::Receiver<bool>,
         clients_rx: watch::Receiver<Option<ClientRegistry>>,
         num_clients: u16,
+        num_channels: u16,
         info: WorkerInfo,
     ) -> Self {
         MyWorker {
@@ -53,6 +57,7 @@ impl MyWorker {
             start_rx,
             clients_rx,
             check_registry: Arc::new(CheckRegistry::new(num_clients)),
+            channel_aggregator: Arc::new(Aggregator::new(num_channels as usize)),
             info,
         }
     }
@@ -156,8 +161,13 @@ impl Worker for MyWorker {
         let client_info = ClientInfo::from(expect_field(request.client_id, "Client ID")?);
         // TODO(zjn): do something less heavy-weight then getting all the peers
         let num_peers = self.get_peers(client_info).await?.len();
+        let num_clients = {
+            let lock = self.clients_peers.read().await;
+            lock.len()
+        };
         let share = expect_field(request.check, "Check")?;
         let check_count = self.check_registry.add(client_info, share).await;
+        let channel_aggregator = self.channel_aggregator.clone();
 
         if check_count == num_peers + 1 {
             let shares = self.check_registry.drain(client_info).await;
@@ -165,7 +175,12 @@ impl Worker for MyWorker {
                 let verify = spawn_blocking(move || verify(&shares)).await.unwrap();
 
                 if verify {
-                    info!("Should combine shares now."); // TODO
+                    let channel = 0; // TODO(zjn): fold into aggregate
+                    let data = None; // TODO(zjn): pull out of something
+                    if channel_aggregator.aggregate(channel, data).await == num_clients {
+                        let share = channel_aggregator.get(channel).await;
+                        info!("Should forward to leader now! {:?}", share);
+                    };
                 } else {
                     warn!("Didn't verify!.");
                 }
@@ -211,7 +226,7 @@ where
 
     let (start_tx, start_rx) = watch::channel(false);
     let (clients_tx, clients_rx) = watch::channel(None);
-    let worker = MyWorker::new(start_rx, clients_rx, 2, info); // TODO(zjn): don't hardcode 2!
+    let worker = MyWorker::new(start_rx, clients_rx, 2, 8, info); // TODO(zjn): don't hardcode 2/8!
 
     let server = tonic::transport::server::Server::builder()
         .add_service(HealthServer::new(AllGoodHealthServer::default()))
