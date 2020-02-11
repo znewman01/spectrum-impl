@@ -55,13 +55,13 @@ impl ClientRegistry {
         self.0.insert(info, Arc::new(Mutex::new(client)));
     }
 
-    // TODO(zjn): return Result<SharedClient, Status>
-    fn get(&self, info: WorkerInfo) -> SharedClient {
-        let client: &SharedClient = self
-            .0
-            .get(&info)
-            .expect("All requested workers should be in the worker client registry");
-        client.clone()
+    fn get(&self, info: WorkerInfo) -> Result<SharedClient, Status> {
+        let client: &SharedClient = self.0.get(&info).ok_or_else(|| {
+            Status::failed_precondition(
+                "All requested workers should be in the worker client registry",
+            )
+        })?;
+        Ok(client.clone())
     }
 
     async fn from_config<C: Store>(
@@ -133,7 +133,7 @@ impl MyWorker {
     async fn get_peers(&self, info: ClientInfo) -> Result<Vec<SharedClient>, Status> {
         let clients_peers = self.clients_peers.read().await;
         let clients_registry_lock = self.clients_rx.borrow();
-        let clients: Vec<SharedClient> = clients_peers
+        let clients = clients_peers
             .get(&info)
             .ok_or_else(|| {
                 Status::failed_precondition(format!("Client info {:?} not registered.", info))
@@ -148,7 +148,7 @@ impl MyWorker {
                     )
                     .get(info)
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
         Ok(clients)
     }
 
@@ -365,7 +365,7 @@ mod tests {
     #[test]
     fn test_client_registry_get_missing() {
         let reg = ClientRegistry::default();
-        reg.get(WorkerInfo::new(Group::new(0), 0));
+        reg.get(WorkerInfo::new(Group::new(0), 0)).unwrap();
     }
 
     #[tokio::test]
@@ -377,7 +377,7 @@ mod tests {
             .unwrap();
 
         reg.insert(info, client);
-        let client_mutex = reg.get(info);
+        let client_mutex = reg.get(info).unwrap();
         let client_lock = client_mutex.lock().await;
         let _: &WorkerClient<Channel> = client_lock.deref();
         // if we got /any/ client back, it's okay
