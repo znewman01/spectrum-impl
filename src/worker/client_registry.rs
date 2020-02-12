@@ -25,9 +25,7 @@ async fn find_peer_workers<C: Store>(
         .await?
         .iter()
         .filter_map(|node| match node.service {
-            Service::Worker(info) => Some(info)
-                .filter(|&info| info != worker)
-                .map(|info| (info, node.addr)),
+            Service::Worker(info) if info != worker => Some((info, node.addr)),
             _ => None,
         })
         .collect())
