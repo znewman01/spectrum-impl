@@ -12,13 +12,14 @@ use std::iter::{once, IntoIterator};
 pub struct Experiment {
     // TODO(zjn): when nonzero types hit stable, replace u16 with NonZeroU16.
     // https://github.com/rust-lang/rfcs/blob/master/text/2307-concrete-nonzero-types.md
-    groups: u16,
+    pub groups: u16,
     workers_per_group: u16,
     pub clients: u16,
+    pub channels: usize,
 }
 
 impl Experiment {
-    pub fn new(groups: u16, workers_per_group: u16, clients: u16) -> Experiment {
+    pub fn new(groups: u16, workers_per_group: u16, clients: u16, channels: usize) -> Experiment {
         assert!(groups >= 1, "Expected at least 1 group.");
         assert!(
             workers_per_group >= 1,
@@ -29,6 +30,7 @@ impl Experiment {
             groups,
             workers_per_group,
             clients,
+            channels,
         }
     }
 
@@ -102,7 +104,9 @@ pub mod tests {
         let groups: Range<u16> = 1..10;
         let workers_per_group: Range<u16> = 1..10;
         let clients: Range<u16> = 1..10;
-        (groups, workers_per_group, clients).prop_map(|(g, w, c)| Experiment::new(g, w, c))
+        let channels: Range<usize> = 1..10;
+        (groups, workers_per_group, clients, channels)
+            .prop_map(|(g, w, cl, ch)| Experiment::new(g, w, cl, ch))
     }
 
     proptest! {

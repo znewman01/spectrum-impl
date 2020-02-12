@@ -116,7 +116,9 @@ mod tests {
         let groups: Range<u16> = 1..10;
         let workers_per_group: Range<u16> = 2..10;
         let clients: Range<u16> = 1..10;
-        (groups, workers_per_group, clients).prop_map(|(g, w, c)| Experiment::new(g, w, c))
+        let channels: Range<usize> = 1..10;
+        (groups, workers_per_group, clients, channels)
+            .prop_map(|(g, w, cl, ch)| Experiment::new(g, w, cl, ch))
     }
 
     proptest! {

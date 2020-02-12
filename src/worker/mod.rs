@@ -42,6 +42,7 @@ pub struct MyWorker {
     clients_rx: watch::Receiver<Option<ClientRegistry>>,
     check_registry: Arc<CheckRegistry>,
     accumulator: Arc<Accumulator<Vec<Option<String>>>>,
+    experiment: Experiment,
     info: WorkerInfo,
 }
 
@@ -49,16 +50,16 @@ impl MyWorker {
     fn new(
         start_rx: watch::Receiver<bool>,
         clients_rx: watch::Receiver<Option<ClientRegistry>>,
-        num_clients: u16,
-        num_channels: u16,
+        experiment: Experiment,
         info: WorkerInfo,
     ) -> Self {
         MyWorker {
             clients_peers: RwLock::default(),
             start_rx,
             clients_rx,
-            check_registry: Arc::new(CheckRegistry::new(num_clients)),
-            accumulator: Arc::new(Accumulator::new(vec![None; num_channels as usize])),
+            check_registry: Arc::new(CheckRegistry::new(experiment.clients)),
+            accumulator: Arc::new(Accumulator::new(vec![None; experiment.channels])),
+            experiment,
             info,
         }
     }
@@ -161,7 +162,6 @@ impl Worker for MyWorker {
         // TODO(zjn): check which worker this comes from, don't double-insert
         let client_info = ClientInfo::from(expect_field(request.client_id, "Client ID")?);
         // TODO(zjn): do something less heavy-weight then getting all the peers
-        let num_peers = self.get_peers(client_info).await?.len();
         let num_clients = {
             let lock = self.clients_peers.read().await;
             lock.len()
@@ -169,14 +169,15 @@ impl Worker for MyWorker {
         let share = expect_field(request.check, "Check")?;
         let check_count = self.check_registry.add(client_info, share).await;
         let accumulator = self.accumulator.clone();
+        let num_channels = self.experiment.channels;
 
-        if check_count == num_peers + 1 {
+        if check_count == self.experiment.groups as usize {
             let shares = self.check_registry.drain(client_info).await;
             spawn(async move {
                 let verify = spawn_blocking(move || verify(&shares)).await.unwrap();
 
                 if verify {
-                    let data = vec![None; 8]; // TODO(zjn): pull out of something
+                    let data = vec![None; num_channels]; // TODO(zjn): pull out of something
                     if accumulator.accumulate(data).await == num_clients {
                         let share = accumulator.get().await;
                         info!("Should forward to leader now! {:?}", share);
@@ -231,7 +232,7 @@ where
 
     let (start_tx, start_rx) = watch::channel(false);
     let (clients_tx, clients_rx) = watch::channel(None);
-    let worker = MyWorker::new(start_rx, clients_rx, experiment.clients, 8, info); // TODO(zjn): don't hardcode 8!
+    let worker = MyWorker::new(start_rx, clients_rx, experiment, info);
 
     let server = tonic::transport::server::Server::builder()
         .add_service(HealthServer::new(AllGoodHealthServer::default()))

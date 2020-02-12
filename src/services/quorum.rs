@@ -187,7 +187,7 @@ mod test {
     #[tokio::test]
     async fn test_wait_for_quorum_not_ready() {
         let config = from_string("").unwrap();
-        let experiment = Experiment::new(1, 1, 1);
+        let experiment = Experiment::new(1, 1, 1, 0);
         wait_for_quorum_helper(&config, experiment, NO_TIME, 10)
             .await
             .expect_err("Should fail if no quorum.");
@@ -196,7 +196,7 @@ mod test {
     #[tokio::test]
     async fn test_wait_for_quorum_okay() {
         let config = from_string("").unwrap();
-        let experiment = Experiment::new(1, 1, 1);
+        let experiment = Experiment::new(1, 1, 1, 0);
         for service in experiment.iter_services() {
             let node = Node::new(service, addr());
             register(&config, node).await.unwrap();

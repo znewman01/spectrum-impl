@@ -27,7 +27,7 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;
-    let experiment = Experiment::new(2, 2, 2);
+    let experiment = Experiment::new(2, 2, 2, 3);
     experiment::write_to_store(&config, experiment).await?;
     let barrier = Arc::new(Barrier::new(
         experiment.iter_clients().count() + experiment.iter_services().count(),

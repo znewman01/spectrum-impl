@@ -107,7 +107,7 @@ mod tests {
     async fn test_find_peer_workers() {
         let config = config::factory::from_string("").unwrap();
 
-        let experiment = Experiment::new(2, 2, 2);
+        let experiment = Experiment::new(2, 2, 2, 0);
         for service in experiment.iter_services() {
             let node = Node::new(service, "127.0.0.1:22".parse().unwrap());
             register(&config, node).await.unwrap()
