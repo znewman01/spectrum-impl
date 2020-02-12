@@ -57,7 +57,6 @@ fn criterion_benchmark(c: &mut Criterion) {
             vdpf.gen_audit(&auth_keys, &dpf_keys[0], &proof_shares[0])
         })
     });
-
 }
 
 criterion_group!(benches, criterion_benchmark);
