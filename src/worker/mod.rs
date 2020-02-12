@@ -26,11 +26,11 @@ use tokio::{
 };
 use tonic::{Request, Response, Status};
 
-mod aggregator;
+mod accumulator;
 mod check_registry;
 mod client_registry;
 
-use aggregator::Aggregator;
+use accumulator::Accumulator;
 use check_registry::CheckRegistry;
 use client_registry::{ClientRegistry, SharedClient};
 
@@ -41,7 +41,7 @@ pub struct MyWorker {
     start_rx: watch::Receiver<bool>,
     clients_rx: watch::Receiver<Option<ClientRegistry>>,
     check_registry: Arc<CheckRegistry>,
-    channel_aggregator: Arc<Aggregator<Option<String>>>,
+    accumulator: Arc<Accumulator<Vec<Option<String>>>>,
     info: WorkerInfo,
 }
 
@@ -58,7 +58,7 @@ impl MyWorker {
             start_rx,
             clients_rx,
             check_registry: Arc::new(CheckRegistry::new(num_clients)),
-            channel_aggregator: Arc::new(Aggregator::new(num_channels as usize)),
+            accumulator: Arc::new(Accumulator::new(vec![None; num_channels as usize])),
             info,
         }
     }
@@ -168,7 +168,7 @@ impl Worker for MyWorker {
         };
         let share = expect_field(request.check, "Check")?;
         let check_count = self.check_registry.add(client_info, share).await;
-        let channel_aggregator = self.channel_aggregator.clone();
+        let accumulator = self.accumulator.clone();
 
         if check_count == num_peers + 1 {
             let shares = self.check_registry.drain(client_info).await;
@@ -176,10 +176,9 @@ impl Worker for MyWorker {
                 let verify = spawn_blocking(move || verify(&shares)).await.unwrap();
 
                 if verify {
-                    let channel = 0; // TODO(zjn): fold into aggregate
-                    let data = None; // TODO(zjn): pull out of something
-                    if channel_aggregator.aggregate(channel, data).await == num_clients {
-                        let share = channel_aggregator.get(channel).await;
+                    let data = vec![None; 8]; // TODO(zjn): pull out of something
+                    if accumulator.accumulate(data).await == num_clients {
+                        let share = accumulator.get().await;
                         info!("Should forward to leader now! {:?}", share);
                     };
                 } else {
