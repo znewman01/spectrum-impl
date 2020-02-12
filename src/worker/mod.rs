@@ -5,6 +5,7 @@ use crate::proto::{
 };
 use crate::{
     config::store::Store,
+    experiment::Experiment,
     net::get_addr,
     services::{
         discovery::{register, Node},
@@ -216,7 +217,12 @@ impl Worker for MyWorker {
     }
 }
 
-pub async fn run<C, F>(config: C, info: WorkerInfo, shutdown: F) -> Result<(), Error>
+pub async fn run<C, F>(
+    config: C,
+    experiment: Experiment,
+    info: WorkerInfo,
+    shutdown: F,
+) -> Result<(), Error>
 where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
@@ -226,7 +232,7 @@ where
 
     let (start_tx, start_rx) = watch::channel(false);
     let (clients_tx, clients_rx) = watch::channel(None);
-    let worker = MyWorker::new(start_rx, clients_rx, 2, 8, info); // TODO(zjn): don't hardcode 2/8!
+    let worker = MyWorker::new(start_rx, clients_rx, experiment.clients, 8, info); // TODO(zjn): don't hardcode 8!
 
     let server = tonic::transport::server::Server::builder()
         .add_service(HealthServer::new(AllGoodHealthServer::default()))
