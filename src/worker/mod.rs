@@ -7,6 +7,7 @@ use crate::{
     config::store::Store,
     experiment::Experiment,
     net::get_addr,
+    protocols::accumulator::Accumulator,
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -26,11 +27,9 @@ use tokio::{
 };
 use tonic::{Request, Response, Status};
 
-mod accumulator;
 mod check_registry;
 mod client_registry;
 
-use accumulator::Accumulator;
 use check_registry::CheckRegistry;
 use client_registry::{ClientRegistry, SharedClient};
 
