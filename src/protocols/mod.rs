@@ -16,51 +16,49 @@ trait Protocol {
     fn null_broadcast(&self) -> Vec<Self::WriteToken>;
 
     // combine: WriteToken must be aggregatable
-    fn gen_audit(&self, key: Self::ChannelKey, token: Self::WriteToken) -> Vec<Self::AuditShare>;
+    fn gen_audit(&self, key: &Self::ChannelKey, token: Self::WriteToken) -> Vec<Self::AuditShare>;
     fn check_audit(&self, tokens: Vec<Self::AuditShare>) -> bool;
 }
 
 #[derive(Debug, Clone, Copy)]
 struct InsecureProtocol {
     parties: usize,
-    msg_len: usize,
 }
 
 impl InsecureProtocol {
-    fn new(parties: usize, msg_len: usize) -> InsecureProtocol {
-        InsecureProtocol { parties, msg_len }
+    fn new(parties: usize) -> InsecureProtocol {
+        InsecureProtocol { parties }
     }
 }
 
 impl Protocol for InsecureProtocol {
-    type Message = Vec<u8>;
-    type ChannelKey = ();
-    type WriteToken = Vec<u8>;
-    type AuditShare = ();
+    type Message = u8;
+    type ChannelKey = String;
+    type WriteToken = (u8, Option<String>); // message + maybe a key
+    type AuditShare = bool;
 
     fn num_parties(&self) -> usize {
         self.parties
     }
 
-    fn broadcast(&self, message: Vec<u8>, _key: ()) -> Vec<Vec<u8>> {
-        let null_message = vec![0u8; self.msg_len];
-        let mut data = vec![null_message; self.parties - 1];
-        data.push(message);
+    fn broadcast(&self, message: u8, key: String) -> Vec<(u8, Option<String>)> {
+        let mut data = vec![(u8::default(), None); self.parties - 1];
+        data.push((message, Some(key)));
         data
     }
 
-    fn null_broadcast(&self) -> Vec<Vec<u8>> {
-        let null_message = vec![0u8; self.msg_len];
-        vec![null_message; self.parties]
+    fn null_broadcast(&self) -> Vec<(u8, Option<String>)> {
+        vec![(u8::default(), None); self.parties]
     }
 
-    fn gen_audit(&self, _key: (), _token: Vec<u8>) -> Vec<()> {
-        vec![(); self.parties]
+    fn gen_audit(&self, key: &String, token: (u8, Option<String>)) -> Vec<bool> {
+        let (data, proof) = token;
+        vec![data == 0 || proof.as_ref() == Some(key); self.parties]
     }
 
-    fn check_audit(&self, tokens: Vec<()>) -> bool {
+    fn check_audit(&self, tokens: Vec<bool>) -> bool {
         assert_eq!(tokens.len(), self.parties);
-        true
+        tokens.into_iter().all(|x| x)
     }
 }
 
@@ -71,47 +69,69 @@ mod tests {
     use proptest::prelude::*;
 
     fn protocols() -> impl Strategy<Value = InsecureProtocol> {
-        (2usize..100usize, 0usize..1000usize).prop_map(|(p, l)| InsecureProtocol::new(p, l))
+        (2usize..100usize).prop_map(InsecureProtocol::new)
     }
 
-    fn keys() -> impl Strategy<Value = ()> {
-        Just(())
+    fn keys() -> impl Strategy<Value = String> {
+        Just("password".to_string())
     }
 
-    fn protocols_and_messages() -> impl Strategy<Value = (InsecureProtocol, Vec<u8>)> {
-        protocols().prop_flat_map(|protocol| {
-            (
-                Just(protocol),
-                prop::collection::vec(any::<u8>(), protocol.msg_len),
-            )
-        })
+    fn bad_keys() -> impl Strategy<Value = String> {
+        "\\PC+".prop_filter("Must not be the actual key!", |s| s != "password")
+    }
+
+    fn messages() -> impl Strategy<Value = u8> {
+        any::<u8>()
+    }
+
+    fn get_server_shares(
+        protocol: InsecureProtocol,
+        tokens: Vec<(u8, Option<String>)>,
+        key: String,
+    ) -> Vec<Vec<bool>> {
+        let mut server_shares: Vec<Vec<bool>> = vec![Vec::new(); protocol.num_parties()];
+        for token in tokens {
+            for (idx, share) in protocol.gen_audit(&key, token).into_iter().enumerate() {
+                server_shares[idx].push(share);
+            }
+        }
+        server_shares
     }
 
     proptest! {
         #[test]
         fn test_null_broadcast_passes_audit(protocol in protocols(), key in keys()) {
-            let write_tokens = protocol.null_broadcast();
-            prop_assert_eq!(write_tokens.len(), protocol.num_parties());
+            let tokens = protocol.null_broadcast();
+            prop_assert_eq!(tokens.len(), protocol.num_parties());
 
-            for token in write_tokens {
-                let audit_shares = protocol.gen_audit(key, token);
-                prop_assert_eq!(audit_shares.len(), protocol.num_parties());
-                prop_assert!(protocol.check_audit(audit_shares));
+            for shares in get_server_shares(protocol, tokens, key) {
+                prop_assert!(protocol.check_audit(shares));
             }
         }
 
         #[test]
-        fn test_broadcast_passes_audit((protocol, message) in protocols_and_messages(), key in keys()) {
-            let write_tokens = protocol.broadcast(message, key);
-            prop_assert_eq!(write_tokens.len(), protocol.num_parties());
+        fn test_broadcast_passes_audit(protocol in protocols(), message in messages(), key in keys()) {
+            let tokens = protocol.broadcast(message, key.clone());
+            prop_assert_eq!(tokens.len(), protocol.num_parties());
 
-            for token in write_tokens {
-                let audit_shares = protocol.gen_audit(key, token);
-                prop_assert_eq!(audit_shares.len(), protocol.num_parties());
-                prop_assert!(protocol.check_audit(audit_shares));
+            for shares in get_server_shares(protocol, tokens, key) {
+                prop_assert!(protocol.check_audit(shares));
+            }
+        }
+
+        #[test]
+        fn test_broadcast_bad_key_fails_audit(
+            protocol in protocols(),
+            message in messages().prop_filter("Broadcasting null message okay!", |m| *m != u8::default()),
+            good_key in keys(),
+            bad_key in bad_keys()
+        ) {
+            let tokens = protocol.broadcast(message, bad_key);
+            prop_assert_eq!(tokens.len(), protocol.num_parties());
+
+            for shares in get_server_shares(protocol, tokens, good_key) {
+                prop_assert!(!protocol.check_audit(shares));
             }
         }
     }
-
-    // test: broadcast with bad key does not pass audit (not true for insecure protocol)
 }
