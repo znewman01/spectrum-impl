@@ -40,7 +40,7 @@ impl InsecureProtocol {
 impl Protocol for InsecureProtocol {
     type Message = u8;
     type ChannelKey = (usize, String); // channel number, password
-    type WriteToken = (u8, Option<Self::ChannelKey>); // message, index, maybe a key
+    type WriteToken = Option<(Self::Message, Self::ChannelKey)>; // message, index, maybe a key
     type AuditShare = bool;
 
     fn num_parties(&self) -> usize {
@@ -51,27 +51,30 @@ impl Protocol for InsecureProtocol {
         self.channels
     }
 
-    fn broadcast(&self, message: u8, key: (usize, String)) -> Vec<(u8, Option<(usize, String)>)> {
-        let mut data = vec![(u8::default(), None); self.parties - 1];
-        data.push((message, Some(key)));
+    fn broadcast(
+        &self,
+        message: Self::Message,
+        key: Self::ChannelKey,
+    ) -> Vec<Option<(Self::Message, Self::ChannelKey)>> {
+        let mut data = vec![None; self.parties - 1];
+        data.push(Some((message, key)));
         data
     }
 
-    fn null_broadcast(&self) -> Vec<(u8, Option<(usize, String)>)> {
-        vec![(u8::default(), None); self.parties]
+    fn null_broadcast(&self) -> Vec<Option<(Self::Message, Self::ChannelKey)>> {
+        vec![None; self.parties]
     }
 
     fn gen_audit(
         &self,
         keys: &Vec<(usize, String)>,
-        token: (u8, Option<(usize, String)>),
+        token: Option<(Self::Message, (usize, String))>,
     ) -> Vec<bool> {
-        let (data, key) = token;
-        let proof_checks_out: bool = match key {
-            Some((idx, _)) => key.as_ref() == keys.get(idx),
-            _ => false,
+        let proof_ok = match token {
+            None => true,
+            Some((_, (idx, password))) => (idx, password) == keys[idx],
         };
-        vec![proof_checks_out || data == 0; self.parties]
+        vec![proof_ok; self.parties]
     }
 
     fn check_audit(&self, tokens: Vec<bool>) -> bool {
@@ -115,7 +118,7 @@ mod tests {
 
     fn get_server_shares(
         protocol: InsecureProtocol,
-        tokens: Vec<(u8, Option<(usize, String)>)>,
+        tokens: Vec<Option<(u8, (usize, String))>>,
         keys: Vec<(usize, String)>,
     ) -> Vec<Vec<bool>> {
         let mut server_shares: Vec<Vec<bool>> = vec![Vec::new(); protocol.num_parties()];
