@@ -3,12 +3,47 @@ pub mod accumulator;
 pub mod table;
 // TODO(zjn): adapter to/from protos
 
+trait Accumulatable {
+    fn accumulate(&mut self, rhs: Self);
+
+    fn new(size: usize) -> Self;
+}
+
+impl<T> Accumulatable for Vec<T>
+where
+    T: Accumulatable + Default + Clone,
+{
+    fn accumulate(&mut self, rhs: Vec<T>) {
+        assert_eq!(self.len(), rhs.len());
+        for (this, that) in self.iter_mut().zip(rhs.into_iter()) {
+            this.accumulate(that);
+        }
+    }
+
+    fn new(size: usize) -> Self {
+        vec![Default::default(); size]
+    }
+}
+
+impl Accumulatable for u8 {
+    fn accumulate(&mut self, rhs: Self) {
+        *self ^= rhs;
+    }
+
+    fn new(size: usize) -> Self {
+        assert_eq!(size, 1);
+        Default::default()
+    }
+}
+
 trait Protocol {
-    type Message;
+    type Message: Default;
     type ChannelKey;
     type WriteToken;
     type AuditShare;
+    type Accumulator: Into<Vec<Self::Message>> + Accumulatable;
 
+    // General protocol properties
     fn num_parties(&self) -> usize;
     fn num_channels(&self) -> usize;
 
@@ -16,13 +51,35 @@ trait Protocol {
     fn broadcast(&self, message: Self::Message, key: Self::ChannelKey) -> Vec<Self::WriteToken>;
     fn null_broadcast(&self) -> Vec<Self::WriteToken>;
 
-    // combine: WriteToken must be aggregatable
+    // Server algorithms
     fn gen_audit(
         &self,
         keys: &Vec<Self::ChannelKey>,
         token: Self::WriteToken,
     ) -> Vec<Self::AuditShare>;
     fn check_audit(&self, tokens: Vec<Self::AuditShare>) -> bool;
+
+    fn new_accumulator(&self) -> Self::Accumulator {
+        Self::Accumulator::new(self.num_channels())
+    }
+
+    fn to_accumulator(&self, token: Self::WriteToken) -> Self::Accumulator;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct InsecureChannelKey(usize, String);
+
+#[derive(Debug, Clone)]
+struct InsecureWriteToken(Option<(u8, InsecureChannelKey)>);
+
+impl InsecureWriteToken {
+    fn new(data: u8, key: InsecureChannelKey) -> Self {
+        InsecureWriteToken(Some((data, key)))
+    }
+
+    fn empty() -> Self {
+        InsecureWriteToken(None)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -39,9 +96,10 @@ impl InsecureProtocol {
 
 impl Protocol for InsecureProtocol {
     type Message = u8;
-    type ChannelKey = (usize, String); // channel number, password
-    type WriteToken = (u8, Option<Self::ChannelKey>); // message, index, maybe a key
+    type ChannelKey = InsecureChannelKey; // channel number, password
+    type WriteToken = InsecureWriteToken; // message, index, maybe a key
     type AuditShare = bool;
+    type Accumulator = Vec<u8>;
 
     fn num_parties(&self) -> usize {
         self.parties
@@ -51,38 +109,49 @@ impl Protocol for InsecureProtocol {
         self.channels
     }
 
-    fn broadcast(&self, message: u8, key: (usize, String)) -> Vec<(u8, Option<(usize, String)>)> {
-        let mut data = vec![(u8::default(), None); self.parties - 1];
-        data.push((message, Some(key)));
+    fn broadcast(&self, message: u8, key: InsecureChannelKey) -> Vec<InsecureWriteToken> {
+        let mut data = vec![InsecureWriteToken::empty(); self.parties - 1];
+        data.push(InsecureWriteToken::new(message, key));
         data
     }
 
-    fn null_broadcast(&self) -> Vec<(u8, Option<(usize, String)>)> {
-        vec![(u8::default(), None); self.parties]
+    fn null_broadcast(&self) -> Vec<InsecureWriteToken> {
+        vec![InsecureWriteToken::empty(); self.parties]
     }
 
-    fn gen_audit(
-        &self,
-        keys: &Vec<(usize, String)>,
-        token: (u8, Option<(usize, String)>),
-    ) -> Vec<bool> {
-        let (data, key) = token;
-        let proof_checks_out: bool = match key {
-            Some((idx, _)) => key.as_ref() == keys.get(idx),
-            _ => false,
+    fn gen_audit(&self, keys: &Vec<InsecureChannelKey>, token: InsecureWriteToken) -> Vec<bool> {
+        let audit_share = match token {
+            InsecureWriteToken(Some((_, key))) => {
+                let InsecureChannelKey(idx, _) = key;
+                match keys.get(idx) {
+                    Some(expected_key) => &key == expected_key,
+                    None => false,
+                }
+            }
+            _ => true,
         };
-        vec![proof_checks_out || data == 0; self.parties]
+        vec![audit_share; self.parties]
     }
 
     fn check_audit(&self, tokens: Vec<bool>) -> bool {
         assert_eq!(tokens.len(), self.parties);
         tokens.into_iter().all(|x| x)
     }
+
+    fn to_accumulator(&self, token: InsecureWriteToken) -> Vec<u8> {
+        let mut accumulator = vec![u8::default(); self.num_channels() - 1];
+        if let InsecureWriteToken(Some((data, key))) = token {
+            let InsecureChannelKey(idx, _) = key;
+            accumulator.insert(idx, data);
+        } else {
+            accumulator.push(u8::default());
+        }
+        accumulator
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unit_arg)] // we *want* unit values for channel keys
     use super::*;
     use proptest::prelude::*;
 
@@ -92,31 +161,42 @@ mod tests {
         (2usize..100usize).prop_map(move |p| InsecureProtocol::new(p, channels))
     }
 
-    fn keys(channels: usize) -> impl Strategy<Value = Vec<(usize, String)>> {
+    fn keys(channels: usize) -> impl Strategy<Value = Vec<InsecureChannelKey>> {
         Just(
             (0..channels)
-                .map(|idx| (idx, format!("password{}", idx)))
+                .map(|idx| InsecureChannelKey(idx, format!("password{}", idx)))
                 .collect(),
         )
     }
 
-    fn bad_keys(channels: usize) -> impl Strategy<Value = (usize, String)> {
-        (0..channels).prop_flat_map(|idx| {
-            (
-                Just(idx),
-                "\\PC+".prop_filter("Must not be the actual key!", |s| s != "password"),
-            )
-        })
+    fn bad_keys(channels: usize) -> impl Strategy<Value = InsecureChannelKey> {
+        (0..channels)
+            .prop_flat_map(|idx| {
+                (
+                    Just(idx),
+                    "\\PC+".prop_filter("Must not be the actual key!", |s| s != "password"),
+                )
+            })
+            .prop_map(|(idx, password)| InsecureChannelKey(idx, password))
     }
 
     fn messages() -> impl Strategy<Value = u8> {
         any::<u8>()
     }
 
+    fn and_accumulators(
+        protocol: InsecureProtocol,
+    ) -> impl Strategy<Value = (InsecureProtocol, Vec<u8>)> {
+        (
+            Just(protocol),
+            proptest::collection::vec(any::<u8>(), protocol.num_channels()),
+        )
+    }
+
     fn get_server_shares(
         protocol: InsecureProtocol,
-        tokens: Vec<(u8, Option<(usize, String)>)>,
-        keys: Vec<(usize, String)>,
+        tokens: Vec<InsecureWriteToken>,
+        keys: Vec<InsecureChannelKey>,
     ) -> Vec<Vec<bool>> {
         let mut server_shares: Vec<Vec<bool>> = vec![Vec::new(); protocol.num_parties()];
         for token in tokens {
@@ -144,12 +224,12 @@ mod tests {
         #[test]
         fn test_broadcast_passes_audit(
             protocol in protocols(CHANNELS),
-            message in messages(),
+            msg in messages(),
             keys in keys(CHANNELS),
             idx in any::<prop::sample::Index>(),
         ) {
             let good_key = keys[idx.index(keys.len())].clone();
-            let tokens = protocol.broadcast(message, good_key);
+            let tokens = protocol.broadcast(msg, good_key);
             prop_assert_eq!(tokens.len(), protocol.num_parties());
 
             for shares in get_server_shares(protocol, tokens, keys) {
@@ -160,16 +240,59 @@ mod tests {
         #[test]
         fn test_broadcast_bad_key_fails_audit(
             protocol in protocols(CHANNELS),
-            message in messages().prop_filter("Broadcasting null message okay!", |m| *m != u8::default()),
+            msg in messages().prop_filter("Broadcasting null message okay!", |m| *m != u8::default()),
             good_key in keys(CHANNELS),
             bad_key in bad_keys(CHANNELS)
         ) {
-            let tokens = protocol.broadcast(message, bad_key);
+            let tokens = protocol.broadcast(msg, bad_key);
             prop_assert_eq!(tokens.len(), protocol.num_parties());
 
             for shares in get_server_shares(protocol, tokens, good_key) {
                 prop_assert!(!protocol.check_audit(shares));
             }
         }
+
+        #[test]
+        fn test_null_broadcast_messages_unchanged(
+            (protocol, mut accumulator) in protocols(CHANNELS).prop_flat_map(and_accumulators)
+        ) {
+            let before_msgs: Vec<u8> = accumulator.clone().into();
+            assert_eq!(before_msgs.len(), protocol.num_channels());
+
+            for write_token in protocol.null_broadcast() {
+                accumulator.accumulate(protocol.to_accumulator(write_token));
+            }
+            let after_msgs: Vec<u8> = accumulator.into();
+
+            assert_eq!(before_msgs, after_msgs);
+        }
+
+        #[test]
+        fn test_broadcast_recovers_message(
+            protocol in protocols(CHANNELS),
+            msg in messages(),
+            keys in keys(CHANNELS),
+            idx in any::<prop::sample::Index>(),
+        ) {
+            let idx = idx.index(keys.len());
+            let good_key = keys[idx].clone();
+
+            let mut accumulator = protocol.new_accumulator();
+            for write_token in protocol.broadcast(msg, good_key) {
+                accumulator.accumulate(protocol.to_accumulator(write_token));
+            }
+            let recovered_msgs: Vec<u8> = accumulator.into();
+
+            assert_eq!(recovered_msgs.len(), protocol.num_channels());
+            for (msg_idx, actual_msg) in recovered_msgs.into_iter().enumerate() {
+                if msg_idx == idx {
+                    assert_eq!(actual_msg, u8::default())
+                } else {
+                    assert_eq!(actual_msg, msg);
+                }
+            }
+        }
     }
+
+    // test: (aggregator new + null broadcast).into() == null msg
 }
