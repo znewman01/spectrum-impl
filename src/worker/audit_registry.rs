@@ -1,28 +1,34 @@
-use crate::proto::ShareCheck;
+use crate::proto::AuditShare;
 use crate::services::ClientInfo;
 
 use std::iter::FromIterator;
 use tokio::sync::{Mutex, RwLock};
 
-pub struct CheckRegistry(Vec<RwLock<Option<Mutex<Vec<ShareCheck>>>>>);
+// For each client, an Option of lists of audit shares (with appropriate locking).
+//
+// The idea is that you add shares for each client as received, then drain all
+// of them (one-time only) to check the audit.
+//
+// TODO(zjn): do you need the inner mutex?
+pub struct AuditRegistry(Vec<RwLock<Option<Mutex<Vec<AuditShare>>>>>);
 
-impl CheckRegistry {
-    pub fn new(num_clients: u16) -> CheckRegistry {
+impl AuditRegistry {
+    pub fn new(num_clients: u16) -> AuditRegistry {
         let mut vec = vec![];
         for _ in 0..num_clients {
             vec.push(RwLock::new(Some(Mutex::new(vec![]))));
         }
-        CheckRegistry(vec)
+        AuditRegistry(vec)
     }
 
-    pub async fn drain(&self, info: ClientInfo) -> Vec<ShareCheck> {
+    pub async fn drain(&self, info: ClientInfo) -> Vec<AuditShare> {
         let mut opt_lock = self.0[info.idx as usize].write().await;
         let vec_lock = opt_lock.take().expect("May only drain once.");
         let mut vec = vec_lock.lock().await;
         Vec::from_iter(vec.drain(..))
     }
 
-    pub async fn add(&self, info: ClientInfo, value: ShareCheck) -> usize {
+    pub async fn add(&self, info: ClientInfo, value: AuditShare) -> usize {
         let opt_lock = self.0[info.idx as usize].read().await;
         let vec_lock = opt_lock
             .as_ref()
@@ -41,9 +47,9 @@ mod tests {
     const NUM_SHARES: u16 = 100;
 
     #[tokio::test]
-    async fn test_check_registry_empty() {
+    async fn test_audit_registry_empty() {
         let clients: Vec<ClientInfo> = (0..NUM_CLIENTS).map(ClientInfo::new).collect();
-        let reg = CheckRegistry::new(NUM_CLIENTS);
+        let reg = AuditRegistry::new(NUM_CLIENTS);
 
         for client in clients {
             let shares = reg.drain(client).await;
@@ -52,10 +58,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_check_registry_put_shares() {
+    async fn test_audit_registry_put_shares() {
         let clients: Vec<ClientInfo> = (0..NUM_CLIENTS).map(ClientInfo::new).collect();
-        let reg = CheckRegistry::new(NUM_CLIENTS);
-        let expected_shares = vec![ShareCheck::default(); NUM_SHARES as usize];
+        let reg = AuditRegistry::new(NUM_CLIENTS);
+        let expected_shares = vec![AuditShare::default(); NUM_SHARES as usize];
 
         for client in &clients {
             for (idx, share) in expected_shares.iter().enumerate() {
@@ -70,9 +76,9 @@ mod tests {
 
     #[should_panic]
     #[tokio::test]
-    async fn test_check_registry_drain_twice_panics() {
+    async fn test_audit_registry_drain_twice_panics() {
         let mut clients: Vec<ClientInfo> = (0..NUM_CLIENTS).map(ClientInfo::new).collect();
-        let reg = CheckRegistry::new(NUM_CLIENTS);
+        let reg = AuditRegistry::new(NUM_CLIENTS);
 
         for client in &clients {
             reg.drain(*client).await;

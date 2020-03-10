@@ -1,5 +1,5 @@
 use crate::proto::{
-    worker_client::WorkerClient, RegisterClientRequest, ShareWithProof, UploadRequest,
+    worker_client::WorkerClient, RegisterClientRequest, WriteToken, UploadRequest,
 };
 use crate::{
     config,
@@ -85,9 +85,8 @@ where
 
     let req = UploadRequest {
         client_id: Some(info.into()),
-        share_and_proof: Some(ShareWithProof {
-            share: None,
-            proof: None,
+        write_token: Some(WriteToken {
+            token: None,
         }),
     };
 

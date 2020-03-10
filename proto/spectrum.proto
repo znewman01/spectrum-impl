@@ -19,38 +19,30 @@ message WorkerId {
 // Security Protocol
 ////////////////////////////////////////////////////////////////////////////////
 
-// Dummy share/proof/check for testing/benchmarking system
-message InsecureShare {
-  bytes data = 1;
-}
-
-message InsecureProof {
-}
-
-message InsecureShareCheck {
-}
-
 message Share {
-  oneof share_data {
-    InsecureShare insecure_share = 1;
+  repeated bytes data = 1;
+}
+// Dummy share/proof/check for testing/benchmarking system
+message InsecureWriteToken {
+  bytes data = 1;
+  uint32 channel_idx = 2;
+  string key = 3;
+}
+
+message InsecureAuditShare {
+  bool okay = 1;
+}
+
+message WriteToken {
+  oneof token {
+    InsecureWriteToken insecure_token = 1;
   }
 }
 
-message Proof {
-  oneof proof {
-    InsecureProof insecure_proof = 1;
-  }
-}
-
-message ShareWithProof {
-  Share share = 1;
-  Proof proof = 2;
-}
-
-// Share checks: what workers exchange to collaboratively verify shares
-message ShareCheck {
-  oneof check {
-    InsecureShareCheck insecure_check = 1;
+// what workers exchange to collaboratively verify shares
+message AuditShare {
+  oneof audit_share {
+    InsecureAuditShare insecure_audit_share = 1;
   }
 }
 
@@ -75,7 +67,7 @@ message RegisterClientResponse {
 
 message UploadRequest {
   ClientId client_id = 1;
-  ShareWithProof share_and_proof = 2;
+  WriteToken write_token = 2;
 }
 
 message UploadResponse {
@@ -84,7 +76,7 @@ message UploadResponse {
 message VerifyRequest {
   // TODO(zjn): repeated to allow batching?
   ClientId client_id = 1;
-  ShareCheck check = 2;
+  AuditShare audit_share = 2;
 }
 
 message VerifyResponse {

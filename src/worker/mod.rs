@@ -1,6 +1,6 @@
 use crate::proto::{
     worker_server::{Worker, WorkerServer},
-    RegisterClientRequest, RegisterClientResponse, ShareCheck, ShareWithProof, UploadRequest,
+    RegisterClientRequest, RegisterClientResponse, AuditShare, WriteToken, UploadRequest,
     UploadResponse, VerifyRequest, VerifyResponse,
 };
 use crate::{
@@ -27,10 +27,10 @@ use tokio::{
 };
 use tonic::{Request, Response, Status};
 
-mod check_registry;
+mod audit_registry;
 mod client_registry;
 
-use check_registry::CheckRegistry;
+use audit_registry::AuditRegistry;
 use client_registry::{ClientRegistry, SharedClient};
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
@@ -39,7 +39,7 @@ pub struct MyWorker {
     clients_peers: RwLock<HashMap<ClientInfo, Vec<WorkerInfo>>>,
     start_rx: watch::Receiver<bool>,
     clients_rx: watch::Receiver<Option<ClientRegistry>>,
-    check_registry: Arc<CheckRegistry>,
+    audit_registry: Arc<AuditRegistry>,
     accumulator: Arc<Accumulator<Vec<Option<String>>>>,
     experiment: Experiment,
     info: WorkerInfo,
@@ -56,7 +56,7 @@ impl MyWorker {
             clients_peers: RwLock::default(),
             start_rx,
             clients_rx,
-            check_registry: Arc::new(CheckRegistry::new(experiment.clients)),
+            audit_registry: Arc::new(AuditRegistry::new(experiment.clients)),
             accumulator: Arc::new(Accumulator::new(vec![None; experiment.channels])),
             experiment,
             info,
@@ -101,15 +101,15 @@ fn expect_field<T>(opt: Option<T>, name: &str) -> Result<T, Status> {
     opt.ok_or_else(|| Status::invalid_argument(format!("{} must be set.", name)))
 }
 
-fn gen_audit(share_and_proof: ShareWithProof, num_peers: usize) -> Vec<ShareCheck> {
+fn gen_audit(share_and_proof: WriteToken, num_peers: usize) -> Vec<AuditShare> {
     debug!(
         "I would be computing an audit for {:?} now.",
         share_and_proof
     );
-    return vec![ShareCheck::default(); num_peers + 1];
+    return vec![AuditShare::default(); num_peers + 1];
 }
 
-fn verify(shares: &[ShareCheck]) -> bool {
+fn verify(shares: &[AuditShare]) -> bool {
     trace!("Running heavy verification part with shares {:?}.", shares);
     true // TODO(zjn): wire in protocol
 }
@@ -126,21 +126,21 @@ impl Worker for MyWorker {
         let client_id = expect_field(request.client_id, "Client ID")?;
         let client_info = ClientInfo::from(client_id.clone());
         let peers: Vec<SharedClient> = self.get_peers(client_info).await?;
-        let share_and_proof = expect_field(request.share_and_proof, "ShareWithProof")?;
-        let check_registry = self.check_registry.clone();
+        let write_token = expect_field(request.write_token, "Write Token")?;
+        let audit_registry = self.audit_registry.clone();
 
         spawn(async move {
             let num_peers = peers.len();
-            let mut checks = spawn_blocking(move || gen_audit(share_and_proof, num_peers))
+            let mut audit_shares = spawn_blocking(move || gen_audit(write_token, num_peers))
                 .await
                 .expect("Generating audit should not panic.");
 
-            let check = checks.pop().expect("Should have at least one check.");
-            check_registry.add(client_info, check).await;
-            for (peer, check) in peers.into_iter().zip(checks.into_iter()) {
+            let audit_share = audit_shares.pop().expect("Should have at least one audit share.");
+            audit_registry.add(client_info, audit_share).await;
+            for (peer, check) in peers.into_iter().zip(audit_shares.into_iter()) {
                 let req = Request::new(VerifyRequest {
                     client_id: Some(client_id.clone()),
-                    check: Some(check),
+                    audit_share: Some(check),
                 });
                 spawn(async move {
                     peer.lock().await.verify(req).await.unwrap();
@@ -165,13 +165,13 @@ impl Worker for MyWorker {
             let lock = self.clients_peers.read().await;
             lock.len()
         };
-        let share = expect_field(request.check, "Check")?;
-        let check_count = self.check_registry.add(client_info, share).await;
+        let share = expect_field(request.audit_share, "Audit Share")?;
+        let check_count = self.audit_registry.add(client_info, share).await;
         let accumulator = self.accumulator.clone();
         let num_channels = self.experiment.channels;
 
         if check_count == self.experiment.groups as usize {
-            let shares = self.check_registry.drain(client_info).await;
+            let shares = self.audit_registry.drain(client_info).await;
             spawn(async move {
                 let verify = spawn_blocking(move || verify(&shares)).await.unwrap();
 
