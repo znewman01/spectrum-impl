@@ -1,12 +1,12 @@
 use crate::config::store::{Error, Store};
+use crate::protocols::insecure::InsecureProtocol;
 use crate::services::{
     discovery::Node, ClientInfo, Group, LeaderInfo, PublisherInfo, Service, WorkerInfo,
 };
-use crate::protocols::Protocol;
 
 use serde::{Deserialize, Serialize};
-use std::iter::{once, IntoIterator};
 use std::convert::TryInto;
+use std::iter::{once, IntoIterator};
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq)]
 pub struct Experiment {
@@ -50,9 +50,8 @@ impl Experiment {
         (0..self.clients).map(ClientInfo::new).map(Service::from)
     }
 
-    pub fn get_protocol(&self) -> impl Protocol {
-        use crate::protocols::insecure;
-        insecure::InsecureProtocol::new(self.groups.try_into().unwrap(), self.channels)
+    pub fn get_protocol(&self) -> InsecureProtocol {
+        InsecureProtocol::new(self.groups.try_into().unwrap(), self.channels)
     }
 }
 

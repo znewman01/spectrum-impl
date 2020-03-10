@@ -1,13 +1,14 @@
 use crate::proto::{
     worker_server::{Worker, WorkerServer},
-    RegisterClientRequest, RegisterClientResponse, AuditShare, WriteToken, UploadRequest,
-    UploadResponse, VerifyRequest, VerifyResponse,
+    RegisterClientRequest, RegisterClientResponse, UploadRequest, UploadResponse,
+    VerifyRequest, VerifyResponse,
 };
 use crate::{
     config::store::Store,
     experiment::Experiment,
     net::get_addr,
     protocols::accumulator::Accumulator,
+    protocols::{insecure::InsecureAuditShare, Protocol},
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -17,7 +18,7 @@ use crate::{
 };
 
 use futures::prelude::*;
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::{
@@ -39,7 +40,7 @@ pub struct MyWorker {
     clients_peers: RwLock<HashMap<ClientInfo, Vec<WorkerInfo>>>,
     start_rx: watch::Receiver<bool>,
     clients_rx: watch::Receiver<Option<ClientRegistry>>,
-    audit_registry: Arc<AuditRegistry>,
+    audit_registry: Arc<AuditRegistry<InsecureAuditShare>>,
     accumulator: Arc<Accumulator<Vec<Option<String>>>>,
     experiment: Experiment,
     info: WorkerInfo,
@@ -101,19 +102,6 @@ fn expect_field<T>(opt: Option<T>, name: &str) -> Result<T, Status> {
     opt.ok_or_else(|| Status::invalid_argument(format!("{} must be set.", name)))
 }
 
-fn gen_audit(share_and_proof: WriteToken, num_peers: usize) -> Vec<AuditShare> {
-    debug!(
-        "I would be computing an audit for {:?} now.",
-        share_and_proof
-    );
-    return vec![AuditShare::default(); num_peers + 1];
-}
-
-fn verify(shares: &[AuditShare]) -> bool {
-    trace!("Running heavy verification part with shares {:?}.", shares);
-    true // TODO(zjn): wire in protocol
-}
-
 #[tonic::async_trait]
 impl Worker for MyWorker {
     async fn upload(
@@ -128,19 +116,23 @@ impl Worker for MyWorker {
         let peers: Vec<SharedClient> = self.get_peers(client_info).await?;
         let write_token = expect_field(request.write_token, "Write Token")?;
         let audit_registry = self.audit_registry.clone();
+        let protocol = self.experiment.get_protocol();
+        let keys = vec![];
 
         spawn(async move {
-            let num_peers = peers.len();
-            let mut audit_shares = spawn_blocking(move || gen_audit(write_token, num_peers))
-                .await
-                .expect("Generating audit should not panic.");
+            let mut audit_shares =
+                spawn_blocking(move || protocol.gen_audit(&keys, write_token.into()))
+                    .await
+                    .expect("Generating audit should not panic.");
 
-            let audit_share = audit_shares.pop().expect("Should have at least one audit share.");
+            let audit_share = audit_shares
+                .pop()
+                .expect("Should have at least one audit share.");
             audit_registry.add(client_info, audit_share).await;
-            for (peer, check) in peers.into_iter().zip(audit_shares.into_iter()) {
+            for (peer, audit_share) in peers.into_iter().zip(audit_shares.into_iter()) {
                 let req = Request::new(VerifyRequest {
                     client_id: Some(client_id.clone()),
-                    audit_share: Some(check),
+                    audit_share: Some(audit_share.into()),
                 });
                 spawn(async move {
                     peer.lock().await.verify(req).await.unwrap();
@@ -166,14 +158,15 @@ impl Worker for MyWorker {
             lock.len()
         };
         let share = expect_field(request.audit_share, "Audit Share")?;
-        let check_count = self.audit_registry.add(client_info, share).await;
+        let check_count = self.audit_registry.add(client_info, share.into()).await;
         let accumulator = self.accumulator.clone();
         let num_channels = self.experiment.channels;
+        let protocol = self.experiment.get_protocol();
 
         if check_count == self.experiment.groups as usize {
             let shares = self.audit_registry.drain(client_info).await;
             spawn(async move {
-                let verify = spawn_blocking(move || verify(&shares)).await.unwrap();
+                let verify = spawn_blocking(move || protocol.check_audit(shares)).await.unwrap();
 
                 if verify {
                     let data = vec![None; num_channels]; // TODO(zjn): pull out of something

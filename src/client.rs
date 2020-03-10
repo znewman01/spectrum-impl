@@ -1,6 +1,4 @@
-use crate::proto::{
-    worker_client::WorkerClient, RegisterClientRequest, WriteToken, UploadRequest,
-};
+use crate::proto::{worker_client::WorkerClient, RegisterClientRequest, UploadRequest, WriteToken, InsecureWriteToken, self};
 use crate::{
     config,
     services::{
@@ -83,10 +81,13 @@ where
 
     delay_until(start_time).await;
 
+    // TODO: should use null_broadcast()
     let req = UploadRequest {
         client_id: Some(info.into()),
         write_token: Some(WriteToken {
-            token: None,
+            token: Some(proto::write_token::Token::InsecureToken(
+                InsecureWriteToken::default()
+            ))
         }),
     };
 

@@ -22,6 +22,7 @@ message WorkerId {
 message Share {
   repeated bytes data = 1;
 }
+
 // Dummy share/proof/check for testing/benchmarking system
 message InsecureWriteToken {
   bytes data = 1;

@@ -1,6 +1,8 @@
 use crate::proto::{self, AuditShare, WriteToken};
 use crate::protocols::{Accumulatable, Protocol};
 
+use std::convert::TryInto;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct InsecureChannelKey(usize, String);
 
@@ -9,18 +11,24 @@ pub struct InsecureWriteToken(Option<(u8, InsecureChannelKey)>);
 
 impl From<WriteToken> for InsecureWriteToken {
     fn from(token: WriteToken) -> Self {
-        let insecure_token_proto = token.insecure_token.unwrap();
-        if let Some(data) = insecure_token_proto.data {
-            assert_eq!(data.len(), 1);
-            InsecureWriteToken(Some(
-                data[0],
-                InsecureChannelKey(
-                    insecure_token_proto.channel_idx.unwrap(),
-                    insecure_token_proto.key.unwrap(),
-                ),
-            ))
+        #![allow(irrefutable_let_patterns)] // until we introduce multiple protocols
+        if let proto::write_token::Token::InsecureToken(insecure_token_proto) = token.token.unwrap()
+        {
+            let data = insecure_token_proto.data;
+            if !data.is_empty() {
+                assert_eq!(data.len(), 1);
+                InsecureWriteToken(Some((
+                    data[0],
+                    InsecureChannelKey(
+                        insecure_token_proto.channel_idx.try_into().unwrap(),
+                        insecure_token_proto.key,
+                    ),
+                )))
+            } else {
+                InsecureWriteToken(None)
+            }
         } else {
-            InsecureWriteToken(None)
+            panic!();
         }
     }
 }
@@ -28,14 +36,14 @@ impl From<WriteToken> for InsecureWriteToken {
 impl Into<WriteToken> for InsecureWriteToken {
     fn into(self) -> WriteToken {
         WriteToken {
-            insecure_token: match self.0 {
-                Some(data, key) => Some(proto::InsecureWriteToken {
-                    data: Some(vec![data]),
-                    channel_idx: Some(key.0),
-                    key: Some(key.1),
-                }),
-                _ => None,
-            },
+            token: Some(proto::write_token::Token::InsecureToken(match self.0 {
+                Some((data, key)) => proto::InsecureWriteToken {
+                    data: vec![data],
+                    channel_idx: key.0 as u32,
+                    key: key.1,
+                },
+                None => proto::InsecureWriteToken::default(),
+            })),
         }
     }
 }
@@ -45,23 +53,26 @@ pub struct InsecureAuditShare(bool);
 
 impl From<AuditShare> for InsecureAuditShare {
     fn from(share: AuditShare) -> Self {
-        let insecure_share_proto = share.insecure_audit_share.unwrap();
-        InsecureAuditShare(insecure_share_proto.okay().unwrap())
+        #![allow(irrefutable_let_patterns)] // until we introduce multiple protocols
+        if let proto::audit_share::AuditShare::InsecureAuditShare(insecure_share_proto) =
+            share.audit_share.unwrap()
+        {
+            InsecureAuditShare(insecure_share_proto.okay)
+        } else {
+            panic!();
+        }
     }
 }
 
-// impl Into<AuditShare> for InsecureAuditShare {
-//     fn into(self) -> WriteToken {
-//         match self.0 {
-//             Some(data, key) => WriteToken {
-//                 data: Some(vec![data]),
-//                 channel_idx: Some(key.0),
-//                 key: Some(key.1),
-//             },
-//             _ => WriteToken::default(),
-//         }
-//     }
-// }
+impl Into<AuditShare> for InsecureAuditShare {
+    fn into(self) -> AuditShare {
+        proto::AuditShare {
+            audit_share: Some(proto::audit_share::AuditShare::InsecureAuditShare(
+                proto::InsecureAuditShare { okay: self.0 },
+            )),
+        }
+    }
+}
 
 impl InsecureWriteToken {
     fn new(data: u8, key: InsecureChannelKey) -> Self {
@@ -134,7 +145,7 @@ impl Protocol for InsecureProtocol {
                     None => InsecureAuditShare(false),
                 }
             }
-            _ => true,
+            _ => InsecureAuditShare(true),
         };
         vec![audit_share; self.parties]
     }
@@ -203,8 +214,8 @@ mod tests {
         protocol: InsecureProtocol,
         tokens: Vec<InsecureWriteToken>,
         keys: Vec<InsecureChannelKey>,
-    ) -> Vec<Vec<bool>> {
-        let mut server_shares: Vec<Vec<bool>> = vec![Vec::new(); protocol.num_parties()];
+    ) -> Vec<Vec<InsecureAuditShare>> {
+        let mut server_shares = vec![Vec::new(); protocol.num_parties()];
         for token in tokens {
             for (idx, share) in protocol.gen_audit(&keys, token).into_iter().enumerate() {
                 server_shares[idx].push(share);
