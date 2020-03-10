@@ -44,7 +44,7 @@ trait Protocol {
     // Server algorithms
     fn gen_audit(
         &self,
-        keys: &Vec<Self::ChannelKey>,
+        keys: &[Self::ChannelKey],
         token: Self::WriteToken,
     ) -> Vec<Self::AuditShare>;
     fn check_audit(&self, tokens: Vec<Self::AuditShare>) -> bool;

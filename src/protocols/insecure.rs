@@ -64,7 +64,7 @@ impl Protocol for InsecureProtocol {
         vec![InsecureWriteToken::empty(); self.parties]
     }
 
-    fn gen_audit(&self, keys: &Vec<InsecureChannelKey>, token: InsecureWriteToken) -> Vec<bool> {
+    fn gen_audit(&self, keys: &[InsecureChannelKey], token: InsecureWriteToken) -> Vec<bool> {
         let audit_share = match token {
             InsecureWriteToken(Some((_, key))) => {
                 let InsecureChannelKey(idx, _) = key;
