@@ -1,12 +1,12 @@
-#![allow(clippy::unit_arg)] // weird cargo clippy bug; complains about "derive(Arbitrary)"
-
 use crate::config::store::{Error, Store};
 use crate::services::{
     discovery::Node, ClientInfo, Group, LeaderInfo, PublisherInfo, Service, WorkerInfo,
 };
+use crate::protocols::Protocol;
 
 use serde::{Deserialize, Serialize};
 use std::iter::{once, IntoIterator};
+use std::convert::TryInto;
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq)]
 pub struct Experiment {
@@ -48,6 +48,11 @@ impl Experiment {
     // TODO(zjn): combine with iter_services
     pub fn iter_clients(self) -> impl Iterator<Item = Service> {
         (0..self.clients).map(ClientInfo::new).map(Service::from)
+    }
+
+    pub fn get_protocol(&self) -> impl Protocol {
+        use crate::protocols::insecure;
+        insecure::InsecureProtocol::new(self.groups.try_into().unwrap(), self.channels)
     }
 }
 

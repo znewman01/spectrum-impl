@@ -1,10 +1,10 @@
 use crate::protocols::{Accumulatable, Protocol};
 
 #[derive(Debug, Clone, PartialEq)]
-struct InsecureChannelKey(usize, String);
+pub struct InsecureChannelKey(usize, String);
 
 #[derive(Debug, Clone)]
-struct InsecureWriteToken(Option<(u8, InsecureChannelKey)>);
+pub struct InsecureWriteToken(Option<(u8, InsecureChannelKey)>);
 
 impl InsecureWriteToken {
     fn new(data: u8, key: InsecureChannelKey) -> Self {
@@ -28,13 +28,13 @@ impl Accumulatable for u8 {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct InsecureProtocol {
+pub struct InsecureProtocol {
     parties: usize,
     channels: usize,
 }
 
 impl InsecureProtocol {
-    fn new(parties: usize, channels: usize) -> InsecureProtocol {
+    pub fn new(parties: usize, channels: usize) -> InsecureProtocol {
         InsecureProtocol { parties, channels }
     }
 }

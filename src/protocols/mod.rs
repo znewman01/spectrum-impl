@@ -4,7 +4,7 @@ pub mod insecure;
 pub mod table;
 // TODO(zjn): adapter to/from protos
 
-trait Accumulatable {
+pub trait Accumulatable {
     fn accumulate(&mut self, rhs: Self);
 
     fn new(size: usize) -> Self;
@@ -26,7 +26,7 @@ where
     }
 }
 
-trait Protocol {
+pub trait Protocol {
     type Message: Default;
     type ChannelKey;
     type WriteToken;
