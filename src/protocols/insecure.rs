@@ -1,3 +1,4 @@
+use crate::proto::{self, AuditShare, WriteToken};
 use crate::protocols::{Accumulatable, Protocol};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -5,6 +6,62 @@ pub struct InsecureChannelKey(usize, String);
 
 #[derive(Debug, Clone)]
 pub struct InsecureWriteToken(Option<(u8, InsecureChannelKey)>);
+
+impl From<WriteToken> for InsecureWriteToken {
+    fn from(token: WriteToken) -> Self {
+        let insecure_token_proto = token.insecure_token.unwrap();
+        if let Some(data) = insecure_token_proto.data {
+            assert_eq!(data.len(), 1);
+            InsecureWriteToken(Some(
+                data[0],
+                InsecureChannelKey(
+                    insecure_token_proto.channel_idx.unwrap(),
+                    insecure_token_proto.key.unwrap(),
+                ),
+            ))
+        } else {
+            InsecureWriteToken(None)
+        }
+    }
+}
+
+impl Into<WriteToken> for InsecureWriteToken {
+    fn into(self) -> WriteToken {
+        WriteToken {
+            insecure_token: match self.0 {
+                Some(data, key) => Some(proto::InsecureWriteToken {
+                    data: Some(vec![data]),
+                    channel_idx: Some(key.0),
+                    key: Some(key.1),
+                }),
+                _ => None,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InsecureAuditShare(bool);
+
+impl From<AuditShare> for InsecureAuditShare {
+    fn from(share: AuditShare) -> Self {
+        let insecure_share_proto = share.insecure_audit_share.unwrap();
+        InsecureAuditShare(insecure_share_proto.okay().unwrap())
+    }
+}
+
+// impl Into<AuditShare> for InsecureAuditShare {
+//     fn into(self) -> WriteToken {
+//         match self.0 {
+//             Some(data, key) => WriteToken {
+//                 data: Some(vec![data]),
+//                 channel_idx: Some(key.0),
+//                 key: Some(key.1),
+//             },
+//             _ => WriteToken::default(),
+//         }
+//     }
+// }
 
 impl InsecureWriteToken {
     fn new(data: u8, key: InsecureChannelKey) -> Self {
@@ -43,7 +100,7 @@ impl Protocol for InsecureProtocol {
     type Message = u8;
     type ChannelKey = InsecureChannelKey; // channel number, password
     type WriteToken = InsecureWriteToken; // message, index, maybe a key
-    type AuditShare = bool;
+    type AuditShare = InsecureAuditShare;
     type Accumulator = Vec<u8>;
 
     fn num_parties(&self) -> usize {
@@ -64,13 +121,17 @@ impl Protocol for InsecureProtocol {
         vec![InsecureWriteToken::empty(); self.parties]
     }
 
-    fn gen_audit(&self, keys: &[InsecureChannelKey], token: InsecureWriteToken) -> Vec<bool> {
+    fn gen_audit(
+        &self,
+        keys: &[InsecureChannelKey],
+        token: InsecureWriteToken,
+    ) -> Vec<InsecureAuditShare> {
         let audit_share = match token {
             InsecureWriteToken(Some((_, key))) => {
                 let InsecureChannelKey(idx, _) = key;
                 match keys.get(idx) {
-                    Some(expected_key) => &key == expected_key,
-                    None => false,
+                    Some(expected_key) => InsecureAuditShare(&key == expected_key),
+                    None => InsecureAuditShare(false),
                 }
             }
             _ => true,
@@ -78,9 +139,9 @@ impl Protocol for InsecureProtocol {
         vec![audit_share; self.parties]
     }
 
-    fn check_audit(&self, tokens: Vec<bool>) -> bool {
+    fn check_audit(&self, tokens: Vec<InsecureAuditShare>) -> bool {
         assert_eq!(tokens.len(), self.parties);
-        tokens.into_iter().all(|x| x)
+        tokens.into_iter().all(|x| x.0)
     }
 
     fn to_accumulator(&self, token: InsecureWriteToken) -> Vec<u8> {

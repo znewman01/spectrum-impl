@@ -1,8 +1,9 @@
 #![allow(dead_code)]
+use crate::proto;
+
 pub mod accumulator;
 pub mod insecure;
 pub mod table;
-// TODO(zjn): adapter to/from protos
 
 pub trait Accumulatable {
     fn accumulate(&mut self, rhs: Self);
@@ -28,9 +29,9 @@ where
 
 pub trait Protocol {
     type Message: Default;
-    type ChannelKey;
-    type WriteToken;
-    type AuditShare;
+    type ChannelKey: Sync + Send;
+    type WriteToken: Sync + Send + From<proto::WriteToken> + Into<proto::WriteToken>;
+    type AuditShare: Sync + Send + From<proto::AuditShare> + Into<proto::AuditShare>;
     type Accumulator: Into<Vec<Self::Message>> + Accumulatable;
 
     // General protocol properties
