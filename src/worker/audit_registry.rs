@@ -40,6 +40,7 @@ impl<S> AuditRegistry<S> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unit_arg)]
     use super::*;
 
     const NUM_CLIENTS: u16 = 10;
