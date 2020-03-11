@@ -82,15 +82,11 @@ mod tests {
     use super::*;
     use crate::experiment::{tests::experiments, Experiment};
     use proptest::prelude::*;
-    use std::ops::Range;
 
     pub fn experiments_with_multiple_workers() -> impl Strategy<Value = Experiment> {
-        let groups: Range<u16> = 1..10;
-        let workers_per_group: Range<u16> = 2..10;
-        let clients: Range<u16> = 1..10;
-        let channels: Range<usize> = 1..10;
-        (groups, workers_per_group, clients, channels)
-            .prop_map(|(g, w, cl, ch)| Experiment::new(g, w, cl, ch))
+        experiments().prop_filter("Only want experiments with multiple workers", |e| {
+            e.workers_per_group > 1
+        })
     }
 
     proptest! {

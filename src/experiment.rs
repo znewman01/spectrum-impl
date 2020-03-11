@@ -13,7 +13,7 @@ pub struct Experiment {
     // TODO(zjn): when nonzero types hit stable, replace u16 with NonZeroU16.
     // https://github.com/rust-lang/rfcs/blob/master/text/2307-concrete-nonzero-types.md
     pub groups: u16,
-    workers_per_group: u16,
+    pub workers_per_group: u16,
     pub clients: u16,
     pub channels: usize,
 }
@@ -26,6 +26,10 @@ impl Experiment {
             "Expected at least 1 worker per group."
         );
         assert!(clients >= 1, "Expected at least 1 client.");
+        assert!(
+            clients as usize >= channels,
+            "Expected at least as many clients as channels."
+        );
         Experiment {
             groups,
             workers_per_group,
@@ -113,10 +117,11 @@ pub mod tests {
     pub fn experiments() -> impl Strategy<Value = Experiment> {
         let groups: Range<u16> = 1..10;
         let workers_per_group: Range<u16> = 1..10;
-        let clients: Range<u16> = 1..10;
         let channels: Range<usize> = 1..10;
-        (groups, workers_per_group, clients, channels)
-            .prop_map(|(g, w, cl, ch)| Experiment::new(g, w, cl, ch))
+        (groups, workers_per_group, channels).prop_flat_map(|(g, w, ch)| {
+            let clients: Range<u16> = (ch as u16)..10;
+            clients.prop_map(move |cl| Experiment::new(g, w, cl, ch))
+        })
     }
 
     proptest! {
