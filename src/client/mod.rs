@@ -1,9 +1,8 @@
-use crate::proto::{
-    self, worker_client::WorkerClient, InsecureWriteToken, RegisterClientRequest, UploadRequest,
-    WriteToken,
-};
+use crate::proto::{worker_client::WorkerClient, RegisterClientRequest, UploadRequest};
 use crate::{
     config,
+    experiment::Experiment,
+    protocols::Protocol,
     services::{
         discovery::{resolve_all, Node},
         quorum::{delay_until, wait_for_start_time_set},
@@ -52,6 +51,7 @@ fn pick_worker_shards(nodes: Vec<Node>) -> Vec<Node> {
 
 pub async fn run<C, F>(
     config_store: C,
+    experiment: Experiment,
     info: ClientInfo,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
@@ -84,18 +84,13 @@ where
 
     delay_until(start_time).await;
 
-    // TODO: should use null_broadcast()
-    let req = UploadRequest {
-        client_id: Some(info.into()),
-        write_token: Some(WriteToken {
-            token: Some(proto::write_token::Token::InsecureToken(
-                InsecureWriteToken::default(),
-            )),
-        }),
-    };
+    let write_tokens = experiment.get_protocol().null_broadcast();
 
-    for mut client in clients {
-        let req = tonic::Request::new(req.clone());
+    for (client, write_token) in clients.iter_mut().zip(write_tokens) {
+        let req = tonic::Request::new(UploadRequest {
+            client_id: Some(info.into()),
+            write_token: Some(write_token.into()),
+        });
         trace!("About to send upload request.");
         let response = client.upload(req).await?;
         debug!("RESPONSE={:?}", response.into_inner());
