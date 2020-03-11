@@ -1,6 +1,5 @@
 //! Spectrum implementation.
 use bytes::Bytes;
-use hex;
 use rug::{integer::IsPrime, rand::RandState, Integer};
 use std::cmp::Ordering;
 use std::fmt::Debug;

@@ -144,7 +144,7 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    const DATA_SIZE: usize = (1 << 10);
+    const DATA_SIZE: usize = 1 << 10;
     const MAX_NUM_POINTS: usize = 20;
     const SECURITY_BYTES: usize = 16;
 
