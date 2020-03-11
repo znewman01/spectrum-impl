@@ -60,7 +60,7 @@ impl PublisherInfo {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Default)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Default)]
 pub struct ClientInfo {
     pub idx: u16,
     _private: (),
@@ -72,7 +72,7 @@ impl ClientInfo {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Service {
     Leader(LeaderInfo),
     Publisher(PublisherInfo),
@@ -104,11 +104,11 @@ impl From<ClientInfo> for Service {
     }
 }
 
-// TODO(zjn): merge these more closely
-impl From<ClientInfo> for ClientId {
-    fn from(info: ClientInfo) -> ClientId {
+impl ClientInfo {
+    // TODO(zjn): merge these more closely?
+    pub fn to_proto(&self) -> ClientId {
         ClientId {
-            client_id: info.idx.to_string(),
+            client_id: self.idx.to_string(),
         }
     }
 }

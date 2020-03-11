@@ -6,6 +6,12 @@ use std::convert::TryInto;
 #[derive(Debug, Clone, PartialEq)]
 pub struct InsecureChannelKey(usize, String);
 
+impl InsecureChannelKey {
+    pub fn new(idx: usize, password: String) -> Self {
+        InsecureChannelKey(idx, password)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct InsecureWriteToken(Option<(u8, InsecureChannelKey)>);
 

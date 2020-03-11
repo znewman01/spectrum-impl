@@ -57,7 +57,7 @@ where
     let shards: Vec<Node> = pick_worker_shards(nodes);
     let mut clients = vec![];
     let req = RegisterClientRequest {
-        client_id: Some(info.into()),
+        client_id: Some(info.to_proto()),
         shards: shards
             .iter()
             .map(|shard| match shard.service {
@@ -103,7 +103,7 @@ mod tests {
 
             let shards = pick_worker_shards(nodes);
 
-            let shard_services = HashSet::from_iter(shards.iter().map(|node| node.service));
+            let shard_services = HashSet::from_iter(shards.iter().map(|node| node.service.clone()));
             prop_assert!(shard_services.is_subset(&services));
         }
 

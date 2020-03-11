@@ -113,7 +113,7 @@ impl Worker for MyWorker {
 
         let client_id = expect_field(request.client_id, "Client ID")?;
         let client_info = ClientInfo::from(client_id.clone());
-        let peers: Vec<SharedClient> = self.get_peers(client_info).await?;
+        let peers: Vec<SharedClient> = self.get_peers(client_info.clone()).await?;
         let write_token = expect_field(request.write_token, "Write Token")?;
         let audit_registry = self.audit_registry.clone();
         let protocol = self.experiment.get_protocol();
@@ -158,7 +158,10 @@ impl Worker for MyWorker {
             lock.len()
         };
         let share = expect_field(request.audit_share, "Audit Share")?;
-        let check_count = self.audit_registry.add(client_info, share.into()).await;
+        let check_count = self
+            .audit_registry
+            .add(client_info.clone(), share.into())
+            .await;
         let accumulator = self.accumulator.clone();
         let num_channels = self.experiment.channels;
         let protocol = self.experiment.get_protocol();
@@ -202,7 +205,7 @@ impl Worker for MyWorker {
             .collect();
         trace!("Registering client {:?}; shards: {:?}", client_info, shards);
         let mut clients_peers = self.clients_peers.write().await;
-        if clients_peers.insert(client_info, shards).is_some() {
+        if clients_peers.insert(client_info.clone(), shards).is_some() {
             warn!("Client registered twice: {:?}", client_info);
         }
 

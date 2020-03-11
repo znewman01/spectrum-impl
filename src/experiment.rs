@@ -165,7 +165,7 @@ pub mod tests {
         #[test]
         fn test_filter_peers(experiment in experiments()) {
             let services: Vec<Service> = experiment.iter_services().collect();
-            let nodes = services.iter().map(|&service| Node::new(service, "127.0.0.1:22".parse().unwrap()));
+            let nodes = services.iter().map(|service| Node::new(service.clone(), "127.0.0.1:22".parse().unwrap()));
 
             let info = *services
                 .iter()

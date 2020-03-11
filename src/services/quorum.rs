@@ -63,7 +63,8 @@ pub async fn delay_until(dt: DateTime<FixedOffset>) {
 
 async fn has_quorum<C: Store>(config: &C, experiment: Experiment) -> Result<(), Error> {
     let nodes = resolve_all(config).await?;
-    let actual: HashSet<Service> = HashSet::from_iter(nodes.iter().map(|node| node.service));
+    let actual: HashSet<Service> =
+        HashSet::from_iter(nodes.iter().map(|node| node.service.clone()));
     let expected: HashSet<Service> = HashSet::from_iter(experiment.iter_services());
 
     if actual == expected {

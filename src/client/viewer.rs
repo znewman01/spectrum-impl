@@ -29,14 +29,15 @@ where
     let start_time = wait_for_start_time_set(&config).await?;
     debug!("Received configuration from configuration server; initializing.");
 
-    let mut clients = connections::connect_and_register(&config, info).await?;
+    let mut clients = connections::connect_and_register(&config, info.clone()).await?;
     let write_tokens = experiment.get_protocol().null_broadcast();
+    let client_id = info.to_proto(); // before we move info
 
     delay_until(start_time).await;
 
     for (client, write_token) in clients.iter_mut().zip(write_tokens) {
         let req = tonic::Request::new(UploadRequest {
-            client_id: Some(info.into()),
+            client_id: Some(client_id.clone()),
             write_token: Some(write_token.into()),
         });
         trace!("About to send upload request.");

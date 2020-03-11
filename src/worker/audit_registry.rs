@@ -65,7 +65,7 @@ mod tests {
 
         for client in &clients {
             for (idx, share) in expected_shares.iter().enumerate() {
-                assert_eq!(reg.add(*client, share.clone()).await, idx + 1);
+                assert_eq!(reg.add(client.clone(), share.clone()).await, idx + 1);
             }
         }
 
@@ -81,7 +81,7 @@ mod tests {
         let reg = AuditRegistry::<()>::new(NUM_CLIENTS);
 
         for client in &clients {
-            reg.drain(*client).await;
+            reg.drain(client.clone()).await;
         }
 
         reg.drain(clients.pop().unwrap()).await;
