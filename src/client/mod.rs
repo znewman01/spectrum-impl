@@ -49,21 +49,17 @@ fn pick_worker_shards(nodes: Vec<Node>) -> Vec<Node> {
     shards
 }
 
-pub async fn run<C, F>(
-    config_store: C,
-    experiment: Experiment,
+type TokioError = Box<dyn std::error::Error + Sync + Send>;
+
+async fn connect_and_register<C>(
+    config: &C,
     info: ClientInfo,
-    shutdown: F,
-) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
+) -> Result<Vec<WorkerClient<tonic::transport::channel::Channel>>, TokioError>
 where
     C: Store,
-    F: Future<Output = ()> + Send + 'static,
 {
-    info!("Client starting");
-    let start_time = wait_for_start_time_set(&config_store).await?;
-    debug!("Received configuration from configuration server; initializing.");
-
-    let shards: Vec<Node> = pick_worker_shards(resolve_all(&config_store).await?);
+    let nodes: Vec<Node> = resolve_all(config).await?;
+    let shards: Vec<Node> = pick_worker_shards(nodes);
     let mut clients = vec![];
     let req = RegisterClientRequest {
         client_id: Some(info.into()),
@@ -81,10 +77,27 @@ where
         client.register_client(req).await?;
         clients.push(client);
     }
+    Ok(clients)
+}
+
+pub async fn run<C, F>(
+    config: C,
+    experiment: Experiment,
+    info: ClientInfo,
+    shutdown: F,
+) -> Result<(), TokioError>
+where
+    C: Store,
+    F: Future<Output = ()> + Send + 'static,
+{
+    info!("Client starting");
+    let start_time = wait_for_start_time_set(&config).await?;
+    debug!("Received configuration from configuration server; initializing.");
+
+    let mut clients = connect_and_register(&config, info).await?;
+    let write_tokens = experiment.get_protocol().null_broadcast();
 
     delay_until(start_time).await;
-
-    let write_tokens = experiment.get_protocol().null_broadcast();
 
     for (client, write_token) in clients.iter_mut().zip(write_tokens) {
         let req = tonic::Request::new(UploadRequest {
