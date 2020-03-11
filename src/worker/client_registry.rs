@@ -17,15 +17,12 @@ pub type SharedClient = Arc<Mutex<WorkerClient<Channel>>>;
 #[derive(Default, Clone)]
 pub struct ClientRegistry(HashMap<WorkerInfo, SharedClient>);
 
-async fn find_peer_workers<C: Store>(
-    config: &C,
-    worker: WorkerInfo,
-) -> Result<Vec<(WorkerInfo, SocketAddr)>, Error> {
+async fn find_peer_workers<C: Store>(config: &C) -> Result<Vec<(WorkerInfo, SocketAddr)>, Error> {
     Ok(resolve_all(config)
         .await?
         .iter()
         .filter_map(|node| match node.service {
-            Service::Worker(info) if info != worker => Some((info, node.addr)),
+            Service::Worker(info) => Some((info, node.addr)),
             _ => None,
         })
         .collect())
@@ -45,12 +42,9 @@ impl ClientRegistry {
         Ok(client.clone())
     }
 
-    pub async fn from_config<C: Store>(
-        config: &C,
-        worker: WorkerInfo,
-    ) -> Result<ClientRegistry, Error> {
+    pub async fn from_config<C: Store>(config: &C) -> Result<ClientRegistry, Error> {
         let mut registry = ClientRegistry::default();
-        for (worker_info, addr) in find_peer_workers(config, worker).await? {
+        for (worker_info, addr) in find_peer_workers(config).await? {
             let client = WorkerClient::connect(format!("http://{}", addr)).await?;
             registry.insert(worker_info, client);
         }
@@ -96,9 +90,8 @@ mod tests {
     #[tokio::test]
     async fn test_find_peer_workers_empty() {
         let config = config::factory::from_string("").unwrap();
-        let info = WorkerInfo::new(Group::new(0), 0);
 
-        let peers = find_peer_workers(&config, info).await.unwrap();
+        let peers = find_peer_workers(&config).await.unwrap();
 
         assert_eq!(peers.len(), 0);
     }
@@ -113,16 +106,7 @@ mod tests {
             register(&config, node).await.unwrap()
         }
 
-        let worker = experiment
-            .iter_services()
-            .filter_map(|service| match service {
-                Service::Worker(info) => Some(info),
-                _ => None,
-            })
-            .next()
-            .unwrap();
-
-        let peers = find_peer_workers(&config, worker).await.unwrap();
-        assert_eq!(peers.len(), 3);
+        let peers = find_peer_workers(&config).await.unwrap();
+        assert_eq!(peers.len(), 4);
     }
 }

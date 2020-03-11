@@ -43,7 +43,7 @@ pub struct MyWorker {
     audit_registry: Arc<AuditRegistry<InsecureAuditShare>>,
     accumulator: Arc<Accumulator<Vec<Option<String>>>>,
     experiment: Experiment,
-    info: WorkerInfo,
+    _info: WorkerInfo, // might use for logging eventually
 }
 
 impl MyWorker {
@@ -60,7 +60,7 @@ impl MyWorker {
             audit_registry: Arc::new(AuditRegistry::new(experiment.clients)),
             accumulator: Arc::new(Accumulator::new(vec![None; experiment.channels])),
             experiment,
-            info,
+            _info: info,
         }
     }
 
@@ -115,20 +115,15 @@ impl Worker for MyWorker {
         let client_info = ClientInfo::from(client_id.clone());
         let peers: Vec<SharedClient> = self.get_peers(client_info.clone()).await?;
         let write_token = expect_field(request.write_token, "Write Token")?;
-        let audit_registry = self.audit_registry.clone();
         let protocol = self.experiment.get_protocol();
         let keys = self.experiment.get_keys();
 
         spawn(async move {
-            let mut audit_shares =
+            let audit_shares =
                 spawn_blocking(move || protocol.gen_audit(&keys, write_token.into()))
                     .await
                     .expect("Generating audit should not panic.");
 
-            let audit_share = audit_shares
-                .pop()
-                .expect("Should have at least one audit share.");
-            audit_registry.add(client_info, audit_share).await;
             for (peer, audit_share) in peers.into_iter().zip(audit_shares.into_iter()) {
                 let req = Request::new(VerifyRequest {
                     client_id: Some(client_id.clone()),
@@ -202,7 +197,7 @@ impl Worker for MyWorker {
             .shards
             .into_iter()
             .map(WorkerInfo::from)
-            .filter(|&info| info != self.info)
+            // .filter(|&info| info != self.info)
             .collect();
         trace!("Registering client {:?}; shards: {:?}", client_info, shards);
         let mut clients_peers = self.clients_peers.write().await;
@@ -245,7 +240,7 @@ where
     let start_time = wait_for_start_time_set(&config).await.unwrap();
     spawn(delay_until(start_time).then(|_| async move { start_tx.broadcast(true) }));
 
-    let client_registry = ClientRegistry::from_config(&config, info).await?;
+    let client_registry = ClientRegistry::from_config(&config).await?;
     clients_tx
         .broadcast(Some(client_registry))
         .or_else(|_| Err("Error sending client registry."))?;
