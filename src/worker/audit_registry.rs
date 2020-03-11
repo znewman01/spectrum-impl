@@ -1,4 +1,4 @@
-use crate::{services::ClientInfo};
+use crate::services::ClientInfo;
 
 use std::iter::FromIterator;
 use tokio::sync::{Mutex, RwLock};

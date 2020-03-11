@@ -1,7 +1,7 @@
 use crate::proto::{
     worker_server::{Worker, WorkerServer},
-    RegisterClientRequest, RegisterClientResponse, UploadRequest, UploadResponse,
-    VerifyRequest, VerifyResponse,
+    RegisterClientRequest, RegisterClientResponse, UploadRequest, UploadResponse, VerifyRequest,
+    VerifyResponse,
 };
 use crate::{
     config::store::Store,
@@ -166,7 +166,9 @@ impl Worker for MyWorker {
         if check_count == self.experiment.groups as usize {
             let shares = self.audit_registry.drain(client_info).await;
             spawn(async move {
-                let verify = spawn_blocking(move || protocol.check_audit(shares)).await.unwrap();
+                let verify = spawn_blocking(move || protocol.check_audit(shares))
+                    .await
+                    .unwrap();
 
                 if verify {
                     let data = vec![None; num_channels]; // TODO(zjn): pull out of something

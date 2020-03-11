@@ -1,4 +1,7 @@
-use crate::proto::{worker_client::WorkerClient, RegisterClientRequest, UploadRequest, WriteToken, InsecureWriteToken, self};
+use crate::proto::{
+    self, worker_client::WorkerClient, InsecureWriteToken, RegisterClientRequest, UploadRequest,
+    WriteToken,
+};
 use crate::{
     config,
     services::{
@@ -86,8 +89,8 @@ where
         client_id: Some(info.into()),
         write_token: Some(WriteToken {
             token: Some(proto::write_token::Token::InsecureToken(
-                InsecureWriteToken::default()
-            ))
+                InsecureWriteToken::default(),
+            )),
         }),
     };
 
