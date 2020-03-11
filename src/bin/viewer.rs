@@ -8,5 +8,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let experiment = experiment::read_from_store(&config).await?;
     // TODO(zjn): construct from environment/args
     let info = ClientInfo::new(1);
-    client::run(config, experiment, info, ctrl_c().map(|_| ())).await
+    client::viewer::run(config, experiment, info, ctrl_c().map(|_| ())).await
 }
