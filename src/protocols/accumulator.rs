@@ -70,13 +70,14 @@ where
 mod tests {
     use super::*;
 
-    type MyData = u8;
+    #[derive(Default, Debug, Clone, PartialEq, Eq)]
+    struct MyData(u8);
 
     impl Foldable for MyData {
         type Item = MyData;
 
         fn combine(&mut self, other: Self::Item) {
-            (*self) += other;
+            (*self).0 += other.0;
         }
     }
 
@@ -84,7 +85,7 @@ mod tests {
     async fn test_accumulator_get_empty() {
         let accumulator = Accumulator::<MyData>::default();
 
-        assert_eq!(accumulator.get().await, 0);
+        assert_eq!(accumulator.get().await, MyData(0));
     }
 
     #[tokio::test]
@@ -93,7 +94,7 @@ mod tests {
 
         accumulator.accumulate(MyData::default()).await;
 
-        assert_eq!(accumulator.get().await, 0);
+        assert_eq!(accumulator.get().await, MyData(0));
     }
 
     #[tokio::test]
@@ -102,21 +103,24 @@ mod tests {
         let count = 10;
 
         for _ in 0..count {
-            accumulator.accumulate(1).await;
+            accumulator.accumulate(MyData(1)).await;
         }
 
-        assert_eq!(accumulator.get().await, count as u8);
+        assert_eq!(accumulator.get().await, MyData(count as u8));
     }
 
     #[tokio::test]
     async fn test_accumulator_vec() {
-        let data: Vec<u8> = vec![0, 0, 0];
+        let data: Vec<MyData> = vec![MyData(0); 3];
         let accumulator = Accumulator::new(data);
 
-        let data = vec![0, 1, 2];
+        let data = vec![MyData(0), MyData(1), MyData(2)];
         accumulator.accumulate(data.clone()).await;
         accumulator.accumulate(data).await;
 
-        assert_eq!(accumulator.get().await, vec![0, 2, 4]);
+        assert_eq!(
+            accumulator.get().await,
+            vec![MyData(0), MyData(2), MyData(4)]
+        );
     }
 }
