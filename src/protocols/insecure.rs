@@ -3,7 +3,7 @@ use crate::protocols::{Accumulatable, Protocol};
 
 use std::convert::TryInto;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InsecureChannelKey(usize, String);
 
 impl InsecureChannelKey {

@@ -4,6 +4,7 @@ pub mod quorum;
 mod retry;
 
 use crate::proto::{ClientId, WorkerId};
+use crate::protocols::insecure::InsecureChannelKey;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Group {
@@ -63,12 +64,25 @@ impl PublisherInfo {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Default)]
 pub struct ClientInfo {
     pub idx: u16,
+    pub broadcast: Option<(u8, InsecureChannelKey)>,
     _private: (),
 }
 
 impl ClientInfo {
     pub fn new(idx: u16) -> Self {
-        ClientInfo { idx, _private: () }
+        ClientInfo {
+            idx,
+            broadcast: None,
+            _private: (),
+        }
+    }
+
+    pub fn new_broadcaster(idx: u16, message: u8, key: InsecureChannelKey) -> Self {
+        ClientInfo {
+            idx,
+            broadcast: Some((message, key)),
+            _private: (),
+        }
     }
 }
 

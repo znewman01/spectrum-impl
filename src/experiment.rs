@@ -51,7 +51,14 @@ impl Experiment {
 
     // TODO(zjn): combine with iter_services
     pub fn iter_clients(self) -> impl Iterator<Item = Service> {
-        (0..self.clients).map(ClientInfo::new).map(Service::from)
+        let viewers = (0..(self.channels as u16))
+            .zip(self.get_keys().into_iter())
+            .map(|(idx, key)| ClientInfo::new_broadcaster(idx, idx as u8, key))
+            .map(Service::from);
+        let broadcasters = ((self.channels as u16)..self.clients)
+            .map(ClientInfo::new)
+            .map(Service::from);
+        viewers.chain(broadcasters)
     }
 
     pub fn get_protocol(&self) -> InsecureProtocol {

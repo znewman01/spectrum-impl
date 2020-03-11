@@ -30,8 +30,12 @@ where
     debug!("Received configuration from configuration server; initializing.");
 
     let mut clients = connections::connect_and_register(&config, info.clone()).await?;
-    let write_tokens = experiment.get_protocol().null_broadcast();
+    let protocol = experiment.get_protocol();
     let client_id = info.to_proto(); // before we move info
+    let write_tokens = match info.broadcast {
+        Some((msg, key)) => protocol.broadcast(msg, key),
+        None => protocol.null_broadcast(),
+    };
 
     delay_until(start_time).await;
 
