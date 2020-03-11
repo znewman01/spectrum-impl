@@ -1,5 +1,5 @@
 use crate::config::store::{Error, Store};
-use crate::protocols::insecure::InsecureProtocol;
+use crate::protocols::insecure::{InsecureChannelKey, InsecureProtocol};
 use crate::services::{
     discovery::Node, ClientInfo, Group, LeaderInfo, PublisherInfo, Service, WorkerInfo,
 };
@@ -52,6 +52,12 @@ impl Experiment {
 
     pub fn get_protocol(&self) -> InsecureProtocol {
         InsecureProtocol::new(self.groups.try_into().unwrap(), self.channels)
+    }
+
+    pub fn get_keys(&self) -> Vec<InsecureChannelKey> {
+        (0..self.channels)
+            .map(|idx| InsecureChannelKey::new(idx, format!("password{}", idx)))
+            .collect()
     }
 }
 

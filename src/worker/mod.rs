@@ -117,7 +117,7 @@ impl Worker for MyWorker {
         let write_token = expect_field(request.write_token, "Write Token")?;
         let audit_registry = self.audit_registry.clone();
         let protocol = self.experiment.get_protocol();
-        let keys = vec![];
+        let keys = self.experiment.get_keys();
 
         spawn(async move {
             let mut audit_shares =
@@ -135,6 +135,7 @@ impl Worker for MyWorker {
                     audit_share: Some(audit_share.into()),
                 });
                 spawn(async move {
+                    // TODO(zjn): sometimes this causes panic (peer worker already shut down?)
                     peer.lock().await.verify(req).await.unwrap();
                 });
             }
