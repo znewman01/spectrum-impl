@@ -28,7 +28,7 @@ const TIMEOUT: Duration = Duration::from_secs(3);
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;
-    let experiment = Experiment::new(2, 2, 3, 2);
+    let experiment = Experiment::new(2, 2, 10, 2);
     experiment::write_to_store(&config, experiment).await?;
     // TODO: "+ 1" is hack! publisher should only shutdown when experiment is over
     let barrier = Arc::new(Barrier::new(
@@ -46,7 +46,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         };
 
         handles.push(match service {
-            Publisher(info) => publisher::run(config.clone(), info, shutdown).boxed(),
+            Publisher(info) => publisher::run(config.clone(), experiment, info, shutdown).boxed(),
             Leader(info) => leader::run(config.clone(), experiment, info, shutdown).boxed(),
             Worker(info) => worker::run(config.clone(), experiment, info, shutdown).boxed(),
             Client(info) => client::viewer::run(config.clone(), experiment, info, shutdown).boxed(),
