@@ -22,13 +22,8 @@ use crate::{
 
 use futures::prelude::*;
 use log::{info, trace, warn};
-use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::{
-    spawn,
-    sync::{watch, RwLock},
-    task::spawn_blocking,
-};
+use tokio::{spawn, sync::watch, task::spawn_blocking};
 use tonic::{Request, Response, Status};
 
 mod audit_registry;
@@ -43,14 +38,16 @@ struct WorkerState {
     audit_registry: AuditRegistry<InsecureAuditShare, InsecureWriteToken>,
     accumulator: Accumulator<Vec<u8>>,
     experiment: Experiment,
+    client_registry: ClientRegistry,
 }
 
 impl WorkerState {
-    fn from_experiment(experiment: Experiment) -> Self {
+    fn from_experiment(experiment: Experiment, client_registry: ClientRegistry) -> Self {
         WorkerState {
             audit_registry: AuditRegistry::new(experiment.clients),
             accumulator: Accumulator::new(vec![0u8; experiment.channels]),
             experiment,
+            client_registry,
         }
     }
 
@@ -73,12 +70,7 @@ impl WorkerState {
         audit_shares
     }
 
-    async fn verify(
-        &self,
-        client: ClientInfo,
-        share: InsecureAuditShare,
-        total_clients: usize,
-    ) -> Option<Vec<u8>> {
+    async fn verify(&self, client: ClientInfo, share: InsecureAuditShare) -> Option<Vec<u8>> {
         let check_count = self.audit_registry.add(client.clone(), share).await;
         if check_count < self.experiment.groups as usize {
             return None;
@@ -100,17 +92,25 @@ impl WorkerState {
             .await
             .expect("Accepting write token should never fail.");
 
-        if self.accumulator.accumulate(data).await == total_clients {
+        let accumulated_clients = self.accumulator.accumulate(data).await;
+        let total_clients = self.client_registry.num_clients().await;
+        if accumulated_clients == total_clients {
             return Some(self.accumulator.get().await);
         }
         None
     }
+
+    async fn get_peers(&self, client: &ClientInfo) -> Result<Vec<SharedClient>, Status> {
+        self.client_registry.get_peers(client).await
+    }
+
+    async fn register_client(&self, client: &ClientInfo, shards: Vec<WorkerInfo>) {
+        self.client_registry.register_client(client, shards).await;
+    }
 }
 
 pub struct MyWorker {
-    clients_peers: RwLock<HashMap<ClientInfo, Vec<WorkerInfo>>>,
     start_rx: watch::Receiver<bool>,
-    client_registry: ClientRegistry,
     state: Arc<WorkerState>,
 }
 
@@ -121,25 +121,9 @@ impl MyWorker {
         experiment: Experiment,
     ) -> Self {
         MyWorker {
-            clients_peers: RwLock::default(),
             start_rx,
-            client_registry,
-            state: Arc::new(WorkerState::from_experiment(experiment)),
+            state: Arc::new(WorkerState::from_experiment(experiment, client_registry)),
         }
-    }
-
-    async fn get_peers(&self, info: ClientInfo) -> Result<Vec<SharedClient>, Status> {
-        let clients_peers = self.clients_peers.read().await;
-        let clients = clients_peers
-            .get(&info)
-            .ok_or_else(|| {
-                Status::failed_precondition(format!("Client info {:?} not registered.", info))
-            })?
-            .clone()
-            .into_iter()
-            .map(|info| self.client_registry.get(info))
-            .collect::<Result<_, _>>()?;
-        Ok(clients)
     }
 
     fn check_not_started(&self) -> Result<(), Status> {
@@ -169,12 +153,12 @@ impl Worker for MyWorker {
 
         let client_id = expect_field(request.client_id, "Client ID")?;
         let client_info: ClientInfo = client_id.clone().into();
-        let peers: Vec<SharedClient> = self.get_peers(client_info.clone()).await?;
         let write_token: InsecureWriteToken =
             expect_field(request.write_token, "Write Token")?.into();
         let state = self.state.clone();
 
         spawn(async move {
+            let peers: Vec<SharedClient> = state.get_peers(&client_info).await?;
             let audit_shares = state.upload(client_info, write_token).await;
 
             for (peer, audit_share) in peers.into_iter().zip(audit_shares.into_iter()) {
@@ -186,6 +170,7 @@ impl Worker for MyWorker {
                     peer.lock().await.verify(req).await.unwrap();
                 });
             }
+            Ok::<_, Status>(())
         });
 
         Ok(Response::new(UploadResponse {}))
@@ -200,16 +185,11 @@ impl Worker for MyWorker {
 
         // TODO(zjn): check which worker this comes from, don't double-insert
         let client_info: ClientInfo = expect_field(request.client_id, "Client ID")?.into();
-        // TODO(zjn): do something less heavy-weight then getting all the peers
-        let total_clients = {
-            let lock = self.clients_peers.read().await;
-            lock.len()
-        };
         let share = expect_field(request.audit_share, "Audit Share")?;
         let state = self.state.clone();
 
         spawn(async move {
-            if let Some(share) = state.verify(client_info, share.into(), total_clients).await {
+            if let Some(share) = state.verify(client_info, share.into()).await {
                 info!("Should forward to leader now! {:?}", share);
             }
         });
@@ -224,14 +204,9 @@ impl Worker for MyWorker {
         self.check_not_started()?;
 
         let request = request.into_inner();
-        let client_info = ClientInfo::from(expect_field(request.client_id, "Client ID")?);
+        let client_info = expect_field(request.client_id, "Client ID")?.into();
         let shards = request.shards.into_iter().map(WorkerInfo::from).collect();
-        trace!("Registering client {:?}; shards: {:?}", client_info, shards);
-
-        let mut clients_peers = self.clients_peers.write().await;
-        if clients_peers.insert(client_info.clone(), shards).is_some() {
-            warn!("Client registered twice: {:?}", client_info);
-        }
+        self.state.register_client(&client_info, shards).await;
 
         let reply = RegisterClientResponse {};
         Ok(Response::new(reply))
