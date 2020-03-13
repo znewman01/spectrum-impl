@@ -10,37 +10,23 @@ use std::sync::Arc;
 use tokio::sync::{watch, Mutex, RwLock};
 use tonic::{transport::Channel, Status};
 
-// should be two parts:
-// - clients by service: a Receiever<Option<Map>>
-// this gets initialized on quorum and held by MyWorker
-// - looking up WorkerInfo by ClientInfo
-// this gets held by WorkerState and updaated on registerclient
-
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
 pub type SharedClient = Arc<Mutex<WorkerClient<Channel>>>;
-
-type PeersMap = HashMap<ClientInfo, Vec<WorkerInfo>>;
-
-#[derive(Default)]
-pub struct State {
-    peers: PeersMap,
-}
-
-type ClientsMap = HashMap<WorkerInfo, SharedClient>;
+type WorkersMap = HashMap<WorkerInfo, SharedClient>;
 type SharedLeaderClient = Arc<Mutex<LeaderClient<Channel>>>;
 
 #[derive(Clone)]
-struct InitState {
-    clients: ClientsMap,
+struct ServiceMap {
+    workers: WorkersMap,
     leader: SharedLeaderClient,
 }
 
-impl InitState {
+impl ServiceMap {
     async fn from_config<C: Store>(config: &C) -> Result<Self, Error> {
         let all_services = resolve_all(config).await?;
 
-        let mut clients = ClientsMap::default();
+        let mut workers = WorkersMap::default();
         let peer_workers: Vec<_> = all_services
             .iter()
             .filter_map(|node| match node.service {
@@ -49,47 +35,59 @@ impl InitState {
             })
             .collect();
         for (worker_info, addr) in peer_workers {
-            let client = WorkerClient::connect(format!("http://{}", addr)).await?;
-            clients.insert(worker_info, Arc::new(Mutex::new(client)));
+            let worker = WorkerClient::connect(format!("http://{}", addr)).await?;
+            workers.insert(worker_info, Arc::new(Mutex::new(worker)));
         }
 
-        let addr = all_services.iter().filter_map(|node| match node.service {
-            Service::Leader(_) => Some(node.addr),
-            _ => None,
-        }).next().expect("Every node should have a corresponding leader.");
+        let addr = all_services
+            .iter()
+            .filter_map(|node| match node.service {
+                Service::Leader(_) => Some(node.addr),
+                _ => None,
+            })
+            .next()
+            .expect("Every node should have a corresponding leader.");
         let leader = Arc::new(Mutex::new(
             LeaderClient::connect(format!("http://{}", addr)).await?,
         ));
 
-        Ok(InitState { clients, leader })
+        Ok(ServiceMap { workers, leader })
     }
 }
 
-pub struct ClientRegistry {
-    state: RwLock<State>,
-    init_state: watch::Receiver<Option<InitState>>,
+pub struct Remote(watch::Sender<Option<ServiceMap>>);
+
+impl Remote {
+    pub async fn init<C>(&self, config: &C) -> Result<(), Error>
+    where
+        C: Store,
+    {
+        let map = ServiceMap::from_config(config).await?;
+        self.0
+            .broadcast(Some(map))
+            .or_else(|_| Err("Error sending service registry."))?;
+        Ok(())
+    }
 }
 
-pub struct Remote(watch::Sender<Option<InitState>>);
+#[derive(Clone)]
+pub struct ServiceRegistry(watch::Receiver<Option<ServiceMap>>);
 
-impl ClientRegistry {
-    pub fn new_with_remote() -> (ClientRegistry, Remote) {
+impl ServiceRegistry {
+    pub fn new_with_remote() -> (Self, Remote) {
         let (tx, rx) = watch::channel(None);
-        let registry = ClientRegistry {
-            state: RwLock::default(),
-            init_state: rx,
-        };
+        let registry = ServiceRegistry(rx);
         let remote = Remote(tx);
         (registry, remote)
     }
 
-    fn get_peer(&self, info: WorkerInfo) -> Result<SharedClient, Status> {
-        let lock = self.init_state.borrow();
-        let peer_clients = &lock
+    pub fn get_worker(&self, worker: WorkerInfo) -> Result<SharedClient, Status> {
+        let lock = self.0.borrow();
+        let workers = &lock
             .as_ref()
-            .expect("Should only insert after initialization.")
-            .clients;
-        let client: &SharedClient = peer_clients.get(&info).ok_or_else(|| {
+            .expect("Should only get_peer() after initialization.")
+            .workers;
+        let client: &SharedClient = workers.get(&worker).ok_or_else(|| {
             Status::failed_precondition(
                 "All requested workers should be in the worker client registry",
             )
@@ -97,17 +95,42 @@ impl ClientRegistry {
         Ok(client.clone())
     }
 
-    pub async fn get_peers(&self, client: &ClientInfo) -> Result<Vec<SharedClient>, Status> {
+    pub fn get_my_leader(&self) -> SharedLeaderClient {
+        let lock = self.0.borrow();
+        lock.as_ref()
+            .expect("Should only get_leader() after initialization.")
+            .leader
+            .clone()
+    }
+}
+
+type PeersMap = HashMap<ClientInfo, Vec<WorkerInfo>>;
+
+#[derive(Default)]
+pub struct State {
+    peers: PeersMap,
+}
+
+#[derive(Default)]
+pub struct ClientRegistry {
+    state: RwLock<State>,
+}
+
+impl ClientRegistry {
+    pub fn new() -> Self {
+        ClientRegistry {
+            state: RwLock::default(),
+        }
+    }
+
+    pub async fn get_peers(&self, client: &ClientInfo) -> Result<Vec<WorkerInfo>, Status> {
         let lock = self.state.read().await;
         lock.peers
             .get(client)
             .ok_or_else(|| {
                 Status::failed_precondition(format!("Client info {:?} not registered.", client))
-            })?
-            .clone()
-            .into_iter()
-            .map(|worker| self.get_peer(worker))
-            .collect::<Result<_, _>>()
+            })
+            .map(|x| x.clone())
     }
 
     pub async fn register_client(&self, client: &ClientInfo, shards: Vec<WorkerInfo>) {
@@ -122,26 +145,5 @@ impl ClientRegistry {
         // TODO(zjn): do something less heavy-weight then getting all the peers
         let lock = self.state.read().await;
         lock.peers.len()
-    }
-
-    pub fn get_leader(&self) -> SharedLeaderClient {
-        let lock = self.init_state.borrow();
-        lock.as_ref()
-            .expect("Should only get_leader() after initialization.")
-            .leader
-            .clone()
-    }
-}
-
-impl Remote {
-    pub async fn init<C>(&self, config: &C) -> Result<(), Error>
-    where
-        C: Store,
-    {
-        let init_state = InitState::from_config(config).await?;
-        self.0
-            .broadcast(Some(init_state))
-            .or_else(|_| Err("Error sending client registry."))?;
-        Ok(())
     }
 }

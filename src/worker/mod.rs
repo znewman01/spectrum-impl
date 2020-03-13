@@ -30,7 +30,7 @@ mod audit_registry;
 mod client_registry;
 
 use audit_registry::AuditRegistry;
-use client_registry::{ClientRegistry, SharedClient};
+use client_registry::{ClientRegistry, ServiceRegistry, SharedClient};
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
@@ -42,12 +42,12 @@ struct WorkerState {
 }
 
 impl WorkerState {
-    fn from_experiment(experiment: Experiment, client_registry: ClientRegistry) -> Self {
+    fn from_experiment(experiment: Experiment) -> Self {
         WorkerState {
             audit_registry: AuditRegistry::new(experiment.clients),
             accumulator: Accumulator::new(vec![0u8; experiment.channels]),
             experiment,
-            client_registry,
+            client_registry: ClientRegistry::new(),
         }
     }
 
@@ -100,10 +100,6 @@ impl WorkerState {
         None
     }
 
-    async fn get_peers(&self, client: &ClientInfo) -> Result<Vec<SharedClient>, Status> {
-        self.client_registry.get_peers(client).await
-    }
-
     async fn register_client(&self, client: &ClientInfo, shards: Vec<WorkerInfo>) {
         self.client_registry.register_client(client, shards).await;
     }
@@ -111,19 +107,31 @@ impl WorkerState {
 
 pub struct MyWorker {
     start_rx: watch::Receiver<bool>,
+    services: ServiceRegistry,
     state: Arc<WorkerState>,
 }
 
 impl MyWorker {
     fn new(
         start_rx: watch::Receiver<bool>,
-        client_registry: ClientRegistry,
+        services: ServiceRegistry,
         experiment: Experiment,
     ) -> Self {
         MyWorker {
             start_rx,
-            state: Arc::new(WorkerState::from_experiment(experiment, client_registry)),
+            services,
+            state: Arc::new(WorkerState::from_experiment(experiment)),
         }
+    }
+
+    async fn get_peers(&self, client: &ClientInfo) -> Result<Vec<SharedClient>, Status> {
+        self.state
+            .client_registry
+            .get_peers(client)
+            .await?
+            .into_iter()
+            .map(|info| self.services.get_worker(info))
+            .collect()
     }
 
     fn check_not_started(&self) -> Result<(), Status> {
@@ -156,11 +164,11 @@ impl Worker for MyWorker {
         let write_token: InsecureWriteToken =
             expect_field(request.write_token, "Write Token")?.into();
         let state = self.state.clone();
+        let peers: Vec<SharedClient> = self.get_peers(&client_info).await?;
 
         spawn(async move {
             let audit_shares = state.upload(&client_info, write_token).await;
 
-            let peers: Vec<SharedClient> = state.get_peers(&client_info).await?;
             for (peer, audit_share) in peers.into_iter().zip(audit_shares.into_iter()) {
                 let req = Request::new(VerifyRequest {
                     client_id: Some(client_id.clone()),
@@ -187,19 +195,13 @@ impl Worker for MyWorker {
         let client_info = ClientInfo::from(&expect_field(request.client_id, "Client ID")?);
         let share = expect_field(request.audit_share, "Audit Share")?;
         let state = self.state.clone();
+        let leader = self.services.get_my_leader();
 
         spawn(async move {
             if let Some(share) = state.verify(&client_info, share.into()).await {
                 let req = Request::new(AggregateWorkerRequest::default());
-                state
-                    .client_registry
-                    .get_leader()
-                    .lock()
-                    .await
-                    .aggregate_worker(req)
-                    .await
-                    .unwrap();
-                info!("Should forward to leader now! {:?}", share);
+                info!("Forwarding to leader: {:?}", share);
+                leader.lock().await.aggregate_worker(req).await.unwrap();
             }
         });
 
@@ -236,7 +238,7 @@ where
     let addr = get_addr();
 
     let (start_tx, start_rx) = watch::channel(false);
-    let (registry, registry_remote) = ClientRegistry::new_with_remote();
+    let (registry, registry_remote) = ServiceRegistry::new_with_remote();
     let worker = MyWorker::new(start_rx, registry, experiment);
 
     let server = tonic::transport::server::Server::builder()
