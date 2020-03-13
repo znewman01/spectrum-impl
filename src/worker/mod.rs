@@ -1,6 +1,6 @@
 use crate::proto::{
     worker_server::{Worker, WorkerServer},
-    AggregateWorkerRequest, RegisterClientRequest, RegisterClientResponse, UploadRequest,
+    AggregateWorkerRequest, RegisterClientRequest, RegisterClientResponse, Share, UploadRequest,
     UploadResponse, VerifyRequest, VerifyResponse,
 };
 use crate::{
@@ -199,8 +199,12 @@ impl Worker for MyWorker {
 
         spawn(async move {
             if let Some(share) = state.verify(&client_info, share.into()).await {
-                let req = Request::new(AggregateWorkerRequest::default());
                 info!("Forwarding to leader: {:?}", share);
+                let req = Request::new(AggregateWorkerRequest {
+                    share: Some(Share {
+                        data: share.into_iter().map(|x| vec![x]).collect(),
+                    }),
+                });
                 leader.lock().await.aggregate_worker(req).await.unwrap();
             }
         });
@@ -252,7 +256,7 @@ where
     register(&config, Node::new(info.into(), addr)).await?;
 
     let start_time = wait_for_start_time_set(&config).await.unwrap();
-    registry_remote.init(&config).await?;
+    registry_remote.init(info, &config).await?;
     spawn(delay_until(start_time).then(|_| async move { start_tx.broadcast(true) }));
 
     server_task.await??;

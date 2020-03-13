@@ -23,7 +23,7 @@ struct ServiceMap {
 }
 
 impl ServiceMap {
-    async fn from_config<C: Store>(config: &C) -> Result<Self, Error> {
+    async fn from_config<C: Store>(worker: WorkerInfo, config: &C) -> Result<Self, Error> {
         let all_services = resolve_all(config).await?;
 
         let mut workers = WorkersMap::default();
@@ -42,7 +42,7 @@ impl ServiceMap {
         let addr = all_services
             .iter()
             .filter_map(|node| match node.service {
-                Service::Leader(_) => Some(node.addr),
+                Service::Leader(leader) if leader.group == worker.group => Some(node.addr),
                 _ => None,
             })
             .next()
@@ -58,11 +58,11 @@ impl ServiceMap {
 pub struct Remote(watch::Sender<Option<ServiceMap>>);
 
 impl Remote {
-    pub async fn init<C>(&self, config: &C) -> Result<(), Error>
+    pub async fn init<C>(&self, worker: WorkerInfo, config: &C) -> Result<(), Error>
     where
         C: Store,
     {
-        let map = ServiceMap::from_config(config).await?;
+        let map = ServiceMap::from_config(worker, config).await?;
         self.0
             .broadcast(Some(map))
             .or_else(|_| Err("Error sending service registry."))?;
