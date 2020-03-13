@@ -53,7 +53,7 @@ impl WorkerState {
 
     async fn upload(
         &self,
-        client: ClientInfo,
+        client: &ClientInfo,
         write_token: InsecureWriteToken,
     ) -> Vec<InsecureAuditShare> {
         let protocol = self.experiment.get_protocol();
@@ -65,13 +65,13 @@ impl WorkerState {
                 .await
                 .expect("Generating audit should not panic.");
 
-        self.audit_registry.init(client, write_token).await;
+        self.audit_registry.init(&client, write_token).await;
 
         audit_shares
     }
 
-    async fn verify(&self, client: ClientInfo, share: InsecureAuditShare) -> Option<Vec<u8>> {
-        let check_count = self.audit_registry.add(client.clone(), share).await;
+    async fn verify(&self, client: &ClientInfo, share: InsecureAuditShare) -> Option<Vec<u8>> {
+        let check_count = self.audit_registry.add(client, share).await;
         if check_count < self.experiment.groups as usize {
             return None;
         }
@@ -152,15 +152,15 @@ impl Worker for MyWorker {
         trace!("Request! {:?}", request);
 
         let client_id = expect_field(request.client_id, "Client ID")?;
-        let client_info: ClientInfo = client_id.clone().into();
+        let client_info = ClientInfo::from(&client_id);
         let write_token: InsecureWriteToken =
             expect_field(request.write_token, "Write Token")?.into();
         let state = self.state.clone();
 
         spawn(async move {
-            let peers: Vec<SharedClient> = state.get_peers(&client_info).await?;
-            let audit_shares = state.upload(client_info, write_token).await;
+            let audit_shares = state.upload(&client_info, write_token).await;
 
+            let peers: Vec<SharedClient> = state.get_peers(&client_info).await?;
             for (peer, audit_share) in peers.into_iter().zip(audit_shares.into_iter()) {
                 let req = Request::new(VerifyRequest {
                     client_id: Some(client_id.clone()),
@@ -184,12 +184,12 @@ impl Worker for MyWorker {
         trace!("Request: {:?}", request);
 
         // TODO(zjn): check which worker this comes from, don't double-insert
-        let client_info: ClientInfo = expect_field(request.client_id, "Client ID")?.into();
+        let client_info = ClientInfo::from(&expect_field(request.client_id, "Client ID")?);
         let share = expect_field(request.audit_share, "Audit Share")?;
         let state = self.state.clone();
 
         spawn(async move {
-            if let Some(share) = state.verify(client_info, share.into()).await {
+            if let Some(share) = state.verify(&client_info, share.into()).await {
                 info!("Should forward to leader now! {:?}", share);
             }
         });
@@ -204,7 +204,7 @@ impl Worker for MyWorker {
         self.check_not_started()?;
 
         let request = request.into_inner();
-        let client_info = expect_field(request.client_id, "Client ID")?.into();
+        let client_info = ClientInfo::from(&expect_field(request.client_id, "Client ID")?);
         let shards = request.shards.into_iter().map(WorkerInfo::from).collect();
         self.state.register_client(&client_info, shards).await;
 

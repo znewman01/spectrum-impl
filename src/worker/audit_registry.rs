@@ -26,13 +26,13 @@ impl<S, T> AuditRegistry<S, T> {
         AuditRegistry(vec)
     }
 
-    pub async fn init(&self, info: ClientInfo, token: T) {
+    pub async fn init(&self, info: &ClientInfo, token: T) {
         let mut lock = self.0[info.idx as usize].lock().await;
         let (token_holder, _) = lock.as_mut().expect("Cannot init() a drain()ed registry.");
         (*token_holder) = Some(token);
     }
 
-    pub async fn drain(&self, info: ClientInfo) -> (T, Vec<S>) {
+    pub async fn drain(&self, info: &ClientInfo) -> (T, Vec<S>) {
         let mut lock = self.0[info.idx as usize].lock().await;
         let (token, mut vec): (Option<T>, Vec<S>) = lock.take().expect("May only drain once.");
         let token = token.expect("Should only call drain() after init().");
@@ -40,7 +40,7 @@ impl<S, T> AuditRegistry<S, T> {
         (token, shares)
     }
 
-    pub async fn add(&self, info: ClientInfo, value: S) -> usize {
+    pub async fn add(&self, info: &ClientInfo, value: S) -> usize {
         let mut lock = self.0[info.idx as usize].lock().await;
         let vec = lock
             .as_mut()
@@ -64,7 +64,7 @@ mod tests {
     async fn test_audit_registry_bad_client_idx() {
         let client = ClientInfo::new(0);
         let reg = AuditRegistry::<(), u16>::new(0);
-        reg.drain(client).await;
+        reg.drain(&client).await;
     }
 
     #[should_panic]
@@ -73,7 +73,7 @@ mod tests {
         let clients: Vec<ClientInfo> = (0..NUM_CLIENTS).map(ClientInfo::new).collect();
         let reg = AuditRegistry::<(), u16>::new(NUM_CLIENTS);
 
-        reg.drain(clients[0].clone()).await;
+        reg.drain(&clients[0]).await;
     }
 
     #[tokio::test]
@@ -81,9 +81,9 @@ mod tests {
         let clients: Vec<ClientInfo> = (0..NUM_CLIENTS).map(ClientInfo::new).collect();
         let reg = AuditRegistry::<(), u16>::new(NUM_CLIENTS);
 
-        for client in clients {
+        for client in &clients {
             let expected_value = client.idx;
-            reg.init(client.clone(), expected_value).await;
+            reg.init(client, expected_value).await;
             let (actual_value, shares) = reg.drain(client).await;
             assert_eq!(actual_value, expected_value);
             assert!(shares.is_empty());
@@ -98,13 +98,13 @@ mod tests {
 
         for client in &clients {
             for (idx, share) in expected_shares.iter().enumerate() {
-                assert_eq!(reg.add(client.clone(), share.clone()).await, idx + 1);
+                assert_eq!(reg.add(client, share.clone()).await, idx + 1);
             }
         }
 
-        for client in clients {
+        for client in &clients {
             let expected_value = client.idx;
-            reg.init(client.clone(), expected_value).await;
+            reg.init(client, expected_value).await;
             let (actual_value, shares) = reg.drain(client).await;
             assert_eq!(actual_value, expected_value);
             assert_eq!(shares, expected_shares);
@@ -119,10 +119,10 @@ mod tests {
 
         for client in &clients {
             let expected_value = client.idx;
-            reg.init(client.clone(), expected_value).await;
-            reg.drain(client.clone()).await;
+            reg.init(client, expected_value).await;
+            reg.drain(client).await;
         }
 
-        reg.drain(clients.pop().unwrap()).await;
+        reg.drain(&clients.pop().unwrap()).await;
     }
 }

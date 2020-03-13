@@ -143,8 +143,8 @@ impl From<WorkerId> for WorkerInfo {
     }
 }
 
-impl From<ClientId> for ClientInfo {
-    fn from(client: ClientId) -> ClientInfo {
+impl From<&ClientId> for ClientInfo {
+    fn from(client: &ClientId) -> ClientInfo {
         // TODO(zjn): change proto type of client_id from string to uint32
         ClientInfo::new(client.client_id.parse().expect("Should parse as number"))
     }
