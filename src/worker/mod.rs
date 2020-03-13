@@ -39,14 +39,79 @@ use client_registry::{ClientRegistry, SharedClient};
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
+struct WorkerState {
+    audit_registry: AuditRegistry<InsecureAuditShare, InsecureWriteToken>,
+    accumulator: Accumulator<Vec<u8>>,
+    experiment: Experiment,
+}
+
+impl WorkerState {
+    fn from_experiment(experiment: Experiment) -> Self {
+        WorkerState {
+            audit_registry: AuditRegistry::new(experiment.clients),
+            accumulator: Accumulator::new(vec![0u8; experiment.channels]),
+            experiment,
+        }
+    }
+
+    async fn upload(
+        &self,
+        client: ClientInfo,
+        write_token: InsecureWriteToken,
+    ) -> Vec<InsecureAuditShare> {
+        let protocol = self.experiment.get_protocol();
+        let keys = self.experiment.get_keys();
+
+        // Avoid cloning write token by passing it back
+        let (audit_shares, write_token) =
+            spawn_blocking(move || (protocol.gen_audit(&keys, &write_token), write_token))
+                .await
+                .expect("Generating audit should not panic.");
+
+        self.audit_registry.init(client, write_token).await;
+
+        audit_shares
+    }
+
+    async fn verify(
+        &self,
+        client: ClientInfo,
+        share: InsecureAuditShare,
+        total_clients: usize,
+    ) -> Option<Vec<u8>> {
+        let check_count = self.audit_registry.add(client.clone(), share).await;
+        if check_count < self.experiment.groups as usize {
+            return None;
+        }
+
+        let (token, shares) = self.audit_registry.drain(client).await;
+        let protocol = self.experiment.get_protocol();
+
+        let verify = spawn_blocking(move || protocol.check_audit(shares))
+            .await
+            .unwrap();
+
+        if !verify {
+            warn!("Didn't verify");
+            return None;
+        }
+
+        let data = spawn_blocking(move || protocol.to_accumulator(token))
+            .await
+            .expect("Accepting write token should never fail.");
+
+        if self.accumulator.accumulate(data).await == total_clients {
+            return Some(self.accumulator.get().await);
+        }
+        None
+    }
+}
+
 pub struct MyWorker {
     clients_peers: RwLock<HashMap<ClientInfo, Vec<WorkerInfo>>>,
     start_rx: watch::Receiver<bool>,
     clients_rx: watch::Receiver<Option<ClientRegistry>>,
-    audit_registry: Arc<AuditRegistry<InsecureAuditShare, InsecureWriteToken>>,
-    accumulator: Arc<Accumulator<Vec<u8>>>,
-    experiment: Experiment,
-    _info: WorkerInfo, // might use for logging eventually
+    state: Arc<WorkerState>,
 }
 
 impl MyWorker {
@@ -54,16 +119,12 @@ impl MyWorker {
         start_rx: watch::Receiver<bool>,
         clients_rx: watch::Receiver<Option<ClientRegistry>>,
         experiment: Experiment,
-        info: WorkerInfo,
     ) -> Self {
         MyWorker {
             clients_peers: RwLock::default(),
             start_rx,
             clients_rx,
-            audit_registry: Arc::new(AuditRegistry::new(experiment.clients)),
-            accumulator: Arc::new(Accumulator::new(vec![0u8; experiment.channels])),
-            experiment,
-            _info: info,
+            state: Arc::new(WorkerState::from_experiment(experiment)),
         }
     }
 
@@ -119,19 +180,10 @@ impl Worker for MyWorker {
         let peers: Vec<SharedClient> = self.get_peers(client_info.clone()).await?;
         let write_token: InsecureWriteToken =
             expect_field(request.write_token, "Write Token")?.into();
-        let protocol = self.experiment.get_protocol();
-        let keys = self.experiment.get_keys();
-        let audit_registry = self.audit_registry.clone();
+        let state = self.state.clone();
 
         spawn(async move {
-            // Avoid cloning write token by passing it back
-            let (audit_shares, write_token) = spawn_blocking(move || {
-                let audit_shares = protocol.gen_audit(&keys, &write_token);
-                (audit_shares, write_token)
-            })
-            .await
-            .expect("Generating audit should not panic.");
-            audit_registry.init(client_info, write_token).await;
+            let audit_shares = state.upload(client_info, write_token).await;
 
             for (peer, audit_share) in peers.into_iter().zip(audit_shares.into_iter()) {
                 let req = Request::new(VerifyRequest {
@@ -155,38 +207,20 @@ impl Worker for MyWorker {
         trace!("Request: {:?}", request);
 
         // TODO(zjn): check which worker this comes from, don't double-insert
-        let client_info = ClientInfo::from(expect_field(request.client_id, "Client ID")?);
+        let client_info: ClientInfo = expect_field(request.client_id, "Client ID")?.into();
         // TODO(zjn): do something less heavy-weight then getting all the peers
         let total_clients = {
             let lock = self.clients_peers.read().await;
             lock.len()
         };
         let share = expect_field(request.audit_share, "Audit Share")?;
-        let check_count = self
-            .audit_registry
-            .add(client_info.clone(), share.into())
-            .await;
-        let accumulator: Arc<Accumulator<Vec<u8>>> = self.accumulator.clone();
-        let protocol = self.experiment.get_protocol();
+        let state = self.state.clone();
 
-        if check_count == self.experiment.groups as usize {
-            let (token, shares) = self.audit_registry.drain(client_info).await;
-            spawn(async move {
-                let verify = spawn_blocking(move || protocol.check_audit(shares))
-                    .await
-                    .unwrap();
-
-                if verify {
-                    let data = protocol.to_accumulator(token);
-                    if accumulator.accumulate(data).await == total_clients {
-                        let share = accumulator.get().await;
-                        info!("Should forward to leader now! {:?}", share);
-                    };
-                } else {
-                    warn!("Didn't verify!.");
-                }
-            });
-        }
+        spawn(async move {
+            if let Some(share) = state.verify(client_info, share.into(), total_clients).await {
+                info!("Should forward to leader now! {:?}", share);
+            }
+        });
 
         Ok(Response::new(VerifyResponse {}))
     }
@@ -199,14 +233,9 @@ impl Worker for MyWorker {
 
         let request = request.into_inner();
         let client_info = ClientInfo::from(expect_field(request.client_id, "Client ID")?);
-
-        let shards = request
-            .shards
-            .into_iter()
-            .map(WorkerInfo::from)
-            // .filter(|&info| info != self.info)
-            .collect();
+        let shards = request.shards.into_iter().map(WorkerInfo::from).collect();
         trace!("Registering client {:?}; shards: {:?}", client_info, shards);
+
         let mut clients_peers = self.clients_peers.write().await;
         if clients_peers.insert(client_info.clone(), shards).is_some() {
             warn!("Client registered twice: {:?}", client_info);
@@ -232,7 +261,7 @@ where
 
     let (start_tx, start_rx) = watch::channel(false);
     let (clients_tx, clients_rx) = watch::channel(None);
-    let worker = MyWorker::new(start_rx, clients_rx, experiment, info);
+    let worker = MyWorker::new(start_rx, clients_rx, experiment);
 
     let server = tonic::transport::server::Server::builder()
         .add_service(HealthServer::new(AllGoodHealthServer::default()))
