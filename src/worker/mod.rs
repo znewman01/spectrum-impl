@@ -1,7 +1,7 @@
 use crate::proto::{
     worker_server::{Worker, WorkerServer},
-    RegisterClientRequest, RegisterClientResponse, UploadRequest, UploadResponse, VerifyRequest,
-    VerifyResponse,
+    AggregateWorkerRequest, RegisterClientRequest, RegisterClientResponse, UploadRequest,
+    UploadResponse, VerifyRequest, VerifyResponse,
 };
 use crate::{
     config::store::Store,
@@ -190,6 +190,15 @@ impl Worker for MyWorker {
 
         spawn(async move {
             if let Some(share) = state.verify(&client_info, share.into()).await {
+                let req = Request::new(AggregateWorkerRequest::default());
+                state
+                    .client_registry
+                    .get_leader()
+                    .lock()
+                    .await
+                    .aggregate_worker(req)
+                    .await
+                    .unwrap();
                 info!("Should forward to leader now! {:?}", share);
             }
         });
