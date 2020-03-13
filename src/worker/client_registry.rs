@@ -7,15 +7,35 @@ use crate::{
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 use tonic::{transport::Channel, Status};
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
 pub type SharedClient = Arc<Mutex<WorkerClient<Channel>>>;
 
+type Map = HashMap<WorkerInfo, SharedClient>;
+
 #[derive(Default, Clone)]
-pub struct ClientRegistry(HashMap<WorkerInfo, SharedClient>);
+pub struct State {
+    map: Map,
+}
+
+impl State {
+    pub async fn from_config<C: Store>(config: &C) -> Result<State, Error> {
+        let mut state = State::default();
+        for (worker_info, addr) in find_peer_workers(config).await? {
+            let client = WorkerClient::connect(format!("http://{}", addr)).await?;
+            state.map.insert(worker_info, Arc::new(Mutex::new(client)));
+        }
+        Ok(state)
+    }
+}
+
+#[derive(Clone)]
+pub struct ClientRegistry(watch::Receiver<Option<State>>);
+
+pub struct ClientRegistryRemote(watch::Sender<Option<State>>);
 
 async fn find_peer_workers<C: Store>(config: &C) -> Result<Vec<(WorkerInfo, SocketAddr)>, Error> {
     Ok(resolve_all(config)
@@ -29,26 +49,38 @@ async fn find_peer_workers<C: Store>(config: &C) -> Result<Vec<(WorkerInfo, Sock
 }
 
 impl ClientRegistry {
-    pub fn insert(&mut self, info: WorkerInfo, client: WorkerClient<Channel>) {
-        self.0.insert(info, Arc::new(Mutex::new(client)));
+    pub fn new_with_remote() -> (ClientRegistry, ClientRegistryRemote) {
+        let (tx, rx) = watch::channel(None);
+        let registry = ClientRegistry(rx);
+        let remote = ClientRegistryRemote(tx);
+        (registry, remote)
     }
 
     pub fn get(&self, info: WorkerInfo) -> Result<SharedClient, Status> {
-        let client: &SharedClient = self.0.get(&info).ok_or_else(|| {
+        let lock = self.0.borrow();
+        let map = &lock
+            .as_ref()
+            .expect("Should only insert after initialization.")
+            .map;
+        let client: &SharedClient = map.get(&info).ok_or_else(|| {
             Status::failed_precondition(
                 "All requested workers should be in the worker client registry",
             )
         })?;
         Ok(client.clone())
     }
+}
 
-    pub async fn from_config<C: Store>(config: &C) -> Result<ClientRegistry, Error> {
-        let mut registry = ClientRegistry::default();
-        for (worker_info, addr) in find_peer_workers(config).await? {
-            let client = WorkerClient::connect(format!("http://{}", addr)).await?;
-            registry.insert(worker_info, client);
-        }
-        Ok(registry)
+impl ClientRegistryRemote {
+    pub async fn init<C>(&self, config: &C) -> Result<(), Error>
+    where
+        C: Store,
+    {
+        let state = State::from_config(config).await?;
+        self.0
+            .broadcast(Some(state))
+            .or_else(|_| Err("Error sending client registry."))?;
+        Ok(())
     }
 }
 

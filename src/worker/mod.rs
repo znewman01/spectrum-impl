@@ -110,27 +110,26 @@ impl WorkerState {
 pub struct MyWorker {
     clients_peers: RwLock<HashMap<ClientInfo, Vec<WorkerInfo>>>,
     start_rx: watch::Receiver<bool>,
-    clients_rx: watch::Receiver<Option<ClientRegistry>>,
+    client_registry: ClientRegistry,
     state: Arc<WorkerState>,
 }
 
 impl MyWorker {
     fn new(
         start_rx: watch::Receiver<bool>,
-        clients_rx: watch::Receiver<Option<ClientRegistry>>,
+        client_registry: ClientRegistry,
         experiment: Experiment,
     ) -> Self {
         MyWorker {
             clients_peers: RwLock::default(),
             start_rx,
-            clients_rx,
+            client_registry,
             state: Arc::new(WorkerState::from_experiment(experiment)),
         }
     }
 
     async fn get_peers(&self, info: ClientInfo) -> Result<Vec<SharedClient>, Status> {
         let clients_peers = self.clients_peers.read().await;
-        let clients_registry_lock = self.clients_rx.borrow();
         let clients = clients_peers
             .get(&info)
             .ok_or_else(|| {
@@ -138,14 +137,7 @@ impl MyWorker {
             })?
             .clone()
             .into_iter()
-            .map(|info| {
-                (*clients_registry_lock)
-                    .as_ref()
-                    .expect(
-                        "Client registry should be initialized by the time we get upload requests.",
-                    )
-                    .get(info)
-            })
+            .map(|info| self.client_registry.get(info))
             .collect::<Result<_, _>>()?;
         Ok(clients)
     }
@@ -176,7 +168,7 @@ impl Worker for MyWorker {
         trace!("Request! {:?}", request);
 
         let client_id = expect_field(request.client_id, "Client ID")?;
-        let client_info = ClientInfo::from(client_id.clone());
+        let client_info: ClientInfo = client_id.clone().into();
         let peers: Vec<SharedClient> = self.get_peers(client_info.clone()).await?;
         let write_token: InsecureWriteToken =
             expect_field(request.write_token, "Write Token")?.into();
@@ -260,8 +252,8 @@ where
     let addr = get_addr();
 
     let (start_tx, start_rx) = watch::channel(false);
-    let (clients_tx, clients_rx) = watch::channel(None);
-    let worker = MyWorker::new(start_rx, clients_rx, experiment);
+    let (registry, registry_remote) = ClientRegistry::new_with_remote();
+    let worker = MyWorker::new(start_rx, registry, experiment);
 
     let server = tonic::transport::server::Server::builder()
         .add_service(HealthServer::new(AllGoodHealthServer::default()))
@@ -274,12 +266,8 @@ where
     register(&config, Node::new(info.into(), addr)).await?;
 
     let start_time = wait_for_start_time_set(&config).await.unwrap();
+    registry_remote.init(&config).await?;
     spawn(delay_until(start_time).then(|_| async move { start_tx.broadcast(true) }));
-
-    let client_registry = ClientRegistry::from_config(&config).await?;
-    clients_tx
-        .broadcast(Some(client_registry))
-        .or_else(|_| Err("Error sending client registry."))?;
 
     server_task.await??;
     info!("Worker shutting down.");
