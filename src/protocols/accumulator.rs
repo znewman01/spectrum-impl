@@ -7,6 +7,14 @@ pub trait Foldable: Default {
     fn combine(&mut self, other: Self::Item);
 }
 
+impl Foldable for u8 {
+    type Item = u8;
+
+    fn combine(&mut self, other: u8) {
+        (*self) += other;
+    }
+}
+
 // TODO(zjn): get rid of me, replace with bit data
 impl<T> Foldable for Option<T> {
     type Item = Option<T>;

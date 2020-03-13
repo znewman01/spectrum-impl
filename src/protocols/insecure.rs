@@ -141,13 +141,13 @@ impl Protocol for InsecureProtocol {
     fn gen_audit(
         &self,
         keys: &[InsecureChannelKey],
-        token: InsecureWriteToken,
+        token: &InsecureWriteToken,
     ) -> Vec<InsecureAuditShare> {
         let audit_share = match token {
             InsecureWriteToken(Some((_, key))) => {
                 let InsecureChannelKey(idx, _) = key;
-                match keys.get(idx) {
-                    Some(expected_key) => InsecureAuditShare(&key == expected_key),
+                match keys.get(*idx) {
+                    Some(expected_key) => InsecureAuditShare(key == expected_key),
                     None => InsecureAuditShare(false),
                 }
             }
@@ -224,7 +224,7 @@ mod tests {
     ) -> Vec<Vec<InsecureAuditShare>> {
         let mut server_shares = vec![Vec::new(); protocol.num_parties()];
         for token in tokens {
-            for (idx, share) in protocol.gen_audit(&keys, token).into_iter().enumerate() {
+            for (idx, share) in protocol.gen_audit(&keys, &token).into_iter().enumerate() {
                 server_shares[idx].push(share);
             }
         }

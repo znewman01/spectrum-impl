@@ -11,6 +11,7 @@ pub trait Accumulatable {
     fn new(size: usize) -> Self;
 }
 
+// TODO(zjn): sort through this mess
 impl<T> Accumulatable for Vec<T>
 where
     T: Accumulatable + Default + Clone,
@@ -46,7 +47,7 @@ pub trait Protocol {
     fn gen_audit(
         &self,
         keys: &[Self::ChannelKey],
-        token: Self::WriteToken,
+        token: &Self::WriteToken,
     ) -> Vec<Self::AuditShare>;
     fn check_audit(&self, tokens: Vec<Self::AuditShare>) -> bool;
 

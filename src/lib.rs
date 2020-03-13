@@ -30,8 +30,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;
     let experiment = Experiment::new(2, 2, 3, 2);
     experiment::write_to_store(&config, experiment).await?;
+    // TODO: "+ 1" is hack! publisher should only shutdown when experiment is over
     let barrier = Arc::new(Barrier::new(
-        experiment.iter_clients().count() + experiment.iter_services().count(),
+        experiment.iter_clients().count() + experiment.iter_services().count() + 1,
     ));
 
     let handles = futures::stream::FuturesUnordered::new();
