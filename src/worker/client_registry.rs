@@ -41,11 +41,10 @@ impl ServiceMap {
 
         let addr = all_services
             .iter()
-            .filter_map(|node| match node.service {
+            .find_map(|node| match node.service {
                 Service::Leader(leader) if leader.group == worker.group => Some(node.addr),
                 _ => None,
             })
-            .next()
             .expect("Every node should have a corresponding leader.");
         let leader = Arc::new(Mutex::new(
             LeaderClient::connect(format!("http://{}", addr)).await?,

@@ -24,7 +24,7 @@ use services::Service::{Client, Leader, Publisher, Worker};
 use std::time::Duration;
 use tokio::time::delay_for;
 
-const TIMEOUT: Duration = Duration::from_secs(2);
+const TIMEOUT: Duration = Duration::from_secs(3);
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;

@@ -1,6 +1,7 @@
 use crate::proto::{
     leader_server::{Leader, LeaderServer},
-    AggregateWorkerRequest, AggregateWorkerResponse,
+    publisher_client::PublisherClient,
+    AggregateGroupRequest, AggregateWorkerRequest, AggregateWorkerResponse, Share,
 };
 use crate::{
     config::store::Store,
@@ -8,28 +9,39 @@ use crate::{
     net::get_addr,
     protocols::accumulator::Accumulator,
     services::{
-        discovery::{register, Node},
+        discovery::{register, resolve_all, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
-        LeaderInfo,
+        quorum::wait_for_start_time_set,
+        LeaderInfo, Service,
     },
 };
 
 use futures::Future;
 use log::{debug, error, info, trace};
 use std::sync::Arc;
-use tokio::spawn;
-use tonic::{Request, Response, Status};
+use tokio::{
+    spawn,
+    sync::{watch, Mutex},
+};
+use tonic::{transport::Channel, Request, Response, Status};
+
+type SharedPublisherClient = Arc<Mutex<PublisherClient<Channel>>>;
 
 pub struct MyLeader {
     accumulator: Arc<Accumulator<Vec<u8>>>,
     total_workers: usize,
+    publisher_client: watch::Receiver<Option<SharedPublisherClient>>,
 }
 
 impl MyLeader {
-    fn from_experiment(experiment: Experiment) -> Self {
+    fn from_experiment(
+        experiment: Experiment,
+        publisher_client: watch::Receiver<Option<SharedPublisherClient>>,
+    ) -> Self {
         MyLeader {
             accumulator: Arc::new(Accumulator::new(vec![0u8; experiment.channels])),
             total_workers: experiment.workers_per_group as usize,
+            publisher_client,
         }
     }
 }
@@ -55,6 +67,12 @@ impl Leader for MyLeader {
             .collect();
         let accumulator = self.accumulator.clone();
         let total_workers = self.total_workers;
+        let publisher = self
+            .publisher_client
+            .borrow()
+            .as_ref()
+            .expect("Should have a publisher by now.")
+            .clone();
 
         spawn(async move {
             // TODO: spawn_blocking for heavy computation?
@@ -71,8 +89,14 @@ impl Leader for MyLeader {
                 return;
             }
 
-            debug!("Leader final shares: {:?}", accumulator.get().await);
-            info!("Should forward to publisher.");
+            let share = accumulator.get().await;
+            debug!("Leader final shares: {:?}", share);
+            let req = Request::new(AggregateGroupRequest {
+                share: Some(Share {
+                    data: share.into_iter().map(|x| vec![x]).collect(),
+                }),
+            });
+            publisher.lock().await.aggregate_group(req).await.unwrap();
         });
 
         Ok(Response::new(AggregateWorkerResponse {}))
@@ -89,7 +113,8 @@ where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
 {
-    let state = MyLeader::from_experiment(experiment);
+    let (tx, rx) = watch::channel(None);
+    let state = MyLeader::from_experiment(experiment, rx);
     info!("Leader starting up.");
     let addr = get_addr();
     let server_task = tokio::spawn(
@@ -105,6 +130,22 @@ where
     let node = Node::new(info.into(), addr);
     register(&config, node).await?;
     debug!("Registered with config server.");
+
+    wait_for_start_time_set(&config).await.unwrap();
+    let publisher_addr = resolve_all(&config)
+        .await?
+        .iter()
+        .find_map(|node| match node.service {
+            Service::Publisher(_) => Some(node.addr),
+            _ => None,
+        })
+        .expect("Should have a publisher registered");
+
+    let publisher = Arc::new(Mutex::new(
+        PublisherClient::connect(format!("http://{}", publisher_addr)).await?,
+    ));
+    tx.broadcast(Some(publisher))
+        .or_else(|_| Err("Error sending service registry."))?;
 
     server_task.await??;
     info!("Leader shutting down.");
