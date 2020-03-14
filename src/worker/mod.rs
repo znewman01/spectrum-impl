@@ -28,9 +28,11 @@ use tonic::{Request, Response, Status};
 
 mod audit_registry;
 mod client_registry;
+mod service_registry;
 
 use audit_registry::AuditRegistry;
-use client_registry::{ClientRegistry, ServiceRegistry, SharedClient};
+use client_registry::Registry as ClientRegistry;
+use service_registry::{Registry as ServiceRegistry, SharedClient};
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
