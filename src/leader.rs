@@ -1,4 +1,5 @@
 use crate::proto::{
+    expect_field,
     leader_server::{Leader, LeaderServer},
     publisher_client::PublisherClient,
     AggregateGroupRequest, AggregateWorkerRequest, AggregateWorkerResponse, Share,
@@ -44,11 +45,6 @@ impl MyLeader {
             publisher_client,
         }
     }
-}
-
-// TODO factor out
-fn expect_field<T>(opt: Option<T>, name: &str) -> Result<T, Status> {
-    opt.ok_or_else(|| Status::invalid_argument(format!("{} must be set.", name)))
 }
 
 #[tonic::async_trait]

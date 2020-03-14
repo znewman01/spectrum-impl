@@ -1,4 +1,5 @@
 use crate::proto::{
+    expect_field,
     publisher_server::{Publisher, PublisherServer},
     AggregateGroupRequest, AggregateGroupResponse,
 };
@@ -35,11 +36,6 @@ impl MyPublisher {
             total_groups: experiment.groups as usize,
         }
     }
-}
-
-// TODO factor out
-fn expect_field<T>(opt: Option<T>, name: &str) -> Result<T, Status> {
-    opt.ok_or_else(|| Status::invalid_argument(format!("{} must be set.", name)))
 }
 
 #[tonic::async_trait]

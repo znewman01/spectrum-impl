@@ -1,4 +1,5 @@
 use crate::proto::{
+    expect_field,
     worker_server::{Worker, WorkerServer},
     AggregateWorkerRequest, RegisterClientRequest, RegisterClientResponse, Share, UploadRequest,
     UploadResponse, VerifyRequest, VerifyResponse,
@@ -146,10 +147,6 @@ impl MyWorker {
             Ok(())
         }
     }
-}
-
-fn expect_field<T>(opt: Option<T>, name: &str) -> Result<T, Status> {
-    opt.ok_or_else(|| Status::invalid_argument(format!("{} must be set.", name)))
 }
 
 #[tonic::async_trait]

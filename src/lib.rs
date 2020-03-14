@@ -16,7 +16,13 @@ pub mod experiment;
 mod net;
 pub mod services;
 mod proto {
+    use tonic::Status;
+
     tonic::include_proto!("spectrum");
+
+    pub fn expect_field<T>(opt: Option<T>, name: &str) -> Result<T, Status> {
+        opt.ok_or_else(|| Status::invalid_argument(format!("{} must be set.", name)))
+    }
 }
 
 use experiment::Experiment;
