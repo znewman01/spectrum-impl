@@ -1,6 +1,7 @@
 use crate::proto;
-use crate::protocols::{Accumulatable, Protocol};
+use crate::protocols::{Accumulatable, ChannelKeyWrapper, Protocol};
 
+use std::convert::TryFrom;
 use std::convert::TryInto;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -9,6 +10,25 @@ pub struct ChannelKey(usize, String);
 impl ChannelKey {
     pub fn new(idx: usize, password: String) -> Self {
         ChannelKey(idx, password)
+    }
+}
+
+impl TryFrom<ChannelKeyWrapper> for ChannelKey {
+    type Error = &'static str;
+
+    fn try_from(wrapper: ChannelKeyWrapper) -> Result<Self, Self::Error> {
+        #![allow(irrefutable_let_patterns)] // until we introduce multiple protocols
+        if let ChannelKeyWrapper::Insecure = wrapper {
+            Ok(ChannelKey::new(0, "".to_string()))
+        } else {
+            Err("Invalid channel key")
+        }
+    }
+}
+
+impl Into<ChannelKeyWrapper> for ChannelKey {
+    fn into(self) -> ChannelKeyWrapper {
+        ChannelKeyWrapper::Insecure
     }
 }
 
@@ -138,11 +158,7 @@ impl Protocol for InsecureProtocol {
         vec![WriteToken::empty(); self.parties]
     }
 
-    fn gen_audit(
-        &self,
-        keys: &[ChannelKey],
-        token: &WriteToken,
-    ) -> Vec<AuditShare> {
+    fn gen_audit(&self, keys: &[ChannelKey], token: &WriteToken) -> Vec<AuditShare> {
         let audit_share = match token {
             WriteToken(Some((_, key))) => {
                 let ChannelKey(idx, _) = key;
