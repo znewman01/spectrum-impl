@@ -1,6 +1,29 @@
 use std::ops::{Deref, DerefMut};
 use tokio::sync::RwLock;
 
+pub trait Accumulatable {
+    fn accumulate(&mut self, rhs: Self);
+
+    fn new(size: usize) -> Self;
+}
+
+// TODO(zjn): sort through this mess
+impl<T> Accumulatable for Vec<T>
+where
+    T: Accumulatable + Default + Clone,
+{
+    fn accumulate(&mut self, rhs: Vec<T>) {
+        assert_eq!(self.len(), rhs.len());
+        for (this, that) in self.iter_mut().zip(rhs.into_iter()) {
+            this.accumulate(that);
+        }
+    }
+
+    fn new(size: usize) -> Self {
+        vec![Default::default(); size]
+    }
+}
+
 pub trait Foldable: Default {
     type Item;
 

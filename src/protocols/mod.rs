@@ -4,29 +4,9 @@ use crate::proto;
 pub mod accumulator;
 pub mod insecure;
 pub mod table;
+pub mod wrapper;
 
-pub trait Accumulatable {
-    fn accumulate(&mut self, rhs: Self);
-
-    fn new(size: usize) -> Self;
-}
-
-// TODO(zjn): sort through this mess
-impl<T> Accumulatable for Vec<T>
-where
-    T: Accumulatable + Default + Clone,
-{
-    fn accumulate(&mut self, rhs: Vec<T>) {
-        assert_eq!(self.len(), rhs.len());
-        for (this, that) in self.iter_mut().zip(rhs.into_iter()) {
-            this.accumulate(that);
-        }
-    }
-
-    fn new(size: usize) -> Self {
-        vec![Default::default(); size]
-    }
-}
+use accumulator::Accumulatable;
 
 pub trait Protocol {
     type Message: Default;
