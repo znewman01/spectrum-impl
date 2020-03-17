@@ -2,6 +2,7 @@ use crate::config::store::{Error, Store};
 use crate::protocols::{
     insecure::{self, InsecureProtocol},
     wrapper::ProtocolWrapper,
+    ChannelKeyWrapper,
 };
 use crate::services::{
     discovery::Node, ClientInfo, Group, LeaderInfo, PublisherInfo, Service, WorkerInfo,
@@ -56,7 +57,9 @@ impl Experiment {
     pub fn iter_clients(self) -> impl Iterator<Item = Service> {
         let viewers = (0..(self.channels as u16))
             .zip(self.get_keys().into_iter())
-            .map(|(idx, key)| ClientInfo::new_broadcaster(idx, (idx + 100) as u8, key))
+            .map(|(idx, key)| {
+                ClientInfo::new_broadcaster(idx, (idx + 100) as u8, key.try_into().unwrap())
+            })
             .map(Service::from);
         let broadcasters = ((self.channels as u16)..self.clients)
             .map(ClientInfo::new)
@@ -75,9 +78,9 @@ impl Experiment {
         ))
     }
 
-    pub fn get_keys(&self) -> Vec<insecure::ChannelKey> {
+    pub fn get_keys(&self) -> Vec<ChannelKeyWrapper> {
         (0..self.channels)
-            .map(|idx| insecure::ChannelKey::new(idx, format!("password{}", idx)))
+            .map(|idx| insecure::ChannelKey::new(idx, format!("password{}", idx)).into())
             .collect()
     }
 }

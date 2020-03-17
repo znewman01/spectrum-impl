@@ -1,15 +1,15 @@
 use crate::proto::{
     expect_field,
     worker_server::{Worker, WorkerServer},
-    AggregateWorkerRequest, RegisterClientRequest, RegisterClientResponse, Share, UploadRequest,
-    UploadResponse, VerifyRequest, VerifyResponse,
+    AggregateWorkerRequest, AuditShare, RegisterClientRequest, RegisterClientResponse, Share,
+    UploadRequest, UploadResponse, VerifyRequest, VerifyResponse, WriteToken,
 };
 use crate::{
     config::store::Store,
     experiment::Experiment,
     net::get_addr,
     protocols::accumulator::Accumulator,
-    protocols::{insecure, Bytes, Protocol},
+    protocols::Bytes,
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -34,8 +34,9 @@ use service_registry::{Registry as ServiceRegistry, SharedClient};
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
+// TODO: candidate for parameterization (over the protocol) to avoid dynamic dispatch
 struct WorkerState {
-    audit_registry: AuditRegistry<insecure::AuditShare, insecure::WriteToken>,
+    audit_registry: AuditRegistry<AuditShare, WriteToken>,
     accumulator: Accumulator<Vec<Bytes>>,
     experiment: Experiment,
     client_registry: ClientRegistry,
@@ -51,44 +52,34 @@ impl WorkerState {
         }
     }
 
-    async fn upload(
-        &self,
-        client: &ClientInfo,
-        write_token: insecure::WriteToken,
-    ) -> Vec<insecure::AuditShare> {
-        let protocol = self.experiment.get_protocol();
+    async fn upload(&self, client: &ClientInfo, write_token: WriteToken) -> Vec<AuditShare> {
+        let protocol = self.experiment.get_protocol2();
         let keys = self.experiment.get_keys();
 
-        // Avoid cloning write token by passing it back
-        let (audit_shares, write_token) =
-            spawn_blocking(move || (protocol.gen_audit(&keys, &write_token), write_token))
-                .await
-                .expect("Generating audit should not panic.");
-
-        self.audit_registry.init(&client, write_token).await;
-
-        audit_shares
+        self.audit_registry.init(&client, write_token.clone()).await;
+        spawn_blocking(move || (protocol.gen_audit(keys, write_token)))
+            .await
+            .expect("Generating audit should not panic.")
     }
 
-    async fn verify(&self, client: &ClientInfo, share: insecure::AuditShare) -> Option<Vec<Bytes>> {
+    async fn verify(&self, client: &ClientInfo, share: AuditShare) -> Option<Vec<Bytes>> {
         let check_count = self.audit_registry.add(client, share).await;
         if check_count < self.experiment.groups as usize {
             return None;
         }
 
         let (token, shares) = self.audit_registry.drain(client).await;
-        let protocol = self.experiment.get_protocol();
-
+        let protocol = self.experiment.get_protocol2();
         let verify = spawn_blocking(move || protocol.check_audit(shares))
             .await
             .unwrap();
-
         if !verify {
             warn!("Didn't verify");
             return None;
         }
 
-        let data = spawn_blocking(move || protocol.to_accumulator(token))
+        let protocol = self.experiment.get_protocol2();
+        let data = spawn_blocking(move || protocol.expand_write_token(token))
             .await
             .expect("Accepting write token should never fail.");
 
@@ -157,8 +148,7 @@ impl Worker for MyWorker {
 
         let client_id = expect_field(request.client_id, "Client ID")?;
         let client_info = ClientInfo::from(&client_id);
-        let write_token: insecure::WriteToken =
-            expect_field(request.write_token, "Write Token")?.into();
+        let write_token = expect_field(request.write_token, "Write Token")?;
         let state = self.state.clone();
         let peers: Vec<SharedClient> = self.get_peers(&client_info).await?;
 
@@ -168,7 +158,7 @@ impl Worker for MyWorker {
             for (peer, audit_share) in peers.into_iter().zip(audit_shares.into_iter()) {
                 let req = Request::new(VerifyRequest {
                     client_id: Some(client_id.clone()),
-                    audit_share: Some(audit_share.into()),
+                    audit_share: Some(audit_share),
                 });
                 spawn(async move {
                     peer.lock().await.verify(req).await.unwrap();
@@ -194,7 +184,7 @@ impl Worker for MyWorker {
         let leader = self.services.get_my_leader();
 
         spawn(async move {
-            if let Some(share) = state.verify(&client_info, share.into()).await {
+            if let Some(share) = state.verify(&client_info, share).await {
                 let share: Vec<Vec<u8>> = share.into_iter().map(Into::into).collect();
                 info!("Forwarding to leader: {:?}", share);
                 let req = Request::new(AggregateWorkerRequest {

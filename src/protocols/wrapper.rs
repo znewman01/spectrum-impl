@@ -26,7 +26,7 @@ pub trait ProtocolWrapper {
     fn check_audit(&self, tokens: Vec<AuditShare>) -> bool;
 
     fn new_accumulator(&self) -> Box<dyn AccumulatorWrapper>;
-    fn accumulate(&self, accumulator: &mut Box<dyn AccumulatorWrapper>, token: WriteToken);
+    fn expand_write_token(&self, token: WriteToken) -> Vec<Bytes>;
 }
 
 // some of these bounds are redundant:
@@ -71,8 +71,7 @@ where
         Box::new(self.new_accumulator())
     }
 
-    fn accumulate(&self, accumulator: &mut Box<dyn AccumulatorWrapper>, token: WriteToken) {
-        let data = self.to_accumulator(token.into());
-        accumulator.accumulate(data.into());
+    fn expand_write_token(&self, token: WriteToken) -> Vec<Bytes> {
+        self.to_accumulator(token.into()).into()
     }
 }
