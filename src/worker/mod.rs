@@ -10,7 +10,7 @@ use crate::{
     net::get_addr,
     protocols::accumulator::Accumulator,
     protocols::{
-        insecure::{InsecureAuditShare, InsecureWriteToken},
+        insecure,
         Protocol,
     },
     services::{
@@ -38,7 +38,7 @@ use service_registry::{Registry as ServiceRegistry, SharedClient};
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
 struct WorkerState {
-    audit_registry: AuditRegistry<InsecureAuditShare, InsecureWriteToken>,
+    audit_registry: AuditRegistry<insecure::AuditShare, insecure::WriteToken>,
     accumulator: Accumulator<Vec<u8>>,
     experiment: Experiment,
     client_registry: ClientRegistry,
@@ -57,8 +57,8 @@ impl WorkerState {
     async fn upload(
         &self,
         client: &ClientInfo,
-        write_token: InsecureWriteToken,
-    ) -> Vec<InsecureAuditShare> {
+        write_token: insecure::WriteToken,
+    ) -> Vec<insecure::AuditShare> {
         let protocol = self.experiment.get_protocol();
         let keys = self.experiment.get_keys();
 
@@ -73,7 +73,7 @@ impl WorkerState {
         audit_shares
     }
 
-    async fn verify(&self, client: &ClientInfo, share: InsecureAuditShare) -> Option<Vec<u8>> {
+    async fn verify(&self, client: &ClientInfo, share: insecure::AuditShare) -> Option<Vec<u8>> {
         let check_count = self.audit_registry.add(client, share).await;
         if check_count < self.experiment.groups as usize {
             return None;
@@ -160,7 +160,7 @@ impl Worker for MyWorker {
 
         let client_id = expect_field(request.client_id, "Client ID")?;
         let client_info = ClientInfo::from(&client_id);
-        let write_token: InsecureWriteToken =
+        let write_token: insecure::WriteToken =
             expect_field(request.write_token, "Write Token")?.into();
         let state = self.state.clone();
         let peers: Vec<SharedClient> = self.get_peers(&client_info).await?;
