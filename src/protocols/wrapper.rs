@@ -14,7 +14,7 @@ where
     A: Into<Vec<Bytes>> + Accumulatable + From<Vec<Bytes>>,
 {
     fn accumulate(&mut self, rhs: Vec<Bytes>) {
-        self.accumulate(rhs.into());
+        self.combine(rhs.into());
     }
 }
 

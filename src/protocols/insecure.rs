@@ -1,5 +1,5 @@
 use crate::proto;
-use crate::protocols::{Accumulatable, Bytes, ChannelKeyWrapper, Protocol};
+use crate::protocols::{Bytes, ChannelKeyWrapper, Protocol};
 
 use std::convert::TryFrom;
 use std::convert::TryInto;
@@ -110,17 +110,6 @@ impl WriteToken {
     }
 }
 
-impl Accumulatable for Bytes {
-    fn accumulate(&mut self, rhs: Self) {
-        self.0.extend(rhs.0);
-    }
-
-    fn new(size: usize) -> Self {
-        assert_eq!(size, 1);
-        Default::default()
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct InsecureProtocol {
     parties: usize,
@@ -176,6 +165,12 @@ impl Protocol for InsecureProtocol {
         tokens.into_iter().all(|x| x.0)
     }
 
+    fn new_accumulator(&self) -> Self::Accumulator {
+        let message_len = 1;
+        let init_channel = Bytes(vec![0; message_len]);
+        vec![init_channel; self.num_channels()]
+    }
+
     fn to_accumulator(&self, token: WriteToken) -> Vec<Bytes> {
         let mut accumulator = vec![Bytes::default(); self.num_channels() - 1];
         if let WriteToken(Some((data, key))) = token {
@@ -192,6 +187,7 @@ impl Protocol for InsecureProtocol {
 mod tests {
     #![allow(clippy::identity_conversion)]
     use super::*;
+    use crate::protocols::accumulator::Accumulatable;
     use proptest::prelude::*;
 
     const CHANNELS: usize = 3;
@@ -299,7 +295,7 @@ mod tests {
             assert_eq!(before_msgs.len(), protocol.num_channels());
 
             for write_token in protocol.null_broadcast() {
-                accumulator.accumulate(protocol.to_accumulator(write_token));
+                accumulator.combine(protocol.to_accumulator(write_token));
             }
             let after_msgs: Vec<Bytes> = accumulator.into();
 
@@ -318,7 +314,7 @@ mod tests {
 
             let mut accumulator = protocol.new_accumulator();
             for write_token in protocol.broadcast(msg.clone(), good_key) {
-                accumulator.accumulate(protocol.to_accumulator(write_token));
+                accumulator.combine(protocol.to_accumulator(write_token));
             }
             let recovered_msgs: Vec<Bytes> = accumulator.into();
 

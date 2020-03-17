@@ -3,68 +3,21 @@ use tokio::sync::RwLock;
 
 use crate::protocols::Bytes;
 
-pub trait Accumulatable {
-    fn accumulate(&mut self, rhs: Self);
-
-    fn new(size: usize) -> Self;
+pub trait Accumulatable: Default {
+    fn combine(&mut self, other: Self);
 }
 
-// TODO(zjn): sort through this mess
-impl<T> Accumulatable for Vec<T>
-where
-    T: Accumulatable + Default + Clone,
-{
-    fn accumulate(&mut self, rhs: Vec<T>) {
-        assert_eq!(self.len(), rhs.len());
-        for (this, that) in self.iter_mut().zip(rhs.into_iter()) {
-            this.accumulate(that);
-        }
-    }
-
-    fn new(size: usize) -> Self {
-        vec![Default::default(); size]
-    }
-}
-
-pub trait Foldable: Default {
-    type Item;
-
-    fn combine(&mut self, other: Self::Item);
-}
-
-impl Foldable for u8 {
-    type Item = u8;
-
-    fn combine(&mut self, other: u8) {
-        (*self) += other;
-    }
-}
-
-impl Foldable for Bytes {
-    type Item = Bytes;
-
+impl Accumulatable for Bytes {
     fn combine(&mut self, other: Bytes) {
         self.0.extend(other.0) // TODO(zjn) should be XOR
     }
 }
-// TODO(zjn): get rid of me, replace with bit data
-impl<T> Foldable for Option<T> {
-    type Item = Option<T>;
 
-    fn combine(&mut self, other: Option<T>) {
-        if let Some(value) = other {
-            self.replace(value);
-        }
-    }
-}
-
-impl<T> Foldable for Vec<T>
+impl<T> Accumulatable for Vec<T>
 where
-    T: Foldable,
+    T: Accumulatable,
 {
-    type Item = Vec<T::Item>;
-
-    fn combine(&mut self, other: Vec<T::Item>) {
+    fn combine(&mut self, other: Vec<T>) {
         assert_eq!(self.len(), other.len());
         for (this, that) in self.iter_mut().zip(other.into_iter()) {
             this.combine(that);
@@ -79,7 +32,7 @@ pub struct Accumulator<D> {
 
 impl<D> Accumulator<D>
 where
-    D: Foldable + Clone,
+    D: Accumulatable + Clone,
 {
     pub fn new(accum: D) -> Accumulator<D> {
         let data = (accum, 0 as usize);
@@ -88,7 +41,7 @@ where
         }
     }
 
-    pub async fn accumulate(&self, data: D::Item) -> usize {
+    pub async fn accumulate(&self, data: D) -> usize {
         let mut lock = self.lock.write().await;
         let tuple: &mut (D, usize) = lock.deref_mut();
         let state = &mut tuple.0;
@@ -113,10 +66,8 @@ mod tests {
     #[derive(Default, Debug, Clone, PartialEq, Eq)]
     struct MyData(u8);
 
-    impl Foldable for MyData {
-        type Item = MyData;
-
-        fn combine(&mut self, other: Self::Item) {
+    impl Accumulatable for MyData {
+        fn combine(&mut self, other: MyData) {
             (*self).0 += other.0;
         }
     }

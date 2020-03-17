@@ -50,10 +50,6 @@ pub trait Protocol {
     ) -> Vec<Self::AuditShare>;
     fn check_audit(&self, tokens: Vec<Self::AuditShare>) -> bool;
 
-    fn new_accumulator(&self) -> Self::Accumulator {
-        Self::Accumulator::new(self.num_channels())
-    }
-
-    // TODO(zjn): should be: fn fold(accumulator: &mut Accumulator, token: Self::WriteToken);
+    fn new_accumulator(&self) -> Self::Accumulator;
     fn to_accumulator(&self, token: Self::WriteToken) -> Self::Accumulator;
 }
