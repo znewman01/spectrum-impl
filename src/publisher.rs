@@ -8,7 +8,7 @@ use crate::{
     experiment,
     experiment::Experiment,
     net::get_addr,
-    protocols::accumulator::Accumulator,
+    protocols::{accumulator::Accumulator, Bytes},
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -25,14 +25,17 @@ use tokio::spawn;
 use tonic::{Request, Response, Status};
 
 pub struct MyPublisher {
-    accumulator: Arc<Accumulator<Vec<u8>>>,
+    accumulator: Arc<Accumulator<Vec<Bytes>>>,
     total_groups: usize,
 }
 
 impl MyPublisher {
     fn from_experiment(experiment: Experiment) -> Self {
         MyPublisher {
-            accumulator: Arc::new(Accumulator::new(vec![0u8; experiment.channels])),
+            accumulator: Arc::new(Accumulator::new(vec![
+                Default::default();
+                experiment.channels
+            ])),
             total_groups: experiment.groups as usize,
         }
     }
@@ -47,17 +50,14 @@ impl Publisher for MyPublisher {
         let request = request.into_inner();
         trace!("Request! {:?}", request);
 
-        let data: Vec<u8> = expect_field(request.share, "Share")?
-            .data
-            .iter()
-            .map(|x| x[0])
-            .collect();
+        let data = expect_field(request.share, "Share")?.data;
         let total_groups = self.total_groups;
         let accumulator = self.accumulator.clone();
 
         // TODO: factor out?
         spawn(async move {
             // TODO: spawn_blocking for heavy computation?
+            let data: Vec<Bytes> = data.into_iter().map(Into::into).collect();
             let group_count = accumulator.accumulate(data).await;
             if group_count < total_groups {
                 trace!(

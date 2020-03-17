@@ -1,6 +1,8 @@
 use std::ops::{Deref, DerefMut};
 use tokio::sync::RwLock;
 
+use crate::protocols::Bytes;
+
 pub trait Accumulatable {
     fn accumulate(&mut self, rhs: Self);
 
@@ -38,6 +40,13 @@ impl Foldable for u8 {
     }
 }
 
+impl Foldable for Bytes {
+    type Item = Bytes;
+
+    fn combine(&mut self, other: Bytes) {
+        self.0.extend(other.0) // TODO(zjn) should be XOR
+    }
+}
 // TODO(zjn): get rid of me, replace with bit data
 impl<T> Foldable for Option<T> {
     type Item = Option<T>;

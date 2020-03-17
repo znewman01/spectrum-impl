@@ -8,7 +8,7 @@ use crate::{
     config::store::Store,
     experiment::Experiment,
     net::get_addr,
-    protocols::accumulator::Accumulator,
+    protocols::{accumulator::Accumulator, Bytes},
     services::{
         discovery::{register, resolve_all, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -29,7 +29,7 @@ use tonic::{transport::Channel, Request, Response, Status};
 type SharedPublisherClient = Arc<Mutex<PublisherClient<Channel>>>;
 
 pub struct MyLeader {
-    accumulator: Arc<Accumulator<Vec<u8>>>,
+    accumulator: Arc<Accumulator<Vec<Bytes>>>,
     total_workers: usize,
     publisher_client: watch::Receiver<Option<SharedPublisherClient>>,
 }
@@ -40,7 +40,10 @@ impl MyLeader {
         publisher_client: watch::Receiver<Option<SharedPublisherClient>>,
     ) -> Self {
         MyLeader {
-            accumulator: Arc::new(Accumulator::new(vec![0u8; experiment.channels])),
+            accumulator: Arc::new(Accumulator::new(vec![
+                Default::default();
+                experiment.channels
+            ])),
             total_workers: experiment.workers_per_group as usize,
             publisher_client,
         }
@@ -56,11 +59,7 @@ impl Leader for MyLeader {
         let request = request.into_inner();
         trace!("Request! {:?}", request);
 
-        let data: Vec<u8> = expect_field(request.share, "Share")?
-            .data
-            .iter()
-            .map(|x| x[0])
-            .collect();
+        let data = expect_field(request.share, "Share")?.data;
         let accumulator = self.accumulator.clone();
         let total_workers = self.total_workers;
         let publisher = self
@@ -72,6 +71,7 @@ impl Leader for MyLeader {
 
         spawn(async move {
             // TODO: spawn_blocking for heavy computation?
+            let data: Vec<Bytes> = data.into_iter().map(Into::into).collect();
             let worker_count = accumulator.accumulate(data).await;
             if worker_count < total_workers {
                 trace!("Leader receieved {}/{} shares", worker_count, total_workers);
@@ -86,11 +86,10 @@ impl Leader for MyLeader {
             }
 
             let share = accumulator.get().await;
+            let share: Vec<Vec<u8>> = share.into_iter().map(Into::into).collect();
             debug!("Leader final shares: {:?}", share);
             let req = Request::new(AggregateGroupRequest {
-                share: Some(Share {
-                    data: share.into_iter().map(|x| vec![x]).collect(),
-                }),
+                share: Some(Share { data: share }),
             });
             publisher.lock().await.aggregate_group(req).await.unwrap();
         });

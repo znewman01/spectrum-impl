@@ -1,10 +1,8 @@
 use crate::proto;
-use crate::protocols::{Accumulatable, ChannelKeyWrapper, Protocol};
+use crate::protocols::{Accumulatable, Bytes, ChannelKeyWrapper, Protocol};
 
 use std::convert::TryFrom;
 use std::convert::TryInto;
-
-type Bytes = Vec<u8>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ChannelKey(usize, String);
@@ -46,7 +44,7 @@ impl From<proto::WriteToken> for WriteToken {
             if !data.is_empty() {
                 assert_eq!(data.len(), 1);
                 WriteToken(Some((
-                    data,
+                    data.into(),
                     ChannelKey(
                         insecure_token_proto.channel_idx.try_into().unwrap(),
                         insecure_token_proto.key,
@@ -66,7 +64,7 @@ impl Into<proto::WriteToken> for WriteToken {
         proto::WriteToken {
             token: Some(proto::write_token::Token::InsecureToken(match self.0 {
                 Some((data, key)) => proto::InsecureWriteToken {
-                    data,
+                    data: data.into(),
                     channel_idx: key.0 as u32,
                     key: key.1,
                 },
@@ -114,7 +112,7 @@ impl WriteToken {
 
 impl Accumulatable for Bytes {
     fn accumulate(&mut self, rhs: Self) {
-        self.extend(rhs);
+        self.0.extend(rhs.0);
     }
 
     fn new(size: usize) -> Self {
@@ -136,7 +134,6 @@ impl InsecureProtocol {
 }
 
 impl Protocol for InsecureProtocol {
-    type Message = Bytes;
     type ChannelKey = ChannelKey; // channel number, password
     type WriteToken = WriteToken; // message, index, maybe a key
     type AuditShare = AuditShare;
@@ -223,7 +220,7 @@ mod tests {
     }
 
     fn messages() -> impl Strategy<Value = Bytes> {
-        any::<Bytes>()
+        any::<Vec<u8>>().prop_map(Into::into)
     }
 
     fn and_accumulators(
@@ -231,7 +228,7 @@ mod tests {
     ) -> impl Strategy<Value = (InsecureProtocol, Vec<Bytes>)> {
         (
             Just(protocol),
-            proptest::collection::vec(any::<Bytes>(), protocol.num_channels()),
+            proptest::collection::vec(messages(), protocol.num_channels()),
         )
     }
 

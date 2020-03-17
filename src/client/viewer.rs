@@ -3,7 +3,7 @@ use crate::{
     client::connections,
     config,
     experiment::Experiment,
-    protocols::Protocol,
+    protocols::{Bytes, Protocol},
     services::{
         quorum::{delay_until, wait_for_start_time_set},
         ClientInfo,
@@ -33,7 +33,11 @@ where
     let protocol = experiment.get_protocol();
     let client_id = info.to_proto(); // before we move info
     let write_tokens = match info.broadcast {
-        Some((msg, key)) => protocol.broadcast(vec![msg], key),
+        Some((msg, key)) => {
+            let msg: Vec<u8> = vec![msg];
+            let msg: Bytes = msg.into();
+            protocol.broadcast(msg, key)
+        }
         None => protocol.null_broadcast(),
     };
 

@@ -9,7 +9,7 @@ use crate::{
     experiment::Experiment,
     net::get_addr,
     protocols::accumulator::Accumulator,
-    protocols::{insecure, Protocol},
+    protocols::{insecure, Bytes, Protocol},
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -36,7 +36,7 @@ type Error = Box<dyn std::error::Error + Sync + Send>;
 
 struct WorkerState {
     audit_registry: AuditRegistry<insecure::AuditShare, insecure::WriteToken>,
-    accumulator: Accumulator<Vec<Vec<u8>>>,
+    accumulator: Accumulator<Vec<Bytes>>,
     experiment: Experiment,
     client_registry: ClientRegistry,
 }
@@ -70,11 +70,7 @@ impl WorkerState {
         audit_shares
     }
 
-    async fn verify(
-        &self,
-        client: &ClientInfo,
-        share: insecure::AuditShare,
-    ) -> Option<Vec<Vec<u8>>> {
+    async fn verify(&self, client: &ClientInfo, share: insecure::AuditShare) -> Option<Vec<Bytes>> {
         let check_count = self.audit_registry.add(client, share).await;
         if check_count < self.experiment.groups as usize {
             return None;
@@ -199,6 +195,7 @@ impl Worker for MyWorker {
 
         spawn(async move {
             if let Some(share) = state.verify(&client_info, share.into()).await {
+                let share: Vec<Vec<u8>> = share.into_iter().map(Into::into).collect();
                 info!("Forwarding to leader: {:?}", share);
                 let req = Request::new(AggregateWorkerRequest {
                     share: Some(Share { data: share }),

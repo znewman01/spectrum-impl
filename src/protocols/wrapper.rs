@@ -1,11 +1,9 @@
 use crate::proto::{AuditShare, WriteToken};
-use crate::protocols::{Accumulatable, ChannelKeyWrapper, Protocol};
+use crate::protocols::{Accumulatable, Bytes, ChannelKeyWrapper, Protocol};
 
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt::Debug;
-
-type Bytes = Vec<u8>; // as in prost
 
 pub trait AccumulatorWrapper {
     fn accumulate(&mut self, rhs: WriteToken);
@@ -36,7 +34,6 @@ pub trait ProtocolWrapper {
 impl<P> ProtocolWrapper for P
 where
     P: Protocol,
-    P::Message: Into<Bytes> + From<Bytes>,
     P::ChannelKey: TryFrom<ChannelKeyWrapper> + Into<ChannelKeyWrapper>,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: Debug,
     P::WriteToken: TryFrom<WriteToken> + Into<WriteToken>,
@@ -46,7 +43,6 @@ where
     P::Accumulator: 'static + Into<Vec<Bytes>> + From<WriteToken>,
 {
     fn broadcast(&self, message: Bytes, key: ChannelKeyWrapper) -> Vec<WriteToken> {
-        let message = message.into();
         let key = key.try_into().unwrap();
         self.broadcast(message, key)
             .into_iter()
