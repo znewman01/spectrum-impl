@@ -67,11 +67,7 @@ impl Experiment {
         viewers.chain(broadcasters)
     }
 
-    pub fn get_protocol(&self) -> InsecureProtocol {
-        InsecureProtocol::new(self.groups.try_into().unwrap(), self.channels)
-    }
-
-    pub fn get_protocol2(&self) -> Box<dyn ProtocolWrapper + Sync + Send> {
+    pub fn get_protocol(&self) -> Box<dyn ProtocolWrapper + Sync + Send> {
         Box::new(InsecureProtocol::new(
             self.groups.try_into().unwrap(),
             self.channels,

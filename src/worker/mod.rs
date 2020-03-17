@@ -53,7 +53,7 @@ impl WorkerState {
     }
 
     async fn upload(&self, client: &ClientInfo, write_token: WriteToken) -> Vec<AuditShare> {
-        let protocol = self.experiment.get_protocol2();
+        let protocol = self.experiment.get_protocol();
         let keys = self.experiment.get_keys();
 
         self.audit_registry.init(&client, write_token.clone()).await;
@@ -69,7 +69,7 @@ impl WorkerState {
         }
 
         let (token, shares) = self.audit_registry.drain(client).await;
-        let protocol = self.experiment.get_protocol2();
+        let protocol = self.experiment.get_protocol();
         let verify = spawn_blocking(move || protocol.check_audit(shares))
             .await
             .unwrap();
@@ -78,7 +78,7 @@ impl WorkerState {
             return None;
         }
 
-        let protocol = self.experiment.get_protocol2();
+        let protocol = self.experiment.get_protocol();
         let data = spawn_blocking(move || protocol.expand_write_token(token))
             .await
             .expect("Accepting write token should never fail.");

@@ -29,7 +29,7 @@ where
     debug!("Received configuration from configuration server; initializing.");
 
     let mut clients = connections::connect_and_register(&config, info.clone()).await?;
-    let protocol = experiment.get_protocol2();
+    let protocol = experiment.get_protocol();
     let client_id = info.to_proto(); // before we move info
     let write_tokens = match info.broadcast {
         Some((msg, key)) => protocol.broadcast(vec![msg].into(), key.into()),
