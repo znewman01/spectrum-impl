@@ -3,7 +3,6 @@ use crate::{
     client::connections,
     config,
     experiment::Experiment,
-    protocols::{Bytes, Protocol},
     services::{
         quorum::{delay_until, wait_for_start_time_set},
         ClientInfo,
@@ -30,14 +29,10 @@ where
     debug!("Received configuration from configuration server; initializing.");
 
     let mut clients = connections::connect_and_register(&config, info.clone()).await?;
-    let protocol = experiment.get_protocol();
+    let protocol = experiment.get_protocol2();
     let client_id = info.to_proto(); // before we move info
     let write_tokens = match info.broadcast {
-        Some((msg, key)) => {
-            let msg: Vec<u8> = vec![msg];
-            let msg: Bytes = msg.into();
-            protocol.broadcast(msg, key)
-        }
+        Some((msg, key)) => protocol.broadcast(vec![msg].into(), key.into()),
         None => protocol.null_broadcast(),
     };
 
@@ -46,7 +41,7 @@ where
     for (client, write_token) in clients.iter_mut().zip(write_tokens) {
         let req = tonic::Request::new(UploadRequest {
             client_id: Some(client_id.clone()),
-            write_token: Some(write_token.into()),
+            write_token: Some(write_token),
         });
         trace!("About to send upload request.");
         let response = client.upload(req).await?;
