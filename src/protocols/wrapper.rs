@@ -6,14 +6,14 @@ use std::convert::TryInto;
 use std::fmt::Debug;
 
 pub trait AccumulatorWrapper {
-    fn accumulate(&mut self, rhs: WriteToken);
+    fn accumulate(&mut self, rhs: Vec<Bytes>);
 }
 
 impl<A> AccumulatorWrapper for A
 where
-    A: Into<Vec<Bytes>> + Accumulatable + From<WriteToken>,
+    A: Into<Vec<Bytes>> + Accumulatable + From<Vec<Bytes>>,
 {
-    fn accumulate(&mut self, rhs: WriteToken) {
+    fn accumulate(&mut self, rhs: Vec<Bytes>) {
         self.accumulate(rhs.into());
     }
 }
@@ -26,6 +26,7 @@ pub trait ProtocolWrapper {
     fn check_audit(&self, tokens: Vec<AuditShare>) -> bool;
 
     fn new_accumulator(&self) -> Box<dyn AccumulatorWrapper>;
+    fn accumulate(&self, accumulator: &mut Box<dyn AccumulatorWrapper>, token: WriteToken);
 }
 
 // some of these bounds are redundant:
@@ -40,7 +41,7 @@ where
     <P::WriteToken as TryFrom<WriteToken>>::Error: Debug,
     P::AuditShare: TryFrom<AuditShare> + Into<AuditShare>,
     <P::AuditShare as TryFrom<AuditShare>>::Error: Debug,
-    P::Accumulator: 'static + Into<Vec<Bytes>> + From<WriteToken>,
+    P::Accumulator: 'static + Into<Vec<Bytes>> + From<Vec<Bytes>>,
 {
     fn broadcast(&self, message: Bytes, key: ChannelKeyWrapper) -> Vec<WriteToken> {
         let key = key.try_into().unwrap();
@@ -68,5 +69,10 @@ where
 
     fn new_accumulator(&self) -> Box<dyn AccumulatorWrapper> {
         Box::new(self.new_accumulator())
+    }
+
+    fn accumulate(&self, accumulator: &mut Box<dyn AccumulatorWrapper>, token: WriteToken) {
+        let data = self.to_accumulator(token.into());
+        accumulator.accumulate(data.into());
     }
 }
