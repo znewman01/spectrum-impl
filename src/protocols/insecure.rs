@@ -18,8 +18,8 @@ impl TryFrom<ChannelKeyWrapper> for ChannelKey {
 
     fn try_from(wrapper: ChannelKeyWrapper) -> Result<Self, Self::Error> {
         #![allow(irrefutable_let_patterns)] // until we introduce multiple protocols
-        if let ChannelKeyWrapper::Insecure = wrapper {
-            Ok(ChannelKey::new(0, "".to_string()))
+        if let ChannelKeyWrapper::Insecure(idx, password) = wrapper {
+            Ok(ChannelKey::new(idx, password))
         } else {
             Err("Invalid channel key")
         }
@@ -28,7 +28,7 @@ impl TryFrom<ChannelKeyWrapper> for ChannelKey {
 
 impl Into<ChannelKeyWrapper> for ChannelKey {
     fn into(self) -> ChannelKeyWrapper {
-        ChannelKeyWrapper::Insecure
+        ChannelKeyWrapper::Insecure(self.0, self.1)
     }
 }
 

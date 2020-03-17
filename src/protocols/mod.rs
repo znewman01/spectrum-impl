@@ -24,7 +24,7 @@ impl Into<Vec<u8>> for Bytes {
 }
 
 pub enum ChannelKeyWrapper {
-    Insecure,
+    Insecure(usize, String),
 }
 
 pub trait Protocol {
