@@ -8,16 +8,14 @@ pub mod wrapper;
 
 use accumulator::Accumulatable;
 
-use std::convert::TryFrom;
-
 pub enum ChannelKeyWrapper {
     Insecure,
 }
 
 pub trait Protocol {
     type Message: Default;
-    type ChannelKey: Sync + Send + TryFrom<ChannelKeyWrapper> + Into<ChannelKeyWrapper>;
-    // TODO: s/From/TryFrom/
+    // TODO: remove From/Into/Sync/Send bounds, as they are handled by ProtocolWrapper
+    type ChannelKey: Sync + Send;
     type WriteToken: Sync + Send + From<proto::WriteToken> + Into<proto::WriteToken>;
     type AuditShare: Sync + Send + From<proto::AuditShare> + Into<proto::AuditShare>;
     type Accumulator: Into<Vec<Self::Message>> + Accumulatable;
