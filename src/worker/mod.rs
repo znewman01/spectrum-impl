@@ -36,7 +36,7 @@ type Error = Box<dyn std::error::Error + Sync + Send>;
 
 struct WorkerState {
     audit_registry: AuditRegistry<insecure::AuditShare, insecure::WriteToken>,
-    accumulator: Accumulator<Vec<u8>>,
+    accumulator: Accumulator<Vec<Vec<u8>>>,
     experiment: Experiment,
     client_registry: ClientRegistry,
 }
@@ -45,7 +45,7 @@ impl WorkerState {
     fn from_experiment(experiment: Experiment) -> Self {
         WorkerState {
             audit_registry: AuditRegistry::new(experiment.clients),
-            accumulator: Accumulator::new(vec![0u8; experiment.channels]),
+            accumulator: Accumulator::new(vec![Default::default(); experiment.channels]),
             experiment,
             client_registry: ClientRegistry::new(),
         }
@@ -70,7 +70,11 @@ impl WorkerState {
         audit_shares
     }
 
-    async fn verify(&self, client: &ClientInfo, share: insecure::AuditShare) -> Option<Vec<u8>> {
+    async fn verify(
+        &self,
+        client: &ClientInfo,
+        share: insecure::AuditShare,
+    ) -> Option<Vec<Vec<u8>>> {
         let check_count = self.audit_registry.add(client, share).await;
         if check_count < self.experiment.groups as usize {
             return None;
@@ -197,9 +201,7 @@ impl Worker for MyWorker {
             if let Some(share) = state.verify(&client_info, share.into()).await {
                 info!("Forwarding to leader: {:?}", share);
                 let req = Request::new(AggregateWorkerRequest {
-                    share: Some(Share {
-                        data: share.into_iter().map(|x| vec![x]).collect(),
-                    }),
+                    share: Some(Share { data: share }),
                 });
                 leader.lock().await.aggregate_worker(req).await.unwrap();
             }

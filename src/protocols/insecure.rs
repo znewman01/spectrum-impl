@@ -4,6 +4,8 @@ use crate::protocols::{Accumulatable, ChannelKeyWrapper, Protocol};
 use std::convert::TryFrom;
 use std::convert::TryInto;
 
+type Bytes = Vec<u8>;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ChannelKey(usize, String);
 
@@ -33,7 +35,7 @@ impl Into<ChannelKeyWrapper> for ChannelKey {
 }
 
 #[derive(Debug, Clone)]
-pub struct WriteToken(Option<(u8, ChannelKey)>);
+pub struct WriteToken(Option<(Bytes, ChannelKey)>);
 
 impl From<proto::WriteToken> for WriteToken {
     fn from(token: proto::WriteToken) -> Self {
@@ -44,7 +46,7 @@ impl From<proto::WriteToken> for WriteToken {
             if !data.is_empty() {
                 assert_eq!(data.len(), 1);
                 WriteToken(Some((
-                    data[0],
+                    data,
                     ChannelKey(
                         insecure_token_proto.channel_idx.try_into().unwrap(),
                         insecure_token_proto.key,
@@ -64,7 +66,7 @@ impl Into<proto::WriteToken> for WriteToken {
         proto::WriteToken {
             token: Some(proto::write_token::Token::InsecureToken(match self.0 {
                 Some((data, key)) => proto::InsecureWriteToken {
-                    data: vec![data],
+                    data,
                     channel_idx: key.0 as u32,
                     key: key.1,
                 },
@@ -101,7 +103,7 @@ impl Into<proto::AuditShare> for AuditShare {
 }
 
 impl WriteToken {
-    fn new(data: u8, key: ChannelKey) -> Self {
+    fn new(data: Bytes, key: ChannelKey) -> Self {
         WriteToken(Some((data, key)))
     }
 
@@ -110,9 +112,9 @@ impl WriteToken {
     }
 }
 
-impl Accumulatable for u8 {
+impl Accumulatable for Bytes {
     fn accumulate(&mut self, rhs: Self) {
-        *self ^= rhs;
+        self.extend(rhs);
     }
 
     fn new(size: usize) -> Self {
@@ -134,11 +136,11 @@ impl InsecureProtocol {
 }
 
 impl Protocol for InsecureProtocol {
-    type Message = u8;
+    type Message = Bytes;
     type ChannelKey = ChannelKey; // channel number, password
     type WriteToken = WriteToken; // message, index, maybe a key
     type AuditShare = AuditShare;
-    type Accumulator = Vec<u8>;
+    type Accumulator = Vec<Bytes>;
 
     fn num_parties(&self) -> usize {
         self.parties
@@ -148,7 +150,7 @@ impl Protocol for InsecureProtocol {
         self.channels
     }
 
-    fn broadcast(&self, message: u8, key: ChannelKey) -> Vec<WriteToken> {
+    fn broadcast(&self, message: Bytes, key: ChannelKey) -> Vec<WriteToken> {
         let mut data = vec![WriteToken::empty(); self.parties - 1];
         data.push(WriteToken::new(message, key));
         data
@@ -177,13 +179,13 @@ impl Protocol for InsecureProtocol {
         tokens.into_iter().all(|x| x.0)
     }
 
-    fn to_accumulator(&self, token: WriteToken) -> Vec<u8> {
-        let mut accumulator = vec![u8::default(); self.num_channels() - 1];
+    fn to_accumulator(&self, token: WriteToken) -> Vec<Bytes> {
+        let mut accumulator = vec![Bytes::default(); self.num_channels() - 1];
         if let WriteToken(Some((data, key))) = token {
             let ChannelKey(idx, _) = key;
             accumulator.insert(idx, data);
         } else {
-            accumulator.push(u8::default());
+            accumulator.push(Bytes::default());
         }
         accumulator
     }
@@ -220,16 +222,16 @@ mod tests {
             .prop_map(|(idx, password)| ChannelKey(idx, password))
     }
 
-    fn messages() -> impl Strategy<Value = u8> {
-        any::<u8>()
+    fn messages() -> impl Strategy<Value = Bytes> {
+        any::<Bytes>()
     }
 
     fn and_accumulators(
         protocol: InsecureProtocol,
-    ) -> impl Strategy<Value = (InsecureProtocol, Vec<u8>)> {
+    ) -> impl Strategy<Value = (InsecureProtocol, Vec<Bytes>)> {
         (
             Just(protocol),
-            proptest::collection::vec(any::<u8>(), protocol.num_channels()),
+            proptest::collection::vec(any::<Bytes>(), protocol.num_channels()),
         )
     }
 
@@ -280,7 +282,7 @@ mod tests {
         #[test]
         fn test_broadcast_bad_key_fails_audit(
             protocol in protocols(CHANNELS),
-            msg in messages().prop_filter("Broadcasting null message okay!", |m| *m != u8::default()),
+            msg in messages().prop_filter("Broadcasting null message okay!", |m| *m != Bytes::default()),
             good_key in keys(CHANNELS),
             bad_key in bad_keys(CHANNELS)
         ) {
@@ -296,13 +298,13 @@ mod tests {
         fn test_null_broadcast_messages_unchanged(
             (protocol, mut accumulator) in protocols(CHANNELS).prop_flat_map(and_accumulators)
         ) {
-            let before_msgs: Vec<u8> = accumulator.clone().into();
+            let before_msgs: Vec<Bytes> = accumulator.clone().into();
             assert_eq!(before_msgs.len(), protocol.num_channels());
 
             for write_token in protocol.null_broadcast() {
                 accumulator.accumulate(protocol.to_accumulator(write_token));
             }
-            let after_msgs: Vec<u8> = accumulator.into();
+            let after_msgs: Vec<Bytes> = accumulator.into();
 
             assert_eq!(before_msgs, after_msgs);
         }
@@ -318,17 +320,17 @@ mod tests {
             let good_key = keys[idx].clone();
 
             let mut accumulator = protocol.new_accumulator();
-            for write_token in protocol.broadcast(msg, good_key) {
+            for write_token in protocol.broadcast(msg.clone(), good_key) {
                 accumulator.accumulate(protocol.to_accumulator(write_token));
             }
-            let recovered_msgs: Vec<u8> = accumulator.into();
+            let recovered_msgs: Vec<Bytes> = accumulator.into();
 
             assert_eq!(recovered_msgs.len(), protocol.num_channels());
             for (msg_idx, actual_msg) in recovered_msgs.into_iter().enumerate() {
                 if msg_idx == idx {
                     assert_eq!(actual_msg, msg);
                 } else {
-                    assert_eq!(actual_msg, u8::default())
+                    assert_eq!(actual_msg, Bytes::default())
                 }
             }
         }
