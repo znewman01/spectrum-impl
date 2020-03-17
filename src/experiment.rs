@@ -58,7 +58,8 @@ impl Experiment {
         let viewers = (0..(self.channels as u16))
             .zip(self.get_keys().into_iter())
             .map(|(idx, key)| {
-                ClientInfo::new_broadcaster(idx, (idx + 100) as u8, key.try_into().unwrap())
+                let msg = vec![1, 2, 3, (idx as u8) + 100].into();
+                ClientInfo::new_broadcaster(idx, msg, key)
             })
             .map(Service::from);
         let broadcasters = ((self.channels as u16)..self.clients)
@@ -71,6 +72,7 @@ impl Experiment {
         Box::new(InsecureProtocol::new(
             self.groups.try_into().unwrap(),
             self.channels,
+            4,
         ))
     }
 

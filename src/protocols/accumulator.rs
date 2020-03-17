@@ -9,7 +9,8 @@ pub trait Accumulatable: Default {
 
 impl Accumulatable for Bytes {
     fn combine(&mut self, other: Bytes) {
-        self.0.extend(other.0) // TODO(zjn) should be XOR
+        assert_eq!(self.0.len(), other.0.len());
+        self.0.iter_mut().zip(other.0).for_each(|(x, y)| *x ^= y);
     }
 }
 

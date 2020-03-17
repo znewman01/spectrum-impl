@@ -46,7 +46,7 @@ impl WorkerState {
     fn from_experiment(experiment: Experiment) -> Self {
         WorkerState {
             audit_registry: AuditRegistry::new(experiment.clients),
-            accumulator: Accumulator::new(vec![Default::default(); experiment.channels]),
+            accumulator: Accumulator::new(experiment.get_protocol().new_accumulator()),
             experiment,
             client_registry: ClientRegistry::new(),
         }

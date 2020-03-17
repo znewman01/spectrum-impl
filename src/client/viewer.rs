@@ -32,7 +32,7 @@ where
     let protocol = experiment.get_protocol();
     let client_id = info.to_proto(); // before we move info
     let write_tokens = match info.broadcast {
-        Some((msg, key)) => protocol.broadcast(vec![msg].into(), key.into()),
+        Some((msg, key)) => protocol.broadcast(msg, key),
         None => protocol.null_broadcast(),
     };
 

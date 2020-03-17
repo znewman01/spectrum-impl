@@ -32,10 +32,9 @@ pub struct MyPublisher {
 impl MyPublisher {
     fn from_experiment(experiment: Experiment) -> Self {
         MyPublisher {
-            accumulator: Arc::new(Accumulator::new(vec![
-                Default::default();
-                experiment.channels
-            ])),
+            accumulator: Arc::new(Accumulator::new(
+                experiment.get_protocol().new_accumulator(),
+            )),
             total_groups: experiment.groups as usize,
         }
     }

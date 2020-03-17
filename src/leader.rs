@@ -40,10 +40,9 @@ impl MyLeader {
         publisher_client: watch::Receiver<Option<SharedPublisherClient>>,
     ) -> Self {
         MyLeader {
-            accumulator: Arc::new(Accumulator::new(vec![
-                Default::default();
-                experiment.channels
-            ])),
+            accumulator: Arc::new(Accumulator::new(
+                experiment.get_protocol().new_accumulator(),
+            )),
             total_workers: experiment.workers_per_group as usize,
             publisher_client,
         }

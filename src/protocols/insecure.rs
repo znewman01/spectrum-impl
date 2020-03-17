@@ -42,7 +42,6 @@ impl From<proto::WriteToken> for WriteToken {
         {
             let data = insecure_token_proto.data;
             if !data.is_empty() {
-                assert_eq!(data.len(), 1);
                 WriteToken(Some((
                     data.into(),
                     ChannelKey(
@@ -114,11 +113,16 @@ impl WriteToken {
 pub struct InsecureProtocol {
     parties: usize,
     channels: usize,
+    message_len: usize,
 }
 
 impl InsecureProtocol {
-    pub fn new(parties: usize, channels: usize) -> InsecureProtocol {
-        InsecureProtocol { parties, channels }
+    pub fn new(parties: usize, channels: usize, message_len: usize) -> InsecureProtocol {
+        InsecureProtocol {
+            parties,
+            channels,
+            message_len,
+        }
     }
 }
 
@@ -126,7 +130,6 @@ impl Protocol for InsecureProtocol {
     type ChannelKey = ChannelKey; // channel number, password
     type WriteToken = WriteToken; // message, index, maybe a key
     type AuditShare = AuditShare;
-    type Accumulator = Vec<Bytes>;
 
     fn num_parties(&self) -> usize {
         self.parties
@@ -134,6 +137,10 @@ impl Protocol for InsecureProtocol {
 
     fn num_channels(&self) -> usize {
         self.channels
+    }
+
+    fn message_len(&self) -> usize {
+        self.message_len
     }
 
     fn broadcast(&self, message: Bytes, key: ChannelKey) -> Vec<WriteToken> {
@@ -165,19 +172,13 @@ impl Protocol for InsecureProtocol {
         tokens.into_iter().all(|x| x.0)
     }
 
-    fn new_accumulator(&self) -> Self::Accumulator {
-        let message_len = 1;
-        let init_channel = Bytes(vec![0; message_len]);
-        vec![init_channel; self.num_channels()]
-    }
-
     fn to_accumulator(&self, token: WriteToken) -> Vec<Bytes> {
-        let mut accumulator = vec![Bytes::default(); self.num_channels() - 1];
+        let mut accumulator = vec![Bytes::empty(self.message_len); self.num_channels() - 1];
         if let WriteToken(Some((data, key))) = token {
             let ChannelKey(idx, _) = key;
             accumulator.insert(idx, data);
         } else {
-            accumulator.push(Bytes::default());
+            accumulator.push(Bytes::empty(self.message_len));
         }
         accumulator
     }
@@ -193,7 +194,7 @@ mod tests {
     const CHANNELS: usize = 3;
 
     fn protocols(channels: usize) -> impl Strategy<Value = InsecureProtocol> {
-        (2usize..100usize).prop_map(move |p| InsecureProtocol::new(p, channels))
+        (2usize..100usize).prop_map(move |p| InsecureProtocol::new(p, channels, 1))
     }
 
     fn keys(channels: usize) -> impl Strategy<Value = Vec<ChannelKey>> {
