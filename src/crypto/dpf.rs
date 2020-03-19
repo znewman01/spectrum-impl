@@ -9,11 +9,13 @@ use std::rc::Rc;
 /// Distributed Point Function
 /// Must generate a set of keys k_1, k_2, ...
 /// such that combine(eval(k_1), eval(k_2), ...) = e_i * msg
-pub trait DPF<Key> {
+pub trait DPF {
+    type Key;
+
     fn new(security_bytes: usize, num_keys: usize, num_points: usize) -> Self;
     /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
-    fn gen(&self, msg: Bytes, idx: usize) -> Vec<Key>;
-    fn eval(&self, key: &Key) -> Vec<Bytes>;
+    fn gen(&self, msg: Bytes, idx: usize) -> Vec<Self::Key>;
+    fn eval(&self, key: &Self::Key) -> Vec<Bytes>;
     fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes>;
 }
 
@@ -34,7 +36,9 @@ pub struct DPFKey {
     pub seeds: Vec<PRGSeed>,
 }
 
-impl DPF<DPFKey> for PRGBasedDPF {
+impl DPF for PRGBasedDPF {
+    type Key = DPFKey;
+
     fn new(security_bytes: usize, num_keys: usize, num_points: usize) -> PRGBasedDPF {
         PRGBasedDPF {
             security_bytes,

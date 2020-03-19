@@ -1,17 +1,33 @@
 //! Spectrum implementation.
 #![allow(dead_code)]
-use crate::crypto::dpf::{DPFKey, PRGBasedDPF};
+use crate::crypto::dpf::{PRGBasedDPF, DPF};
 use crate::crypto::field::FieldElement;
 use crate::crypto::lss::{SecretShare, LSS};
 use rug::rand::RandState;
 use std::fmt::Debug;
 
 // check_audit(gen_audit(gen_proof(...))) = TRUE
-pub trait VDPF<Key, AuthKey, ProofShare, Token> {
-    fn gen_proofs(&self, auth_key: &AuthKey, point_idx: usize, dpf_keys: &[Key])
-        -> Vec<ProofShare>;
-    fn gen_audit(&self, auth_keys: &[AuthKey], dpf_key: &Key, proof_share: &ProofShare) -> Token;
-    fn check_audit(&self, tokens: Vec<Token>) -> bool;
+pub trait VDPF {
+    type DPF: DPF;
+    type AuthKey;
+    type ProofShare;
+    type Token;
+
+    fn gen_proofs(
+        &self,
+        auth_key: &Self::AuthKey,
+        point_idx: usize,
+        dpf_keys: &[<Self::DPF as DPF>::Key],
+    ) -> Vec<Self::ProofShare>;
+
+    fn gen_audit(
+        &self,
+        auth_keys: &[Self::AuthKey],
+        dpf_key: &<Self::DPF as DPF>::Key,
+        proof_share: &Self::ProofShare,
+    ) -> Self::Token;
+
+    fn check_audit(&self, tokens: Vec<Self::Token>) -> bool;
 }
 
 /// DPF based on PRG
@@ -39,12 +55,17 @@ impl PRGBasedVDPF<'_> {
     }
 }
 
-impl VDPF<DPFKey, FieldElement, PRGProofShare, PRGAuditToken> for PRGBasedVDPF<'_> {
+impl VDPF for PRGBasedVDPF<'_> {
+    type DPF = PRGBasedDPF;
+    type AuthKey = FieldElement;
+    type ProofShare = PRGProofShare;
+    type Token = PRGAuditToken;
+
     fn gen_proofs(
         &self,
         auth_key: &FieldElement,
         point_idx: usize,
-        dpf_keys: &[DPFKey],
+        dpf_keys: &[<PRGBasedDPF as DPF>::Key],
     ) -> Vec<PRGProofShare> {
         // get the field from auth keys
         let field = auth_key.clone().field();
@@ -108,7 +129,7 @@ impl VDPF<DPFKey, FieldElement, PRGProofShare, PRGAuditToken> for PRGBasedVDPF<'
     fn gen_audit(
         &self,
         auth_keys: &[FieldElement],
-        dpf_key: &DPFKey,
+        dpf_key: &<PRGBasedDPF as DPF>::Key,
         proof_share: &PRGProofShare,
     ) -> PRGAuditToken {
         // get the field from auth keys
