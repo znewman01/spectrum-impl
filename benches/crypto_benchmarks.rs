@@ -4,10 +4,12 @@ extern crate criterion;
 use bytes::Bytes;
 use criterion::Criterion;
 use rug::Integer;
-use spectrum_impl::crypto::dpf::{PRGBasedDPF, DPF};
-use spectrum_impl::crypto::field::Field;
-use spectrum_impl::crypto::prg::PRG;
-use spectrum_impl::crypto::vdpf::{PRGBasedVDPF, VDPF};
+use spectrum_impl::crypto::{
+    dpf::{PRGBasedDPF, DPF},
+    field::Field,
+    prg::PRG,
+    vdpf::{PRGBasedVDPF, VDPF},
+};
 use std::rc::Rc;
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -23,7 +25,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("PRGBasedDPF eval benchmark", |b| {
         let eval_size: usize = 1 << 20; // approx 1MB
-        let dpf = PRGBasedDPF::new(16, 2, 1);
+        let dpf = PRGBasedDPF::new(PRG::new(), 16, 2, 1);
         let keys = dpf.gen(Bytes::from(vec![0; eval_size]), 0);
         b.iter(|| {
             // benchmark the DPF (PRG-based) evaluation time
@@ -35,7 +37,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let eval_size: usize = 1 << 20; // approx 1MB
         let point_idx = 0;
         let num_points = 1;
-        let dpf = PRGBasedDPF::new(16, 2, num_points);
+        let dpf = PRGBasedDPF::new(PRG::new(), 16, 2, num_points);
         let vdpf = PRGBasedVDPF::new(&dpf);
 
         // setup a field for the VDPF auth

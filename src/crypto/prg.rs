@@ -8,7 +8,7 @@ use std::rc::Rc;
 const SEED_SIZE: usize = 16; // 16 bytes for AES 128
 
 /// PRG uses AES to expand a seed to desired length
-#[derive(Default, Clone, PartialEq, Debug)]
+#[derive(Default, Clone, PartialEq, Debug, Copy)]
 pub struct PRG {}
 
 /// seed for a specific PRG
@@ -24,7 +24,7 @@ impl PRG {
     }
 
     /// generates a new (random) seed for the given PRG
-    pub fn new_seed(&self) -> PRGSeed {
+    pub fn new_seed(self) -> PRGSeed {
         // seed is just random bytes
         let mut key = vec![0; SEED_SIZE];
         thread_rng().fill_bytes(&mut key);
@@ -35,7 +35,7 @@ impl PRG {
     }
 
     /// evaluates the PRG on the given seed
-    pub fn eval(&self, seed: &PRGSeed, eval_size: usize) -> Bytes {
+    pub fn eval(self, seed: &PRGSeed, eval_size: usize) -> Bytes {
         assert!(
             SEED_SIZE <= eval_size,
             "eval size must be at least the seed size"

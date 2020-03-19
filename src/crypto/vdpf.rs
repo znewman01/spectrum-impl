@@ -1,8 +1,10 @@
 //! Spectrum implementation.
 #![allow(dead_code)]
-use crate::crypto::dpf::{PRGBasedDPF, DPF};
-use crate::crypto::field::FieldElement;
-use crate::crypto::lss::{SecretShare, LSS};
+use crate::crypto::{
+    dpf::{PRGBasedDPF, DPF},
+    field::FieldElement,
+    lss::{SecretShare, LSS},
+};
 use rug::rand::RandState;
 use std::fmt::Debug;
 
@@ -181,8 +183,7 @@ impl VDPF for PRGBasedVDPF<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::dpf::DPF;
-    use crate::crypto::field::Field;
+    use crate::crypto::{dpf::DPF, field::Field, prg::PRG};
     use bytes::Bytes;
     use proptest::prelude::*;
     use rug::Integer;
@@ -217,7 +218,8 @@ mod tests {
             let mut rng = RandState::new();
             let auth_keys = vec![FieldElement::rand_element(&mut rng, field); num_points];
 
-            let dpf = PRGBasedDPF::new(sec_bytes, num_servers, num_points);
+            let prg = PRG::new();
+            let dpf = PRGBasedDPF::new(prg, sec_bytes, num_servers, num_points);
             let vdpf = PRGBasedVDPF::new(&dpf);
 
             // generate dpf keys
