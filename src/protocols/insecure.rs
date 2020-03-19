@@ -192,9 +192,10 @@ mod tests {
     use proptest::prelude::*;
 
     const CHANNELS: usize = 3;
+    const MSG_LEN: usize = 10;
 
     fn protocols(channels: usize) -> impl Strategy<Value = InsecureProtocol> {
-        (2usize..100usize).prop_map(move |p| InsecureProtocol::new(p, channels, 1))
+        (2usize..100usize).prop_map(move |p| InsecureProtocol::new(p, channels, MSG_LEN))
     }
 
     fn keys(channels: usize) -> impl Strategy<Value = Vec<ChannelKey>> {
@@ -217,7 +218,7 @@ mod tests {
     }
 
     fn messages() -> impl Strategy<Value = Bytes> {
-        any::<Vec<u8>>().prop_map(Into::into)
+        proptest::collection::vec(any::<u8>(), MSG_LEN).prop_map(Into::into)
     }
 
     fn and_accumulators(
@@ -324,7 +325,7 @@ mod tests {
                 if msg_idx == idx {
                     assert_eq!(actual_msg, msg);
                 } else {
-                    assert_eq!(actual_msg, Bytes::default())
+                    assert_eq!(actual_msg, Bytes::empty(MSG_LEN))
                 }
             }
         }
