@@ -55,6 +55,6 @@ where
     }
 
     fn expand_write_token(&self, token: WriteToken) -> Vec<Bytes> {
-        self.to_accumulator(token.into())
+        self.to_accumulator(token.try_into().unwrap())
     }
 }

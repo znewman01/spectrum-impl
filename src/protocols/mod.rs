@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-use crate::proto;
-
 pub mod accumulator;
 pub mod insecure;
 pub mod table;
@@ -35,10 +32,9 @@ pub enum ChannelKeyWrapper {
 type Accumulator = Vec<Bytes>;
 
 pub trait Protocol {
-    // TODO: remove From/Into/Sync/Send bounds, as they are handled by ProtocolWrapper
-    type ChannelKey: Sync + Send;
-    type WriteToken: Sync + Send + From<proto::WriteToken> + Into<proto::WriteToken>;
-    type AuditShare: Sync + Send + From<proto::AuditShare> + Into<proto::AuditShare>;
+    type ChannelKey;
+    type WriteToken;
+    type AuditShare;
 
     // General protocol properties
     fn num_parties(&self) -> usize;
