@@ -1,6 +1,6 @@
 //! Spectrum implementation.
 #![allow(dead_code)]
-use crate::crypto::byte_utils::{xor_bytes, Bytes};
+use crate::crypto::byte_utils::Bytes;
 use crate::crypto::prg::PRG;
 use rand::Rng;
 use std::fmt::Debug;
@@ -14,8 +14,7 @@ pub trait DPF {
     fn num_points(&self) -> usize;
 
     /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
-    // TODO(zjn): should be &Bytes
-    fn gen(&self, msg: Bytes, idx: usize) -> Vec<Self::Key>;
+    fn gen(&self, msg: &Bytes, idx: usize) -> Vec<Self::Key>;
     fn eval(&self, key: &Self::Key) -> Vec<Bytes>;
     fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes>;
 }
@@ -84,7 +83,7 @@ where
     }
 
     /// generate new instance of PRG based DPF with two DPF keys
-    fn gen(&self, msg: Bytes, idx: usize) -> Vec<DPFKey<P>> {
+    fn gen(&self, msg: &Bytes, idx: usize) -> Vec<DPFKey<P>> {
         assert_eq!(self.num_keys, 2, "DPF only implemented for s=2.");
 
         let mut seeds_a = vec![];
@@ -109,8 +108,9 @@ where
             }
         }
 
-        let encoded_msg =
-            self.prg.eval(&seeds_a[idx], msg.len()) ^ self.prg.eval(&seeds_b[idx], msg.len()) ^ msg;
+        let encoded_msg = self.prg.eval(&seeds_a[idx], msg.len())
+            ^ &self.prg.eval(&seeds_b[idx], msg.len())
+            ^ msg;
 
         vec![
             DPFKey::<P>::new(encoded_msg.clone(), bits_a, seeds_a),
@@ -127,7 +127,7 @@ where
                 let mask = self.prg.eval(seed, key.encoded_msg.len());
 
                 if bits == 1 {
-                    key.encoded_msg.clone() ^ mask
+                    mask ^ &key.encoded_msg
                 } else {
                     mask
                 }
@@ -140,8 +140,8 @@ where
         // xor all the parts together
         let mut res = parts[0].clone();
         for part in parts.iter().skip(1) {
-            for j in 0..res.len() {
-                res[j] = xor_bytes(&res[j], &part[j]);
+            for (x, y) in res.iter_mut().zip(part.iter()) {
+                *x ^= y;
             }
         }
 
@@ -174,7 +174,7 @@ pub mod tests {
     where
         D: DPF,
     {
-        let dpf_keys = dpf.gen(data.clone(), index);
+        let dpf_keys = dpf.gen(&data, index);
         let dpf_shares = dpf_keys.iter().map(|k| dpf.eval(k)).collect();
         let dpf_output = dpf.combine(dpf_shares);
 

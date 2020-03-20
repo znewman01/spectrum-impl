@@ -89,6 +89,7 @@ mod tests {
     use proptest::prelude::*;
     use std::collections::HashSet;
     use std::fmt::Debug;
+    use std::iter::repeat_with;
     use std::ops::Range;
 
     const SIZES: Range<usize> = AES_SEED_SIZE..1000;
@@ -139,10 +140,7 @@ mod tests {
 
         #[test]
         fn test_aes_prg_eval_random(aes_prg in aes_prgs(), num_seeds in 0..10usize, size in SIZES) {
-            let mut seeds = vec![];
-            for _ in 0..num_seeds {
-                seeds.push(aes_prg.new_seed());
-            }
+            let seeds: Vec<_> = repeat_with(|| aes_prg.new_seed()).take(num_seeds).collect();
             run_test_prg_eval_random(aes_prg, &seeds, size);
         }
     }

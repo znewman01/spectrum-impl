@@ -52,10 +52,10 @@ impl FromIterator<u8> for Bytes {
     }
 }
 
-impl ops::BitXor<Bytes> for Bytes {
+impl ops::BitXor<&Bytes> for Bytes {
     type Output = Bytes;
 
-    fn bitxor(self, rhs: Bytes) -> Bytes {
+    fn bitxor(self, rhs: &Bytes) -> Bytes {
         assert_eq!(self.len(), rhs.len());
         self.0
             .iter()
@@ -65,8 +65,8 @@ impl ops::BitXor<Bytes> for Bytes {
     }
 }
 
-impl ops::BitXorAssign<Bytes> for Bytes {
-    fn bitxor_assign(&mut self, rhs: Bytes) {
+impl ops::BitXorAssign<&Bytes> for Bytes {
+    fn bitxor_assign(&mut self, rhs: &Bytes) {
         assert_eq!(self.len(), rhs.len());
         self.0
             .iter_mut()
@@ -77,12 +77,8 @@ impl ops::BitXorAssign<Bytes> for Bytes {
 
 /// xor bytes, a = a ^ b
 // TODO: (Performance) xor inplace rather than copying
+#[deprecated]
 pub fn xor_bytes(a: &Bytes, b: &Bytes) -> Bytes {
     assert_eq!(a.len(), b.len());
     a.0.iter().zip(b.0.iter()).map(|(&a, &b)| a ^ b).collect()
-}
-
-pub fn xor_bytes_list(parts: Vec<Bytes>) -> Bytes {
-    let zero = Bytes::empty(parts[0].len());
-    parts.iter().fold(zero, |a, b| xor_bytes(&a, &b))
 }

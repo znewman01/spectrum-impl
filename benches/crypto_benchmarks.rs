@@ -26,7 +26,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("PRGBasedDPF eval benchmark", |b| {
         let eval_size: usize = 1 << 20; // approx 1MB
         let dpf = PRGBasedDPF::new(AESPRG::new(), 16, 2, 1);
-        let keys = dpf.gen(Bytes::empty(eval_size), 0);
+        let keys = dpf.gen(&Bytes::empty(eval_size), 0);
         b.iter(|| {
             // benchmark the DPF (PRG-based) evaluation time
             dpf.eval(&keys[0]);
@@ -45,7 +45,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let field = Rc::<Field>::new(Field::new(p));
 
         // generate dpf keys
-        let dpf_keys = vdpf.gen(Bytes::empty(eval_size), point_idx);
+        let dpf_keys = vdpf.gen(&Bytes::empty(eval_size), point_idx);
 
         // generate null authentication keys for the vdpf
         let auth_keys = vec![field.zero(); num_points];

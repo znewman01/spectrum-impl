@@ -4,12 +4,13 @@ use tokio::sync::RwLock;
 use crate::crypto::byte_utils::Bytes;
 
 pub trait Accumulatable: Default {
+    // TODO: other should be a reference?
     fn combine(&mut self, other: Self);
 }
 
 impl Accumulatable for Bytes {
     fn combine(&mut self, other: Bytes) {
-        *self ^= other;
+        *self ^= &other;
     }
 }
 

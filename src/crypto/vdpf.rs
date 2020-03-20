@@ -201,7 +201,7 @@ mod tests {
     fn run_test_audit_check_correct<V>(
         vdpf: V,
         auth_keys: &[V::AuthKey],
-        data: Bytes,
+        data: &Bytes,
         point_idx: usize,
     ) where
         V: VDPF,
@@ -228,7 +228,7 @@ mod tests {
             let point_idx = point_idx.index(num_points);
             let auth_keys = make_auth_keys(num_points, field);
 
-            run_test_audit_check_correct(vdpf, &auth_keys, data, point_idx);
+            run_test_audit_check_correct(vdpf, &auth_keys, &data, point_idx);
         }
 
     }
