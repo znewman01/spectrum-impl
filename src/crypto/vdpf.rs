@@ -185,11 +185,7 @@ mod tests {
     fn make_auth_keys(num: usize, field: Field) -> Vec<FieldElement> {
         let field = Rc::new(field);
         let mut rng = RandState::new();
-        let mut auth_keys = vec![];
-        for _ in 0..num {
-            auth_keys.push(FieldElement::rand_element(&mut rng, field.clone()));
-        }
-        auth_keys
+        (0..num).map(|_| field.rand_element(&mut rng)).collect()
     }
 
     fn aes_prg_vdpfs() -> impl Strategy<Value = PRGBasedDPF<AESPRG>> {

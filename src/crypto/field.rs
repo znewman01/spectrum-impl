@@ -32,10 +32,21 @@ impl Field {
         Field { order }
     }
 
-    pub fn zero(self: Rc<Field>) -> FieldElement {
+    pub fn zero(self: &Rc<Field>) -> FieldElement {
         FieldElement {
             value: 0.into(),
-            field: self,
+            field: self.clone(),
+        }
+    }
+
+    // generates a new random field element
+    pub fn rand_element(self: &Rc<Field>, rng: &mut RandState) -> FieldElement {
+        // TODO: figure out how to generate a random value
+        let random = self.order.clone().random_below(rng);
+
+        FieldElement {
+            value: random,
+            field: self.clone(),
         }
     }
 }
@@ -50,17 +61,6 @@ impl FieldElement {
     }
 
     // generates a new random field element
-    pub fn rand_element(rng: &mut RandState, field: Rc<Field>) -> FieldElement {
-        // TODO: figure out how to generate a random value
-        let random = field.order.clone().random_below(rng);
-
-        FieldElement {
-            value: random,
-            field,
-        }
-    }
-
-    // generates a new random field element
     pub fn from_bytes(bytes: &Bytes, field: Rc<Field>) -> FieldElement {
         let byte_str = hex::encode(bytes);
         let val = Integer::from_str_radix(&byte_str, 16).unwrap();
@@ -70,8 +70,8 @@ impl FieldElement {
         }
     }
 
-    pub fn field(self) -> Rc<Field> {
-        self.field
+    pub fn field(&self) -> Rc<Field> {
+        self.field.clone()
     }
 }
 
@@ -194,10 +194,7 @@ mod tests {
         let field = Rc::<Field>::new(Field::new(p));
 
         let mut rng = RandState::new();
-        assert_ne!(
-            FieldElement::rand_element(&mut rng, field.clone()),
-            FieldElement::rand_element(&mut rng, field)
-        );
+        assert_ne!(field.rand_element(&mut rng), field.rand_element(&mut rng));
     }
 
     #[test]

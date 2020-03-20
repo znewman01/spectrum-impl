@@ -1,13 +1,13 @@
 //! Spectrum implementation.
-use crate::crypto::field::{Field, FieldElement};
+use crate::crypto::field::FieldElement;
 use rug::rand::RandState;
 use std::fmt::Debug;
+use std::iter::{once, repeat_with};
 use std::ops;
-use std::rc::Rc;
 
 /// message contains a vector of bytes representing data in spectrum
 /// and is used for easily performing binary operations over bytes
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SecretShare {
     value: FieldElement,
 }
@@ -26,23 +26,12 @@ impl LSS {
     pub fn share(value: FieldElement, n: usize, rng: &mut RandState) -> Vec<SecretShare> {
         assert!(n >= 2, "cannot split secret into fewer than two shares!");
 
-        let mut shares = Vec::<SecretShare>::new();
-        let mut rand_sum = FieldElement::new(0.into(), value.clone().field());
-
-        let field: Rc<Field> = value.clone().field();
-
-        // first share will be value + SUM r_i
-        shares.push(SecretShare::new(value));
-
-        for _ in 0..n - 1 {
-            let rand_i = FieldElement::rand_element(rng, field.clone());
-            shares.push(SecretShare::new(rand_i.clone()));
-            rand_sum += rand_i;
-        }
-
-        shares[0].value += rand_sum;
-
-        shares
+        let field = value.field();
+        let values: Vec<_> = repeat_with(|| field.rand_element(rng))
+            .take(n - 1)
+            .collect();
+        let sum = values.iter().fold(value, |a, b| a + b.clone());
+        once(sum).chain(values).map(SecretShare::new).collect()
     }
 
     pub fn recover(shares: Vec<SecretShare>) -> FieldElement {
@@ -52,22 +41,13 @@ impl LSS {
         );
 
         // recover the secret by subtracting the random shares (mask)
-        let mut secret = shares[0].value.clone();
-        for share in shares.iter().skip(1) {
-            secret -= share.value.clone();
-        }
-
-        secret
+        shares
+            .iter()
+            .skip(1)
+            .fold(shares[0].value.clone(), |a, b| a - b.value.clone())
     }
 }
 
-impl PartialEq for SecretShare {
-    fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
-    }
-}
-
-/// override + operation: want operation over the field value and sequence of operations to be updated
 impl ops::Add<SecretShare> for SecretShare {
     type Output = SecretShare;
 
