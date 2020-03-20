@@ -9,7 +9,7 @@ use crate::{
     experiment,
     experiment::Experiment,
     net::get_addr,
-    protocols::{accumulator::Accumulator},
+    protocols::accumulator::Accumulator,
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},

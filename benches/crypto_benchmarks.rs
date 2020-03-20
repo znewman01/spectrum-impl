@@ -25,19 +25,17 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("PRGBasedDPF eval benchmark", |b| {
         let eval_size: usize = 1 << 20; // approx 1MB
-        let dpf = PRGBasedDPF::new(AESPRG::new(), 16, 2, 1);
+        let dpf = PRGBasedDPF::new(AESPRG::new(), 2, 1);
         let keys = dpf.gen(&Bytes::empty(eval_size), 0);
-        b.iter(|| {
-            // benchmark the DPF (PRG-based) evaluation time
-            dpf.eval(&keys[0]);
-        })
+        // benchmark the DPF (PRG-based) evaluation time
+        b.iter(|| dpf.eval(&keys[0]))
     });
 
     c.bench_function("gen_audit", |b| {
         let eval_size: usize = 1 << 20; // approx 1MB
         let point_idx = 0;
         let num_points = 1;
-        let vdpf = PRGBasedDPF::new(AESPRG::new(), 16, 2, num_points);
+        let vdpf = PRGBasedDPF::new(AESPRG::new(), 2, num_points);
 
         // setup a field for the VDPF auth
         let mut p = Integer::from(800_000_000);

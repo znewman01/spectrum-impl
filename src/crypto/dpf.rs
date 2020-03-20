@@ -23,7 +23,6 @@ pub trait DPF {
 #[derive(Clone, PartialEq, Debug)]
 pub struct PRGBasedDPF<P> {
     prg: P,
-    security_bytes: usize,
     num_keys: usize,
     num_points: usize,
 }
@@ -56,15 +55,9 @@ where
 }
 
 impl<P> PRGBasedDPF<P> {
-    pub fn new(
-        prg: P,
-        security_bytes: usize,
-        num_keys: usize,
-        num_points: usize,
-    ) -> PRGBasedDPF<P> {
+    pub fn new(prg: P, num_keys: usize, num_points: usize) -> PRGBasedDPF<P> {
         PRGBasedDPF {
             prg,
-            security_bytes,
             num_keys,
             num_points,
         }
@@ -157,13 +150,11 @@ pub mod tests {
 
     const DATA_SIZE: usize = 1 << 10;
     const MAX_NUM_POINTS: usize = 20;
-    const SECURITY_BYTES: usize = 16;
 
     pub fn aes_prg_dpfs() -> impl Strategy<Value = PRGBasedDPF<AESPRG>> {
         let prg = AESPRG::new();
         let num_keys = 2; // PRG DPF implementation handles only 2 keys.
-        (1..MAX_NUM_POINTS)
-            .prop_map(move |num_points| PRGBasedDPF::new(prg, SECURITY_BYTES, num_keys, num_points))
+        (1..MAX_NUM_POINTS).prop_map(move |num_points| PRGBasedDPF::new(prg, num_keys, num_points))
     }
 
     fn data() -> impl Strategy<Value = Bytes> {
