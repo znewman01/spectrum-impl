@@ -1,28 +1,8 @@
 pub mod accumulator;
 pub mod insecure;
-pub mod table;
 pub mod wrapper;
 
-#[derive(Default, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Bytes(Vec<u8>);
-
-impl Bytes {
-    fn empty(len: usize) -> Bytes {
-        Bytes(vec![0; len])
-    }
-}
-
-impl From<Vec<u8>> for Bytes {
-    fn from(other: Vec<u8>) -> Self {
-        Bytes(other)
-    }
-}
-
-impl Into<Vec<u8>> for Bytes {
-    fn into(self) -> Vec<u8> {
-        self.0
-    }
-}
+use crate::crypto::byte_utils::Bytes;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum ChannelKeyWrapper {

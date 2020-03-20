@@ -1,5 +1,5 @@
 //! Spectrum implementation.
-use bytes::Bytes;
+use crate::crypto::byte_utils::Bytes;
 use rug::{integer::IsPrime, rand::RandState, Integer};
 use std::cmp::Ordering;
 use std::fmt::Debug;
@@ -10,6 +10,12 @@ use std::rc::Rc;
 #[derive(Clone, PartialEq, Debug)]
 pub struct Field {
     order: Integer,
+}
+
+impl From<Integer> for Field {
+    fn from(value: Integer) -> Field {
+        Field::new(value)
+    }
 }
 
 /// element in a prime order field
@@ -49,6 +55,16 @@ impl Field {
             field: self.clone(),
         }
     }
+
+    pub fn from_bytes(self: Rc<Field>, bytes: &Bytes) -> FieldElement {
+        // TODO: fix this
+        let byte_str = hex::encode(bytes);
+        let val = Integer::from_str_radix(&byte_str, 16).unwrap();
+        FieldElement {
+            value: val % self.order.clone(),
+            field: self,
+        }
+    }
 }
 
 impl FieldElement {
@@ -56,16 +72,6 @@ impl FieldElement {
     pub fn new(v: Integer, field: Rc<Field>) -> FieldElement {
         FieldElement {
             value: reduce_modulo(v, field.order.clone()),
-            field,
-        }
-    }
-
-    // generates a new random field element
-    pub fn from_bytes(bytes: &Bytes, field: Rc<Field>) -> FieldElement {
-        let byte_str = hex::encode(bytes);
-        let val = Integer::from_str_radix(&byte_str, 16).unwrap();
-        FieldElement {
-            value: val % field.order.clone(),
             field,
         }
     }

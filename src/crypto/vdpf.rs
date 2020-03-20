@@ -125,12 +125,11 @@ impl VDPF for PRGBasedDPF<AESPRG> {
         let field = auth_keys
             .first()
             .expect("need at least one auth key")
-            .clone()
             .field();
 
         // init to zero
-        let mut res_seed = field.clone().zero();
-        let mut res_bit = field.clone().zero();
+        let mut res_seed = field.zero();
+        let mut res_bit = field.zero();
 
         for (i, (seed, bit)) in dpf_key.seeds.iter().zip(dpf_key.bits.iter()).enumerate() {
             assert!(*bit == 0 || *bit == 1);
@@ -150,7 +149,7 @@ impl VDPF for PRGBasedDPF<AESPRG> {
         seed_check_share = seed_check_share + res_seed;
 
         // TODO(sss): actually hash the message?
-        let data_check_share = FieldElement::from_bytes(&(*dpf_key).encoded_msg, field);
+        let data_check_share = field.from_bytes(&dpf_key.encoded_msg);
 
         // evaluate the compressed DPF for the given dpf_key
         PRGAuditToken {
@@ -170,41 +169,33 @@ impl VDPF for PRGBasedDPF<AESPRG> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::field::Field;
-    use bytes::Bytes;
+    use crate::crypto::{byte_utils::Bytes, field::Field};
     use proptest::prelude::*;
     use rug::Integer;
+    use std::iter::repeat_with;
+    use std::ops::Range;
     use std::rc::Rc;
 
-    const MAX_NUM_POINTS: usize = 100;
-    const MAX_SECURITY: usize = 100; // in bytes
-    const MIN_SECURITY: usize = 16; // in bytes
-    const MAX_DATA_SIZE: usize = MAX_SECURITY * 3; // in bytes
-    const MIN_DATA_SIZE: usize = MAX_SECURITY; // in bytes
+    use crate::crypto::dpf::tests::aes_prg_dpfs;
+
+    const DATA_SIZE: Range<usize> = 100..300; // in bytes
 
     fn make_auth_keys(num: usize, field: Field) -> Vec<FieldElement> {
         let field = Rc::new(field);
         let mut rng = RandState::new();
-        (0..num).map(|_| field.rand_element(&mut rng)).collect()
+        repeat_with(|| field.rand_element(&mut rng))
+            .take(num)
+            .collect()
     }
 
-    fn aes_prg_vdpfs() -> impl Strategy<Value = PRGBasedDPF<AESPRG>> {
-        // TODO: just use dpf::tests::aes_prg_dpfs()
-        let prg = AESPRG::new();
-        let num_keys = 2; // PRG DPF implementation handles only 2 keys.
-        (1..MAX_NUM_POINTS, MIN_SECURITY..MAX_SECURITY).prop_map(move |(num_points, sec_bytes)| {
-            PRGBasedDPF::new(prg, sec_bytes, num_keys, num_points)
-        })
-    }
-
-    fn num_points_and_point_index() -> impl Strategy<Value = (usize, usize)> {
-        (1..MAX_NUM_POINTS).prop_flat_map(|num_points| (Just(num_points), 0..num_points))
+    fn data() -> impl Strategy<Value = Bytes> {
+        prop::collection::vec(any::<u8>(), DATA_SIZE).prop_map(Bytes::from)
     }
 
     fn fields() -> impl Strategy<Value = Field> {
         let mut p = Integer::from(800_000_000);
         p.next_prime_mut();
-        Just(Field::new(p))
+        Just(p.into())
     }
 
     fn run_test_audit_check_correct<V>(
@@ -228,14 +219,13 @@ mod tests {
     proptest! {
         #[test]
         fn test_audit_check_correct(
-            vdpf in aes_prg_vdpfs(),
-            data_size_in_bytes in MIN_DATA_SIZE..MAX_DATA_SIZE,
+            vdpf in aes_prg_dpfs(),
+            data in data(),
             point_idx in any::<proptest::sample::Index>(),
             field in fields()
         ) {
             let num_points = vdpf.num_points();
             let point_idx = point_idx.index(num_points);
-            let data = Bytes::from(vec![0; data_size_in_bytes]);  // TODO: should be param
             let auth_keys = make_auth_keys(num_points, field);
 
             run_test_audit_check_correct(vdpf, &auth_keys, data, point_idx);

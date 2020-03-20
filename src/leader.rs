@@ -6,9 +6,10 @@ use crate::proto::{
 };
 use crate::{
     config::store::Store,
+    crypto::byte_utils::Bytes,
     experiment::Experiment,
     net::get_addr,
-    protocols::{accumulator::Accumulator, Bytes},
+    protocols::{accumulator::Accumulator},
     services::{
         discovery::{register, resolve_all, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},

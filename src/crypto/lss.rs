@@ -56,6 +56,12 @@ impl ops::Add<SecretShare> for SecretShare {
     }
 }
 
+impl ops::AddAssign<SecretShare> for SecretShare {
+    fn add_assign(&mut self, other: SecretShare) {
+        self.value += other.value;
+    }
+}
+
 /// override - operation: want operation over the field value and sequence of operations to be updated
 impl ops::Sub<SecretShare> for SecretShare {
     type Output = SecretShare;

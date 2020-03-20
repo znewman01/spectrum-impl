@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use tokio::sync::RwLock;
 
-use crate::protocols::Bytes;
+use crate::crypto::byte_utils::Bytes;
 
 pub trait Accumulatable: Default {
     fn combine(&mut self, other: Self);
@@ -9,8 +9,7 @@ pub trait Accumulatable: Default {
 
 impl Accumulatable for Bytes {
     fn combine(&mut self, other: Bytes) {
-        assert_eq!(self.0.len(), other.0.len());
-        self.0.iter_mut().zip(other.0).for_each(|(x, y)| *x ^= y);
+        *self ^= other;
     }
 }
 

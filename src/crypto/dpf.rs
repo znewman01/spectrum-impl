@@ -1,8 +1,7 @@
 //! Spectrum implementation.
 #![allow(dead_code)]
-use crate::crypto::byte_utils::xor_bytes;
+use crate::crypto::byte_utils::{xor_bytes, Bytes};
 use crate::crypto::prg::PRG;
-use bytes::Bytes;
 use rand::Rng;
 use std::fmt::Debug;
 
@@ -88,11 +87,10 @@ where
     fn gen(&self, msg: Bytes, idx: usize) -> Vec<DPFKey<P>> {
         assert_eq!(self.num_keys, 2, "DPF only implemented for s=2.");
 
-        // make a new PRG going from security -> length of the Bytes
-        let mut seeds_a = Vec::new();
-        let mut seeds_b = Vec::new();
-        let mut bits_a: Vec<u8> = Vec::new();
-        let mut bits_b: Vec<u8> = Vec::new();
+        let mut seeds_a = vec![];
+        let mut seeds_b = vec![];
+        let mut bits_a: Vec<u8> = vec![];
+        let mut bits_b: Vec<u8> = vec![];
 
         // generate the values distributed to servers A and B
         for j in 0..self.num_points {
@@ -103,8 +101,7 @@ where
             bits_a.push(bit);
 
             if j == idx {
-                let seed_prime = self.prg.new_seed();
-                seeds_b.push(seed_prime);
+                seeds_b.push(self.prg.new_seed());
                 bits_b.push(1 - bit);
             } else {
                 seeds_b.push(seed.clone());
@@ -112,14 +109,8 @@ where
             }
         }
 
-        // compute G(seed_a) XOR G(seed_b) for the ith seed
-        let xor_eval = xor_bytes(
-            &self.prg.eval(&seeds_a[idx], msg.len()),
-            &self.prg.eval(&seeds_b[idx], msg.len()),
-        );
-
-        // compute m XOR G(seed_a) XOR G(seed_b)
-        let encoded_msg = xor_bytes(&msg, &xor_eval);
+        let encoded_msg =
+            self.prg.eval(&seeds_a[idx], msg.len()) ^ self.prg.eval(&seeds_b[idx], msg.len()) ^ msg;
 
         vec![
             DPFKey::<P>::new(encoded_msg.clone(), bits_a, seeds_a),
@@ -133,12 +124,12 @@ where
             .iter()
             .zip(key.bits.iter())
             .map(|(seed, &bits)| {
-                let prg_eval_i = self.prg.eval(seed, key.encoded_msg.len());
+                let mask = self.prg.eval(seed, key.encoded_msg.len());
 
                 if bits == 1 {
-                    xor_bytes(&key.encoded_msg.clone(), &prg_eval_i)
+                    key.encoded_msg.clone() ^ mask
                 } else {
-                    prg_eval_i
+                    mask
                 }
             })
             .collect()
@@ -159,7 +150,7 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::crypto::prg::AESPRG;
     use proptest::prelude::*;
@@ -168,15 +159,11 @@ mod tests {
     const MAX_NUM_POINTS: usize = 20;
     const SECURITY_BYTES: usize = 16;
 
-    fn aes_prg_dpfs() -> impl Strategy<Value = PRGBasedDPF<AESPRG>> {
+    pub fn aes_prg_dpfs() -> impl Strategy<Value = PRGBasedDPF<AESPRG>> {
         let prg = AESPRG::new();
         let num_keys = 2; // PRG DPF implementation handles only 2 keys.
         (1..MAX_NUM_POINTS)
             .prop_map(move |num_points| PRGBasedDPF::new(prg, SECURITY_BYTES, num_keys, num_points))
-    }
-
-    fn num_points_and_index() -> impl Strategy<Value = (usize, usize)> {
-        (1..MAX_NUM_POINTS).prop_flat_map(|num_points| (Just(num_points), 0..num_points))
     }
 
     fn data() -> impl Strategy<Value = Bytes> {

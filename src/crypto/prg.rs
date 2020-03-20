@@ -1,6 +1,8 @@
 //! Spectrum implementation.
-use crate::crypto::field::{Field, FieldElement};
-use bytes::Bytes;
+use crate::crypto::{
+    byte_utils::Bytes,
+    field::{Field, FieldElement},
+};
 use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;
 use std::rc::Rc;
@@ -26,7 +28,7 @@ pub struct AESSeed {
 
 impl AESSeed {
     pub fn to_field_element(&self, field: Rc<Field>) -> FieldElement {
-        FieldElement::from_bytes(&self.bytes, field)
+        field.from_bytes(&self.bytes)
     }
 }
 
@@ -69,7 +71,7 @@ impl PRG for AESPRG {
         let cipher = Cipher::aes_128_ctr();
         let mut ciphertext = encrypt(
             cipher,
-            &seed.bytes, // use seed bytes as the AES "key"
+            seed.bytes.as_ref(), // use seed bytes as the AES "key"
             Some(&iv),
             &data,
         )
