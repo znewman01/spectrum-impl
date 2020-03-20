@@ -48,6 +48,10 @@ where
 {
     // generates a new DPF key with the necessary parameters needed for evaluation
     fn new(encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<P::Seed>) -> PRGKey<P> {
+        assert!(
+            bits.iter().all(|b| *b == 0 || *b == 1),
+            "All bits must be 0 or 1"
+        );
         PRGKey {
             encoded_msg,
             bits,

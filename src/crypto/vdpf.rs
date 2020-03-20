@@ -49,6 +49,22 @@ pub struct FieldProofShare {
     seed: SecretShare,
 }
 
+impl FieldProofShare {
+    fn share(
+        bit_proof: FieldElement,
+        seed_proof: FieldElement,
+        len: usize,
+    ) -> Vec<FieldProofShare> {
+        let mut rng = RandState::new();
+        let bits = LSS::share(bit_proof, len, &mut rng);
+        let seeds = LSS::share(seed_proof, len, &mut rng);
+        bits.into_iter()
+            .zip(seeds.into_iter())
+            .map(|(bit, seed)| FieldProofShare { bit, seed })
+            .collect()
+    }
+}
+
 #[derive(Debug)]
 pub struct FieldVDPF<D> {
     dpf: D,
@@ -97,56 +113,33 @@ impl VDPF for FieldVDPF<PRGDPF<AESPRG>> {
         point_idx: usize,
         dpf_keys: &[<Self as DPF>::Key],
     ) -> Vec<FieldProofShare> {
-        // get the field from auth keys
-        let field = auth_key.clone().field();
-
         assert_eq!(dpf_keys.len(), 2, "not implemented");
 
         let dpf_key_a = dpf_keys[0].clone();
         let dpf_key_b = dpf_keys[1].clone();
 
-        let mut res_seed_a = field.zero();
-        let mut res_seed_b = field.zero();
-
-        /* 1) generate the proof using the DPF keys and the channel key */
-        let mut proof_correction = 1;
-
-        for (i, (seed, bit)) in dpf_key_a
+        // 1) generate the proof using the DPF keys and the channel key
+        let res_seed = dpf_key_a
             .seeds
             .iter()
-            .zip(dpf_key_a.bits.iter())
-            .enumerate()
-        {
-            assert!(*bit == 0 || *bit == 1);
-            res_seed_a += seed.to_field_element(field.clone());
+            .map(|s| s.to_field_element(self.field.clone()))
+            .fold(self.field.zero(), |x, y| x + y);
+        let res_seed = dpf_key_b
+            .seeds
+            .iter()
+            .map(|s| s.to_field_element(self.field.clone()))
+            .fold(res_seed, |x, y| x - y);
 
-            // If the bit is `1` for server A
-            // then we need to negate the share
-            // so as to ensure that (bit_A - bit_B = 1)*key = -key and not key
-            if i == point_idx && *bit == 1 {
-                proof_correction = -1;
-            }
-        }
+        // If the bit is `1` for server A, then we need to negate the share
+        // to ensure that (bit_A - bit_B = 1)*key = -key and not key
+        let bit_proof = if dpf_key_a.bits[point_idx] == 1 {
+            -auth_key.clone()
+        } else {
+            auth_key.clone()
+        };
+        let seed_proof = auth_key.clone() * res_seed;
 
-        for (seed, bit) in dpf_key_b.seeds.iter().zip(dpf_key_b.bits.iter()) {
-            assert!(*bit == 0 || *bit == 1);
-            res_seed_b += seed.to_field_element(field.clone());
-        }
-
-        /* 2) split the proof into secret shares */
-
-        let bit_proof = auth_key.clone() * FieldElement::new(proof_correction.into(), field);
-        let seed_proof = auth_key.clone() * (res_seed_a - res_seed_b);
-
-        let mut rng = RandState::new();
-        let bit_proof_shares = LSS::share(bit_proof, dpf_keys.len(), &mut rng);
-        let seed_proof_shares = LSS::share(seed_proof, dpf_keys.len(), &mut rng);
-
-        bit_proof_shares
-            .into_iter()
-            .zip(seed_proof_shares.into_iter())
-            .map(|(bit, seed)| FieldProofShare { bit, seed })
-            .collect()
+        FieldProofShare::share(bit_proof, seed_proof, self.num_keys())
     }
 
     fn gen_proofs_noop(&self, dpf_keys: &[<Self as DPF>::Key]) -> Vec<Self::ProofShare> {
@@ -243,6 +236,20 @@ mod tests {
         assert!(vdpf.check_audit(audit_tokens));
     }
 
+    fn run_test_audit_check_correct_for_noop<V>(vdpf: V, auth_keys: &[V::AuthKey], data_size: usize)
+    where
+        V: VDPF,
+    {
+        let dpf_keys = vdpf.gen(&Bytes::empty(data_size), vdpf.num_points());
+        let proof_shares = vdpf.gen_proofs_noop(&dpf_keys);
+        let audit_tokens = dpf_keys
+            .iter()
+            .zip(proof_shares.iter())
+            .map(|(dpf_key, proof_share)| vdpf.gen_audit(&auth_keys, dpf_key, proof_share))
+            .collect();
+        assert!(vdpf.check_audit(audit_tokens));
+    }
+
     proptest! {
         #[test]
         fn test_audit_check_correct(
@@ -255,6 +262,16 @@ mod tests {
             let auth_keys = make_auth_keys(num_points, vdpf.field.clone());
 
             run_test_audit_check_correct(vdpf, &auth_keys, &data, point_idx);
+        }
+
+        fn test_audit_check_correct_for_noop(
+            vdpf in aes_prg_vdpfs(),
+            data_size in DATA_SIZE,
+        ) {
+            let num_points = vdpf.num_points();
+            let auth_keys = make_auth_keys(num_points, vdpf.field.clone());
+
+            run_test_audit_check_correct_for_noop(vdpf, &auth_keys, data_size);
         }
 
     }

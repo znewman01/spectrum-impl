@@ -45,6 +45,10 @@ impl Field {
         }
     }
 
+    pub fn new_element(self: &Rc<Field>, value: Integer) -> FieldElement {
+        FieldElement::new(value, self.clone())
+    }
+
     // generates a new random field element
     pub fn rand_element(self: &Rc<Field>, rng: &mut RandState) -> FieldElement {
         // TODO: figure out how to generate a random value
