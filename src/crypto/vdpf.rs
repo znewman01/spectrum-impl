@@ -1,7 +1,7 @@
 //! Spectrum implementation.
 #![allow(dead_code)]
+use crate::bytes::Bytes;
 use crate::crypto::{
-    byte_utils::Bytes,
     dpf::{PRGBasedDPF, DPF},
     field::{Field, FieldElement},
     lss::{SecretShare, LSS},
@@ -214,7 +214,7 @@ impl VDPF for DPFVDPF<PRGBasedDPF<AESPRG>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::{byte_utils::Bytes, field::Field};
+    use crate::crypto::field::Field;
     use proptest::prelude::*;
     use rug::Integer;
     use std::iter::repeat_with;

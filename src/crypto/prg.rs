@@ -1,8 +1,6 @@
 //! Spectrum implementation.
-use crate::crypto::{
-    byte_utils::Bytes,
-    field::{Field, FieldElement},
-};
+use crate::bytes::Bytes;
+use crate::crypto::field::{Field, FieldElement};
 use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;
 use std::rc::Rc;

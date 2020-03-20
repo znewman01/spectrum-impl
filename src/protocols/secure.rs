@@ -1,5 +1,5 @@
+use crate::bytes::Bytes;
 use crate::crypto::{
-    byte_utils::Bytes,
     dpf::{PRGBasedDPF, DPF},
     field::Field,
     prg::AESPRG,
@@ -55,7 +55,6 @@ impl<V: VDPF> SecureProtocol<V> {
 impl SecureProtocol<DPFVDPF<PRGBasedDPF<AESPRG>>> {
     #[allow(dead_code)]
     fn with_aes_prg_dpf(sec_bytes: u32, parties: usize, channels: usize, msg_size: usize) -> Self {
-        // TODO(sss) [important]: sample random prime of the correct security bytes
         let prime: Integer = (Integer::from(2) << sec_bytes).next_prime_ref().into();
         let field = Rc::new(Field::from(prime));
         let vdpf = DPFVDPF::new(PRGBasedDPF::new(AESPRG::new(), parties, channels), field);

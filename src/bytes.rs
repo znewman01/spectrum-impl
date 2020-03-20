@@ -1,5 +1,4 @@
 //! Spectrum implementation.
-// TODO: move this to src/bytes.rs
 use bytes::Bytes as OtherBytes;
 use std::convert::AsRef;
 use std::iter::FromIterator;
@@ -73,12 +72,4 @@ impl ops::BitXorAssign<&Bytes> for Bytes {
             .zip(rhs.0.iter())
             .for_each(|(x, y)| *x ^= y);
     }
-}
-
-/// xor bytes, a = a ^ b
-// TODO: (Performance) xor inplace rather than copying
-#[deprecated]
-pub fn xor_bytes(a: &Bytes, b: &Bytes) -> Bytes {
-    assert_eq!(a.len(), b.len());
-    a.0.iter().zip(b.0.iter()).map(|(&a, &b)| a ^ b).collect()
 }

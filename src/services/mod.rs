@@ -4,7 +4,7 @@ pub mod quorum;
 mod retry;
 
 use crate::proto::{ClientId, WorkerId};
-use crate::{crypto::byte_utils::Bytes, protocols::ChannelKeyWrapper};
+use crate::{bytes::Bytes, protocols::ChannelKeyWrapper};
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Group {

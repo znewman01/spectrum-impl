@@ -3,7 +3,7 @@ pub mod insecure;
 pub mod secure;
 pub mod wrapper;
 
-use crate::crypto::byte_utils::Bytes;
+use crate::bytes::Bytes;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum ChannelKeyWrapper {

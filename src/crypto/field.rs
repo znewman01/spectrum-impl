@@ -1,5 +1,5 @@
 //! Spectrum implementation.
-use crate::crypto::byte_utils::Bytes;
+use crate::bytes::Bytes;
 use rug::{integer::IsPrime, rand::RandState, Integer};
 use std::cmp::Ordering;
 use std::fmt::Debug;

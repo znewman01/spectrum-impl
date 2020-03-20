@@ -14,6 +14,7 @@ pub mod worker;
 pub mod config;
 pub mod experiment;
 mod net;
+pub mod bytes;
 pub mod services;
 mod proto {
     use tonic::Status;

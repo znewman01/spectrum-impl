@@ -3,12 +3,14 @@ extern crate criterion;
 
 use criterion::Criterion;
 use rug::Integer;
-use spectrum_impl::crypto::{
-    byte_utils::Bytes,
-    dpf::{PRGBasedDPF, DPF},
-    field::Field,
-    prg::{AESPRG, PRG},
-    vdpf::{DPFVDPF, VDPF},
+use spectrum_impl::{
+    bytes::Bytes,
+    crypto::{
+        dpf::{PRGBasedDPF, DPF},
+        field::Field,
+        prg::{AESPRG, PRG},
+        vdpf::{DPFVDPF, VDPF},
+    },
 };
 use std::rc::Rc;
 

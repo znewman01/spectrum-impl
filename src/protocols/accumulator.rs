@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use tokio::sync::RwLock;
 
-use crate::crypto::byte_utils::Bytes;
+use crate::bytes::Bytes;
 
 pub trait Accumulatable: Default {
     // TODO: other should be a reference?

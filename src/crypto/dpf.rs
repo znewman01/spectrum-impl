@@ -1,6 +1,6 @@
 //! Spectrum implementation.
 #![allow(dead_code)]
-use crate::crypto::byte_utils::Bytes;
+use crate::bytes::Bytes;
 use crate::crypto::prg::PRG;
 use rand::Rng;
 use std::fmt::Debug;

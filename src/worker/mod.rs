@@ -6,7 +6,7 @@ use crate::proto::{
 };
 use crate::{
     config::store::Store,
-    crypto::byte_utils::Bytes,
+    bytes::Bytes,
     experiment::Experiment,
     net::get_addr,
     protocols::accumulator::Accumulator,
