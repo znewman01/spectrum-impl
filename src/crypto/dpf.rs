@@ -23,15 +23,15 @@ pub trait DPF {
 
 /// DPF based on PRG
 #[derive(Clone, PartialEq, Debug)]
-pub struct PRGBasedDPF<P> {
+pub struct PRGDPF<P> {
     prg: P,
     num_keys: usize,
     num_points: usize,
 }
 
-// DPF key for PRGBasedDPF
+// DPF key for PRGDPF
 #[derive(Clone, PartialEq, Debug)]
-pub struct DPFKey<P>
+pub struct PRGKey<P>
 where
     P: PRG,
     P::Seed: Clone + PartialEq + Eq + Debug,
@@ -41,14 +41,14 @@ where
     pub seeds: Vec<<P as PRG>::Seed>,
 }
 
-impl<P> DPFKey<P>
+impl<P> PRGKey<P>
 where
     P: PRG,
     P::Seed: Clone + PartialEq + Eq + Debug,
 {
     // generates a new DPF key with the necessary parameters needed for evaluation
-    fn new(encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<P::Seed>) -> DPFKey<P> {
-        DPFKey {
+    fn new(encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<P::Seed>) -> PRGKey<P> {
+        PRGKey {
             encoded_msg,
             bits,
             seeds,
@@ -56,9 +56,9 @@ where
     }
 }
 
-impl<P> PRGBasedDPF<P> {
-    pub fn new(prg: P, num_keys: usize, num_points: usize) -> PRGBasedDPF<P> {
-        PRGBasedDPF {
+impl<P> PRGDPF<P> {
+    pub fn new(prg: P, num_keys: usize, num_points: usize) -> PRGDPF<P> {
+        PRGDPF {
             prg,
             num_keys,
             num_points,
@@ -66,12 +66,12 @@ impl<P> PRGBasedDPF<P> {
     }
 }
 
-impl<P> DPF for PRGBasedDPF<P>
+impl<P> DPF for PRGDPF<P>
 where
     P: PRG,
     P::Seed: Clone + PartialEq + Eq + Debug,
 {
-    type Key = DPFKey<P>;
+    type Key = PRGKey<P>;
 
     fn num_points(&self) -> usize {
         self.num_points
@@ -82,7 +82,7 @@ where
     }
 
     /// generate new instance of PRG based DPF with two DPF keys
-    fn gen(&self, msg: &Bytes, point_idx: usize) -> Vec<DPFKey<P>> {
+    fn gen(&self, msg: &Bytes, point_idx: usize) -> Vec<PRGKey<P>> {
         assert_eq!(self.num_keys, 2, "DPF only implemented for s=2.");
 
         let seeds_a: Vec<_> = repeat_with(|| self.prg.new_seed())
@@ -102,13 +102,13 @@ where
             ^ msg;
 
         vec![
-            DPFKey::new(encoded_msg.clone(), bits_a, seeds_a),
-            DPFKey::new(encoded_msg, bits_b, seeds_b),
+            PRGKey::new(encoded_msg.clone(), bits_a, seeds_a),
+            PRGKey::new(encoded_msg, bits_b, seeds_b),
         ]
     }
 
-    /// evaluates the DPF on a given DPFKey and outputs the resulting data
-    fn eval(&self, key: &DPFKey<P>) -> Vec<Bytes> {
+    /// evaluates the DPF on a given PRGKey and outputs the resulting data
+    fn eval(&self, key: &PRGKey<P>) -> Vec<Bytes> {
         key.seeds
             .iter()
             .zip(key.bits.iter())
@@ -147,10 +147,10 @@ pub mod tests {
     const DATA_SIZE: usize = 1 << 10;
     const MAX_NUM_POINTS: usize = 20;
 
-    pub fn aes_prg_dpfs() -> impl Strategy<Value = PRGBasedDPF<AESPRG>> {
+    pub fn aes_prg_dpfs() -> impl Strategy<Value = PRGDPF<AESPRG>> {
         let prg = AESPRG::new();
         let num_keys = 2; // PRG DPF implementation handles only 2 keys.
-        (1..MAX_NUM_POINTS).prop_map(move |num_points| PRGBasedDPF::new(prg, num_keys, num_points))
+        (1..MAX_NUM_POINTS).prop_map(move |num_points| PRGDPF::new(prg, num_keys, num_points))
     }
 
     fn data() -> impl Strategy<Value = Bytes> {

@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 use crate::bytes::Bytes;
 use crate::crypto::{
-    dpf::{PRGBasedDPF, DPF},
+    dpf::{DPF, PRGDPF},
     field::{Field, FieldElement},
     lss::{SecretShare, LSS},
     prg::AESPRG,
@@ -37,32 +37,32 @@ pub trait VDPF: DPF {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct PRGAuditToken {
-    bit_check_share: SecretShare,
-    seed_check_share: SecretShare,
-    data_check_share: FieldElement,
+pub struct FieldToken {
+    bit: SecretShare,
+    seed: SecretShare,
+    data: FieldElement,
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct PRGProofShare {
-    bit_proof_share: SecretShare,
-    seed_proof_share: SecretShare,
+pub struct FieldProofShare {
+    bit: SecretShare,
+    seed: SecretShare,
 }
 
 #[derive(Debug)]
-pub struct DPFVDPF<D> {
+pub struct FieldVDPF<D> {
     dpf: D,
     field: Rc<Field>,
 }
 
-impl<D> DPFVDPF<D> {
+impl<D> FieldVDPF<D> {
     pub fn new(dpf: D, field: Rc<Field>) -> Self {
-        DPFVDPF { dpf, field }
+        FieldVDPF { dpf, field }
     }
 }
 
 // Pass through DPF methods
-impl<D: DPF> DPF for DPFVDPF<D> {
+impl<D: DPF> DPF for FieldVDPF<D> {
     type Key = D::Key;
 
     fn num_points(&self) -> usize {
@@ -86,17 +86,17 @@ impl<D: DPF> DPF for DPFVDPF<D> {
     }
 }
 
-impl VDPF for DPFVDPF<PRGBasedDPF<AESPRG>> {
+impl VDPF for FieldVDPF<PRGDPF<AESPRG>> {
     type AuthKey = FieldElement;
-    type ProofShare = PRGProofShare;
-    type Token = PRGAuditToken;
+    type ProofShare = FieldProofShare;
+    type Token = FieldToken;
 
     fn gen_proofs(
         &self,
         auth_key: &FieldElement,
         point_idx: usize,
         dpf_keys: &[<Self as DPF>::Key],
-    ) -> Vec<PRGProofShare> {
+    ) -> Vec<FieldProofShare> {
         // get the field from auth keys
         let field = auth_key.clone().field();
 
@@ -145,10 +145,7 @@ impl VDPF for DPFVDPF<PRGBasedDPF<AESPRG>> {
         bit_proof_shares
             .into_iter()
             .zip(seed_proof_shares.into_iter())
-            .map(|(bit_proof_share, seed_proof_share)| PRGProofShare {
-                bit_proof_share,
-                seed_proof_share,
-            })
+            .map(|(bit, seed)| FieldProofShare { bit, seed })
             .collect()
     }
 
@@ -160,49 +157,35 @@ impl VDPF for DPFVDPF<PRGBasedDPF<AESPRG>> {
         &self,
         auth_keys: &[FieldElement],
         dpf_key: &<Self as DPF>::Key,
-        proof_share: &PRGProofShare,
-    ) -> PRGAuditToken {
-        // get the field from auth keys
-        let field = auth_keys
-            .first()
-            .expect("need at least one auth key")
-            .field();
-
-        // init to zero
-        let mut res_seed = field.zero();
-        let mut res_bit = field.zero();
-
-        for (i, (seed, bit)) in dpf_key.seeds.iter().zip(dpf_key.bits.iter()).enumerate() {
-            assert!(*bit == 0 || *bit == 1);
-
-            res_seed -= auth_keys[i].clone() * seed.to_field_element(field.clone());
-
-            if *bit == 1 {
-                res_bit += auth_keys[i].clone();
+        proof_share: &FieldProofShare,
+    ) -> FieldToken {
+        let mut bit_check = proof_share.bit.clone();
+        let mut seed_check = proof_share.seed.clone();
+        for ((key, seed), bit) in auth_keys
+            .iter()
+            .zip(dpf_key.seeds.iter())
+            .zip(dpf_key.bits.iter())
+        {
+            seed_check -= key.clone() * seed.to_field_element(self.field.clone());
+            match *bit {
+                0 => {}
+                1 => bit_check += key.clone(),
+                _ => panic!("Bit must be 0 or 1"),
             }
         }
 
-        let mut bit_check_share = proof_share.bit_proof_share.clone();
-        let mut seed_check_share = proof_share.seed_proof_share.clone();
-
-        // TODO(sss): implement += for this!
-        bit_check_share = bit_check_share + res_bit;
-        seed_check_share = seed_check_share + res_seed;
-
         // TODO(sss): actually hash the message?
-        let data_check_share = field.from_bytes(&dpf_key.encoded_msg);
+        let data = self.field.from_bytes(&dpf_key.encoded_msg);
 
-        // evaluate the compressed DPF for the given dpf_key
-        PRGAuditToken {
-            bit_check_share,
-            seed_check_share,
-            data_check_share,
+        FieldToken {
+            bit: bit_check,
+            seed: seed_check,
+            data,
         }
     }
 
-    fn check_audit(&self, tokens: Vec<PRGAuditToken>) -> bool {
+    fn check_audit(&self, tokens: Vec<FieldToken>) -> bool {
         assert_eq!(tokens.len(), 2, "not implemented");
-
         tokens[0] == tokens[1]
     }
 }
@@ -238,8 +221,8 @@ mod tests {
         Just(p.into())
     }
 
-    fn aes_prg_vdpfs() -> impl Strategy<Value = DPFVDPF<PRGBasedDPF<AESPRG>>> {
-        (aes_prg_dpfs(), fields()).prop_map(|(dpf, field)| DPFVDPF::new(dpf, Rc::new(field)))
+    fn aes_prg_vdpfs() -> impl Strategy<Value = FieldVDPF<PRGDPF<AESPRG>>> {
+        (aes_prg_dpfs(), fields()).prop_map(|(dpf, field)| FieldVDPF::new(dpf, Rc::new(field)))
     }
 
     fn run_test_audit_check_correct<V>(

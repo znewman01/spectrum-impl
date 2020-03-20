@@ -5,8 +5,8 @@ use crate::proto::{
     UploadRequest, UploadResponse, VerifyRequest, VerifyResponse, WriteToken,
 };
 use crate::{
-    config::store::Store,
     bytes::Bytes,
+    config::store::Store,
     experiment::Experiment,
     net::get_addr,
     protocols::accumulator::Accumulator,

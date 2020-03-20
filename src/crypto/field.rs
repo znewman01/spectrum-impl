@@ -56,14 +56,11 @@ impl Field {
         }
     }
 
-    pub fn from_bytes(self: Rc<Field>, bytes: &Bytes) -> FieldElement {
+    pub fn from_bytes(self: &Rc<Field>, bytes: &Bytes) -> FieldElement {
         // TODO: fix this
         let byte_str = hex::encode(bytes);
         let val = Integer::from_str_radix(&byte_str, 16).unwrap();
-        FieldElement {
-            value: val % self.order.clone(),
-            field: self,
-        }
+        FieldElement::new(val, self.clone())
     }
 }
 

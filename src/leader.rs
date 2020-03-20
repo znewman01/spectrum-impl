@@ -5,8 +5,8 @@ use crate::proto::{
     AggregateGroupRequest, AggregateWorkerRequest, AggregateWorkerResponse, Share,
 };
 use crate::{
-    config::store::Store,
     bytes::Bytes,
+    config::store::Store,
     experiment::Experiment,
     net::get_addr,
     protocols::accumulator::Accumulator,

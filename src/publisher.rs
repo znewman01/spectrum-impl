@@ -4,8 +4,8 @@ use crate::proto::{
     AggregateGroupRequest, AggregateGroupResponse,
 };
 use crate::{
-    config::store::Store,
     bytes::Bytes,
+    config::store::Store,
     experiment,
     experiment::Experiment,
     net::get_addr,

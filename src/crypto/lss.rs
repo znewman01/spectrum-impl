@@ -62,7 +62,6 @@ impl ops::AddAssign<SecretShare> for SecretShare {
     }
 }
 
-/// override - operation: want operation over the field value and sequence of operations to be updated
 impl ops::Sub<SecretShare> for SecretShare {
     type Output = SecretShare;
 
@@ -71,11 +70,23 @@ impl ops::Sub<SecretShare> for SecretShare {
     }
 }
 
+impl ops::SubAssign<FieldElement> for SecretShare {
+    fn sub_assign(&mut self, other: FieldElement) {
+        self.value -= other;
+    }
+}
+
 impl ops::Add<FieldElement> for SecretShare {
     type Output = SecretShare;
 
     fn add(self, constant: FieldElement) -> SecretShare {
         SecretShare::new(self.value + constant)
+    }
+}
+
+impl ops::AddAssign<FieldElement> for SecretShare {
+    fn add_assign(&mut self, other: FieldElement) {
+        self.value += other;
     }
 }
 
