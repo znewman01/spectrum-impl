@@ -188,11 +188,8 @@ impl Protocol for InsecureProtocol {
 mod tests {
     #![allow(clippy::identity_conversion)]
     use super::*;
-    use crate::protocols::accumulator::Accumulatable;
+    use crate::protocols::tests::*;
     use proptest::prelude::*;
-
-    const CHANNELS: usize = 3;
-    const MSG_LEN: usize = 10;
 
     fn protocols(channels: usize) -> impl Strategy<Value = InsecureProtocol> {
         (2usize..100usize).prop_map(move |p| InsecureProtocol::new(p, channels, MSG_LEN))
@@ -217,45 +214,13 @@ mod tests {
             .prop_map(|(idx, password)| ChannelKey(idx, password))
     }
 
-    fn messages() -> impl Strategy<Value = Bytes> {
-        proptest::collection::vec(any::<u8>(), MSG_LEN).prop_map(Into::into)
-    }
-
-    fn and_accumulators(
-        protocol: InsecureProtocol,
-    ) -> impl Strategy<Value = (InsecureProtocol, Vec<Bytes>)> {
-        (
-            Just(protocol),
-            proptest::collection::vec(messages(), protocol.num_channels()),
-        )
-    }
-
-    fn get_server_shares(
-        protocol: InsecureProtocol,
-        tokens: Vec<WriteToken>,
-        keys: Vec<ChannelKey>,
-    ) -> Vec<Vec<AuditShare>> {
-        let mut server_shares = vec![Vec::new(); protocol.num_parties()];
-        for token in tokens {
-            for (idx, share) in protocol.gen_audit(&keys, &token).into_iter().enumerate() {
-                server_shares[idx].push(share);
-            }
-        }
-        server_shares
-    }
-
     proptest! {
         #[test]
         fn test_null_broadcast_passes_audit(
             protocol in protocols(CHANNELS),
             keys in keys(CHANNELS)
         ) {
-            let tokens = protocol.null_broadcast();
-            prop_assert_eq!(tokens.len(), protocol.num_parties());
-
-            for shares in get_server_shares(protocol, tokens, keys) {
-                prop_assert!(protocol.check_audit(shares));
-            }
+            check_null_broadcast_passes_audit(protocol, keys);
         }
 
         #[test]
@@ -265,43 +230,25 @@ mod tests {
             keys in keys(CHANNELS),
             idx in any::<prop::sample::Index>(),
         ) {
-            let good_key = keys[idx.index(keys.len())].clone();
-            let tokens = protocol.broadcast(msg, good_key);
-            prop_assert_eq!(tokens.len(), protocol.num_parties());
-
-            for shares in get_server_shares(protocol, tokens, keys) {
-                prop_assert!(protocol.check_audit(shares));
-            }
+            let idx = idx.index(keys.len());
+            check_broadcast_passes_audit(protocol, msg, keys, idx);
         }
 
         #[test]
         fn test_broadcast_bad_key_fails_audit(
             protocol in protocols(CHANNELS),
-            msg in messages().prop_filter("Broadcasting null message okay!", |m| *m != Bytes::default()),
-            good_key in keys(CHANNELS),
+            msg in messages().prop_filter("Broadcasting null message okay!", |m| *m != Bytes::empty(MSG_LEN)),
+            good_keys in keys(CHANNELS),
             bad_key in bad_keys(CHANNELS)
         ) {
-            let tokens = protocol.broadcast(msg, bad_key);
-            prop_assert_eq!(tokens.len(), protocol.num_parties());
-
-            for shares in get_server_shares(protocol, tokens, good_key) {
-                prop_assert!(!protocol.check_audit(shares));
-            }
+            check_broadcast_bad_key_fails_audit(protocol, msg, good_keys, bad_key);
         }
 
         #[test]
         fn test_null_broadcast_messages_unchanged(
-            (protocol, mut accumulator) in protocols(CHANNELS).prop_flat_map(and_accumulators)
+            (protocol, accumulator) in protocols(CHANNELS).prop_flat_map(and_accumulators)
         ) {
-            let before_msgs: Vec<Bytes> = accumulator.clone().into();
-            assert_eq!(before_msgs.len(), protocol.num_channels());
-
-            for write_token in protocol.null_broadcast() {
-                accumulator.combine(protocol.to_accumulator(write_token));
-            }
-            let after_msgs: Vec<Bytes> = accumulator.into();
-
-            assert_eq!(before_msgs, after_msgs);
+            check_null_broadcast_messages_unchanged(protocol, accumulator);
         }
 
         #[test]
@@ -312,22 +259,7 @@ mod tests {
             idx in any::<prop::sample::Index>(),
         ) {
             let idx = idx.index(keys.len());
-            let good_key = keys[idx].clone();
-
-            let mut accumulator = protocol.new_accumulator();
-            for write_token in protocol.broadcast(msg.clone(), good_key) {
-                accumulator.combine(protocol.to_accumulator(write_token));
-            }
-            let recovered_msgs: Vec<Bytes> = accumulator.into();
-
-            assert_eq!(recovered_msgs.len(), protocol.num_channels());
-            for (msg_idx, actual_msg) in recovered_msgs.into_iter().enumerate() {
-                if msg_idx == idx {
-                    assert_eq!(actual_msg, msg);
-                } else {
-                    assert_eq!(actual_msg, Bytes::empty(MSG_LEN))
-                }
-            }
+            check_broadcast_recovers_message(protocol, msg, keys, idx);
         }
     }
 }
