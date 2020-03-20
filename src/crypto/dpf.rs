@@ -12,6 +12,7 @@ pub trait DPF {
     type Key;
 
     fn num_points(&self) -> usize;
+    fn num_keys(&self) -> usize;
 
     /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
     fn gen(&self, msg: &Bytes, idx: usize) -> Vec<Self::Key>;
@@ -45,7 +46,7 @@ where
     P::Seed: Clone + PartialEq + Eq + Debug,
 {
     // generates a new DPF key with the necessary parameters needed for evaluation
-    pub fn new(encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<P::Seed>) -> DPFKey<P> {
+    fn new(encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<P::Seed>) -> DPFKey<P> {
         DPFKey {
             encoded_msg,
             bits,
@@ -73,6 +74,10 @@ where
 
     fn num_points(&self) -> usize {
         self.num_points
+    }
+
+    fn num_keys(&self) -> usize {
+        self.num_keys
     }
 
     /// generate new instance of PRG based DPF with two DPF keys
@@ -169,11 +174,11 @@ pub mod tests {
         let dpf_shares = dpf_keys.iter().map(|k| dpf.eval(k)).collect();
         let dpf_output = dpf.combine(dpf_shares);
 
-        let zeroes = Bytes::from(vec![0 as u8; DATA_SIZE]);
         for (chunk_idx, chunk) in dpf_output.into_iter().enumerate() {
             if chunk_idx == index {
                 assert_eq!(chunk, data);
             } else {
+                let zeroes = Bytes::empty(DATA_SIZE);
                 assert_eq!(chunk, zeroes);
             }
         }

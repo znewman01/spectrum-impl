@@ -8,53 +8,47 @@ use spectrum_impl::crypto::{
     dpf::{PRGBasedDPF, DPF},
     field::Field,
     prg::{AESPRG, PRG},
-    vdpf::VDPF,
+    vdpf::{DPFVDPF, VDPF},
 };
 use std::rc::Rc;
 
+const EVAL_SIZE: usize = 1 << 20; // approx 1MB
+
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("PRG eval benchmark", |b| {
-        let eval_size: usize = 1 << 20; // approx 1MB
         let prg = AESPRG::new();
         let seed = prg.new_seed();
-        b.iter(|| {
-            // benchmark the PRG evaluation time
-            prg.eval(&seed, eval_size);
-        })
+        b.iter(|| prg.eval(&seed, EVAL_SIZE))
     });
 
+    let num_keys = 2;
+    let num_points = 1;
+    let point_idx = 0;
     c.bench_function("PRGBasedDPF eval benchmark", |b| {
-        let eval_size: usize = 1 << 20; // approx 1MB
-        let dpf = PRGBasedDPF::new(AESPRG::new(), 2, 1);
-        let keys = dpf.gen(&Bytes::empty(eval_size), 0);
-        // benchmark the DPF (PRG-based) evaluation time
-        b.iter(|| dpf.eval(&keys[0]))
+        let dpf = PRGBasedDPF::new(AESPRG::new(), num_keys, num_points);
+        let data = Bytes::empty(EVAL_SIZE);
+        let keys = dpf.gen(&data, point_idx);
+        let key = &keys[0];
+        b.iter(|| dpf.eval(key))
     });
 
+    let point_idx = 0;
+    let num_keys = 2;
+    let num_points = 1;
+    let prime: Integer = Integer::from(800_000_000).next_prime_ref().into();
     c.bench_function("gen_audit", |b| {
-        let eval_size: usize = 1 << 20; // approx 1MB
-        let point_idx = 0;
-        let num_points = 1;
-        let vdpf = PRGBasedDPF::new(AESPRG::new(), 2, num_points);
+        let field = Rc::new(Field::new(prime.clone()));
+        let dpf = PRGBasedDPF::new(AESPRG::new(), num_keys, num_points);
+        let vdpf = DPFVDPF::new(dpf, field.clone());
 
-        // setup a field for the VDPF auth
-        let mut p = Integer::from(800_000_000);
-        p.next_prime_mut();
-        let field = Rc::<Field>::new(Field::new(p));
-
-        // generate dpf keys
-        let dpf_keys = vdpf.gen(&Bytes::empty(eval_size), point_idx);
-
-        // generate null authentication keys for the vdpf
-        let auth_keys = vec![field.zero(); num_points];
-
-        // generate the proof shares for the VDPF
+        let data = Bytes::empty(EVAL_SIZE);
+        let dpf_keys = vdpf.gen(&data, point_idx);
+        let auth_keys = vec![field.zero(); 2];
         let proof_shares = vdpf.gen_proofs(&auth_keys[point_idx], point_idx, &dpf_keys);
 
-        b.iter(|| {
-            // benchmark the gen_audit function of the VDPF
-            vdpf.gen_audit(&auth_keys, &dpf_keys[0], &proof_shares[0])
-        })
+        let dpf_key = &dpf_keys[0];
+        let proof_share = &proof_shares[0];
+        b.iter(|| vdpf.gen_audit(&auth_keys, dpf_key, proof_share))
     });
 }
 

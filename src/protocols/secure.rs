@@ -1,163 +1,129 @@
-use crate::proto::{self, AuditShare, WriteToken};
-use crate::protocols::{Accumulatable, Protocol};
-use crate::crypto::field::{Field, FieldElement};
-use crate::crypto::dpf::{DPF, DPFKey, PRGBasedDPF};
-use crate::crypto::vdpf::{VDPF, PRGBasedVDPF, PRGProofShare, PRGAuditToken};
-use std::convert::TryInto;
-use bytes::Bytes;
+use crate::crypto::{
+    byte_utils::Bytes,
+    dpf::{PRGBasedDPF, DPF},
+    field::Field,
+    prg::AESPRG,
+    vdpf::{DPFVDPF, VDPF},
+};
+use crate::protocols::Protocol;
+
+use rug::Integer;
+use std::fmt::Debug;
+use std::iter::repeat;
 use std::rc::Rc;
-use rug::{rand::RandState, Integer};
 
-#[derive(Debug, Clone)]
-pub struct SecureChannelKey(usize, FieldElement);
+#[derive(Debug)]
+pub struct ChannelKey<V: VDPF> {
+    idx: usize,
+    secret: V::AuthKey,
+}
 
-impl SecureChannelKey {
-    pub fn new(idx: usize, key: FieldElement) -> Self {
-        SecureChannelKey(idx, key)
+impl<V: VDPF> ChannelKey<V> {
+    pub fn new(idx: usize, secret: V::AuthKey) -> Self {
+        ChannelKey { idx, secret }
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct SecureWriteToken(DPFKey, PRGProofShare);
+#[derive(Debug)]
+pub struct WriteToken<V>(<V as DPF>::Key, V::ProofShare)
+where
+    V: VDPF,
+    <V as DPF>::Key: Debug;
 
-impl SecureWriteToken {
-    fn new(key: DPFKey, proof_share: PRGProofShare) -> Self {
-        SecureWriteToken(key, proof_share)
+impl<V> WriteToken<V>
+where
+    V: VDPF,
+    <V as DPF>::Key: Debug,
+{
+    fn new(key: <V as DPF>::Key, proof_share: V::ProofShare) -> Self {
+        WriteToken(key, proof_share)
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct SecureAuditShare(PRGAuditToken);
-
-impl SecureAuditShare {
-    fn new(token: PRGAuditToken) -> Self {
-        SecureAuditShare(token)
-    }
-}
-
-
-impl Accumulatable for u8 {
-    fn accumulate(&mut self, rhs: Self) {
-        *self ^= rhs;
-    }
-
-    fn new(size: usize) -> Self {
-        assert_eq!(size, 1);
-        Default::default()
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct SecureProtocol {
+#[derive(Debug)]
+pub struct SecureProtocol<V> {
     msg_size: usize,
-    parties: usize,
-    channels: usize,
-    sec_bytes: usize,
-    field: Rc::<Field>, 
-    dpf: PRGBasedDPF,
+    vdpf: V,
 }
 
-impl SecureProtocol {
-    pub fn new(sec_bytes: usize, msg_size: usize,  parties: usize, channels: usize) -> SecureProtocol {
-        // generate random authentication keys for the vdpf
-        let mut rng = RandState::new();
-        // construct dpf with the parameters of the SecureProtocol
-        let dpf = PRGBasedDPF::new(sec_bytes, parties, channels);
-
-
-        // make field
-        // TODO(sss) [important]: sample random prime of the correct security bytes
-        let mut p = Integer::from(100_000_000_000_000_000_000_000);
-        p.next_prime_mut();        
-        let field = Rc::<Field>::new(Field::new(p));
-
-        SecureProtocol { msg_size, parties, channels, sec_bytes, dpf, field}
+impl<V: VDPF> SecureProtocol<V> {
+    pub fn new(vdpf: V, msg_size: usize) -> SecureProtocol<V> {
+        SecureProtocol { msg_size, vdpf }
     }
 }
 
-impl Protocol for SecureProtocol {
-    type Message = Bytes;
-    type ChannelKey = SecureChannelKey; // channel number, password
-    type WriteToken = SecureWriteToken; // message, index, maybe a key
-    type AuditShare = SecureAuditShare;
-    type Accumulator = Vec<Bytes>;
+impl SecureProtocol<DPFVDPF<PRGBasedDPF<AESPRG>>> {
+    #[allow(dead_code)]
+    fn with_aes_prg_dpf(sec_bytes: u32, parties: usize, channels: usize, msg_size: usize) -> Self {
+        // TODO(sss) [important]: sample random prime of the correct security bytes
+        let prime: Integer = (Integer::from(2) << sec_bytes).next_prime_ref().into();
+        let field = Rc::new(Field::from(prime));
+        let vdpf = DPFVDPF::new(PRGBasedDPF::new(AESPRG::new(), parties, channels), field);
+        SecureProtocol::new(vdpf, msg_size)
+    }
+}
+
+impl<V> Protocol for SecureProtocol<V>
+where
+    V: VDPF,
+    <V as DPF>::Key: Debug,
+    V::Token: Clone,
+    V::AuthKey: Clone,
+{
+    type ChannelKey = ChannelKey<V>; // channel number, password
+    type WriteToken = WriteToken<V>; // message, index, maybe a key
+    type AuditShare = V::Token;
 
     fn num_parties(&self) -> usize {
-        self.parties
+        self.vdpf.num_keys()
     }
 
     fn num_channels(&self) -> usize {
-        self.channels
+        self.vdpf.num_points()
     }
 
-    fn sec_bytes(&self) -> usize {
-        self.sec_bytes
+    fn message_len(&self) -> usize {
+        self.msg_size
     }
 
-    fn broadcast(&self, message: Bytes, channel_key: SecureChannelKey) -> Vec<SecureWriteToken> {
+    fn broadcast(&self, message: Bytes, key: ChannelKey<V>) -> Vec<WriteToken<V>> {
+        let dpf_keys = self.vdpf.gen(&message, key.idx);
+        let proof_shares = self.vdpf.gen_proofs(&key.secret, key.idx, &dpf_keys);
+        dpf_keys
+            .into_iter()
+            .zip(proof_shares.into_iter())
+            .map(|(dpf_key, proof_share)| WriteToken::new(dpf_key, proof_share))
+            .collect()
+    }
+
+    fn null_broadcast(&self) -> Vec<WriteToken<V>> {
         // generate dpf keys for the message and index
-        let dpf_keys = self.dpf.gen(message, channel_key.0); // channel_key.0 = index 
+        // HACK: setting DPF index = num_channels creates NULL DPF
+        // TODO(sss): make a NULL flag which generates the zero DPF
+        let dpf_keys = self
+            .vdpf
+            .gen(&Bytes::empty(self.msg_size), self.num_channels());
+        let proof_shares = self.vdpf.gen_proofs_noop(&dpf_keys);
 
-        // channel_key.0 = index,  channel_key.1 = access key for index
-        // generate the proof shares
-        let vdpf = PRGBasedVDPF::new(&self.dpf);
-        let proof_shares = vdpf.gen_proofs(&channel_key.1, channel_key.0, &dpf_keys); 
-
-        // generate and return the write tokens
-        let write_tokens = dpf_keys.iter().zip(proof_shares.iter()).map(|(&dpf_key, &proof_share)| {
-            SecureWriteToken::new(dpf_key, proof_share)
-        }).collect();
-
-        write_tokens
+        dpf_keys
+            .into_iter()
+            .zip(proof_shares.into_iter())
+            .map(|(dpf_key, proof_share)| WriteToken::new(dpf_key, proof_share))
+            .collect()
     }
 
-    fn null_broadcast(&self) -> Vec<SecureWriteToken> {
-         // generate dpf keys for the message and index
-         // HACK: setting DPF index = num_channels creates NULL DPF 
-         // TODO(sss): make a NULL flag which generates the zero DPF
-         let dpf_keys = self.dpf.gen(Bytes::from(vec![0; self.msg_size]), self.num_channels()); 
- 
-         // generate the proof shares
-         let null_element = FieldElement::new(0.into(), self.field);
-         
-         // HACK: as above
-         let vdpf = PRGBasedVDPF::new(&self.dpf);
-         let proof_shares = vdpf.gen_proofs(&null_element, self.num_channels(), &dpf_keys); 
- 
-         // generate and return the write tokens
-         let write_tokens = dpf_keys.iter().zip(proof_shares.iter()).map(|(&dpf_key, &proof_share)| {
-             SecureWriteToken::new(dpf_key, proof_share)
-            }).collect();
-
-         write_tokens
+    fn gen_audit(&self, keys: &[ChannelKey<V>], token: &WriteToken<V>) -> Vec<<V as VDPF>::Token> {
+        let auth_keys: Vec<_> = keys.iter().map(|key| key.secret.clone()).collect();
+        let token = self.vdpf.gen_audit(&auth_keys, &token.0, &token.1);
+        repeat(token).take(self.num_parties()).collect()
     }
 
-    fn gen_audit(
-        &self,
-        keys: &[SecureChannelKey],
-        token: &SecureWriteToken,
-    ) -> SecureAuditShare {
-
-        let auth_keys: Vec::<FieldElement> = Vec::new();
-        keys.iter().map(|key| {
-            auth_keys.push(key.1);
-        });
-
-        let vdpf = PRGBasedVDPF::new(&self.dpf);
-        let audit_token = vdpf.gen_audit(&auth_keys, &token.0, &token.1);
-       
-        SecureAuditShare::new(audit_token)
+    fn check_audit(&self, tokens: Vec<<V as VDPF>::Token>) -> bool {
+        assert_eq!(tokens.len(), self.num_parties());
+        self.vdpf.check_audit(tokens)
     }
 
-    fn check_audit(&self, tokens: Vec<SecureAuditShare>) -> bool {
-        assert_eq!(tokens.len(), self.parties);
-        let vdpf = PRGBasedVDPF::new(&self.dpf);
-        let audit_tokens = tokens.iter().map(|token|{
-            token.0
-        }).collect();
-
-        vdpf.check_audit(audit_tokens)
+    fn to_accumulator(&self, token: WriteToken<V>) -> Vec<Bytes> {
+        self.vdpf.eval(&token.0)
     }
-
 }
-

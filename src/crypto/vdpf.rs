@@ -1,13 +1,15 @@
 //! Spectrum implementation.
 #![allow(dead_code)]
 use crate::crypto::{
+    byte_utils::Bytes,
     dpf::{PRGBasedDPF, DPF},
-    field::FieldElement,
+    field::{Field, FieldElement},
     lss::{SecretShare, LSS},
     prg::AESPRG,
 };
 use rug::rand::RandState;
 use std::fmt::Debug;
+use std::rc::Rc;
 
 // check_audit(gen_audit(gen_proof(...))) = TRUE
 pub trait VDPF: DPF {
@@ -21,6 +23,8 @@ pub trait VDPF: DPF {
         point_idx: usize,
         dpf_keys: &[<Self as DPF>::Key],
     ) -> Vec<Self::ProofShare>;
+
+    fn gen_proofs_noop(&self, dpf_keys: &[<Self as DPF>::Key]) -> Vec<Self::ProofShare>;
 
     fn gen_audit(
         &self,
@@ -45,7 +49,44 @@ pub struct PRGProofShare {
     seed_proof_share: SecretShare,
 }
 
-impl VDPF for PRGBasedDPF<AESPRG> {
+#[derive(Debug)]
+pub struct DPFVDPF<D> {
+    dpf: D,
+    field: Rc<Field>,
+}
+
+impl<D> DPFVDPF<D> {
+    pub fn new(dpf: D, field: Rc<Field>) -> Self {
+        DPFVDPF { dpf, field }
+    }
+}
+
+// Pass through DPF methods
+impl<D: DPF> DPF for DPFVDPF<D> {
+    type Key = D::Key;
+
+    fn num_points(&self) -> usize {
+        self.dpf.num_points()
+    }
+
+    fn num_keys(&self) -> usize {
+        self.dpf.num_keys()
+    }
+
+    fn gen(&self, msg: &Bytes, idx: usize) -> Vec<Self::Key> {
+        self.dpf.gen(msg, idx)
+    }
+
+    fn eval(&self, key: &Self::Key) -> Vec<Bytes> {
+        self.dpf.eval(key)
+    }
+
+    fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes> {
+        self.dpf.combine(parts)
+    }
+}
+
+impl VDPF for DPFVDPF<PRGBasedDPF<AESPRG>> {
     type AuthKey = FieldElement;
     type ProofShare = PRGProofShare;
     type Token = PRGAuditToken;
@@ -115,6 +156,10 @@ impl VDPF for PRGBasedDPF<AESPRG> {
         proof_shares
     }
 
+    fn gen_proofs_noop(&self, dpf_keys: &[<Self as DPF>::Key]) -> Vec<Self::ProofShare> {
+        self.gen_proofs(&self.field.zero(), self.num_points(), dpf_keys)
+    }
+
     fn gen_audit(
         &self,
         auth_keys: &[FieldElement],
@@ -180,8 +225,7 @@ mod tests {
 
     const DATA_SIZE: Range<usize> = 100..300; // in bytes
 
-    fn make_auth_keys(num: usize, field: Field) -> Vec<FieldElement> {
-        let field = Rc::new(field);
+    fn make_auth_keys(num: usize, field: Rc<Field>) -> Vec<FieldElement> {
         let mut rng = RandState::new();
         repeat_with(|| field.rand_element(&mut rng))
             .take(num)
@@ -196,6 +240,10 @@ mod tests {
         let mut p = Integer::from(800_000_000);
         p.next_prime_mut();
         Just(p.into())
+    }
+
+    fn aes_prg_vdpfs() -> impl Strategy<Value = DPFVDPF<PRGBasedDPF<AESPRG>>> {
+        (aes_prg_dpfs(), fields()).prop_map(|(dpf, field)| DPFVDPF::new(dpf, Rc::new(field)))
     }
 
     fn run_test_audit_check_correct<V>(
@@ -219,14 +267,13 @@ mod tests {
     proptest! {
         #[test]
         fn test_audit_check_correct(
-            vdpf in aes_prg_dpfs(),
+            vdpf in aes_prg_vdpfs(),
             data in data(),
             point_idx in any::<proptest::sample::Index>(),
-            field in fields()
         ) {
             let num_points = vdpf.num_points();
             let point_idx = point_idx.index(num_points);
-            let auth_keys = make_auth_keys(num_points, field);
+            let auth_keys = make_auth_keys(num_points, vdpf.field.clone());
 
             run_test_audit_check_correct(vdpf, &auth_keys, &data, point_idx);
         }

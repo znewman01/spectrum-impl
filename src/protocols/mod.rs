@@ -1,5 +1,6 @@
 pub mod accumulator;
 pub mod insecure;
+pub mod secure;
 pub mod wrapper;
 
 use crate::crypto::byte_utils::Bytes;
