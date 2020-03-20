@@ -9,6 +9,7 @@ use crate::crypto::{
 };
 use rug::rand::RandState;
 use std::fmt::Debug;
+use std::iter::repeat_with;
 use std::rc::Rc;
 
 // check_audit(gen_audit(gen_proof(...))) = TRUE
@@ -16,6 +17,9 @@ pub trait VDPF: DPF {
     type AuthKey;
     type ProofShare;
     type Token;
+
+    fn sample_key(&self) -> Self::AuthKey;
+    fn sample_keys(&self) -> Vec<Self::AuthKey>;
 
     fn gen_proofs(
         &self,
@@ -111,6 +115,18 @@ impl VDPF for FieldVDPF<PRGDPF<AESPRG>> {
     type ProofShare = FieldProofShare;
     type Token = FieldToken;
 
+    fn sample_key(&self) -> FieldElement {
+        let mut rng = RandState::new();
+        self.field.rand_element(&mut rng)
+    }
+
+    fn sample_keys(&self) -> Vec<FieldElement> {
+        let mut rng = RandState::new();
+        repeat_with(|| self.field.rand_element(&mut rng))
+            .take(self.num_points())
+            .collect()
+    }
+
     fn gen_proofs(
         &self,
         auth_key: &FieldElement,
@@ -193,20 +209,12 @@ mod tests {
     use crate::crypto::field::Field;
     use proptest::prelude::*;
     use rug::Integer;
-    use std::iter::repeat_with;
     use std::ops::Range;
     use std::rc::Rc;
 
     use crate::crypto::dpf::tests::aes_prg_dpfs;
 
     const DATA_SIZE: Range<usize> = 100..300; // in bytes
-
-    fn make_auth_keys(num: usize, field: Rc<Field>) -> Vec<FieldElement> {
-        let mut rng = RandState::new();
-        repeat_with(|| field.rand_element(&mut rng))
-            .take(num)
-            .collect()
-    }
 
     fn data() -> impl Strategy<Value = Bytes> {
         prop::collection::vec(any::<u8>(), DATA_SIZE).prop_map(Bytes::from)
@@ -259,11 +267,10 @@ mod tests {
         fn test_audit_check_correct(
             vdpf in aes_prg_vdpfs(),
             data in data(),
-            point_idx in any::<proptest::sample::Index>(),
+            point_idx in any::<prop::sample::Index>(),
         ) {
-            let num_points = vdpf.num_points();
-            let point_idx = point_idx.index(num_points);
-            let auth_keys = make_auth_keys(num_points, vdpf.field.clone());
+            let auth_keys = vdpf.sample_keys();
+            let point_idx = point_idx.index(auth_keys.len());
 
             run_test_audit_check_correct(vdpf, &auth_keys, &data, point_idx);
         }
@@ -272,9 +279,7 @@ mod tests {
             vdpf in aes_prg_vdpfs(),
             data_size in DATA_SIZE,
         ) {
-            let num_points = vdpf.num_points();
-            let auth_keys = make_auth_keys(num_points, vdpf.field.clone());
-
+            let auth_keys = vdpf.sample_keys();
             run_test_audit_check_correct_for_noop(vdpf, &auth_keys, data_size);
         }
 
