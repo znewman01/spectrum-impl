@@ -7,15 +7,15 @@ use rug::Integer;
 use spectrum_impl::crypto::{
     dpf::{PRGBasedDPF, DPF},
     field::Field,
-    prg::PRG,
-    vdpf::{PRGBasedVDPF, VDPF},
+    prg::{AESPRG, PRG},
+    vdpf::VDPF,
 };
 use std::rc::Rc;
 
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("PRG eval benchmark", |b| {
         let eval_size: usize = 1 << 20; // approx 1MB
-        let prg = PRG::new();
+        let prg = AESPRG::new();
         let seed = prg.new_seed();
         b.iter(|| {
             // benchmark the PRG evaluation time
@@ -25,7 +25,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("PRGBasedDPF eval benchmark", |b| {
         let eval_size: usize = 1 << 20; // approx 1MB
-        let dpf = PRGBasedDPF::new(PRG::new(), 16, 2, 1);
+        let dpf = PRGBasedDPF::new(AESPRG::new(), 16, 2, 1);
         let keys = dpf.gen(Bytes::from(vec![0; eval_size]), 0);
         b.iter(|| {
             // benchmark the DPF (PRG-based) evaluation time
@@ -37,8 +37,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let eval_size: usize = 1 << 20; // approx 1MB
         let point_idx = 0;
         let num_points = 1;
-        let dpf = PRGBasedDPF::new(PRG::new(), 16, 2, num_points);
-        let vdpf = PRGBasedVDPF::new(&dpf);
+        let vdpf = PRGBasedDPF::new(AESPRG::new(), 16, 2, num_points);
 
         // setup a field for the VDPF auth
         let mut p = Integer::from(800_000_000);
@@ -46,7 +45,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let field = Rc::<Field>::new(Field::new(p));
 
         // generate dpf keys
-        let dpf_keys = dpf.gen(Bytes::from(vec![0; eval_size]), point_idx);
+        let dpf_keys = vdpf.gen(Bytes::from(vec![0; eval_size]), point_idx);
 
         // generate null authentication keys for the vdpf
         let auth_keys = vec![field.zero(); num_points];

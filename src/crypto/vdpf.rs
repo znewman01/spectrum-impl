@@ -4,13 +4,13 @@ use crate::crypto::{
     dpf::{PRGBasedDPF, DPF},
     field::FieldElement,
     lss::{SecretShare, LSS},
+    prg::AESPRG,
 };
 use rug::rand::RandState;
 use std::fmt::Debug;
 
 // check_audit(gen_audit(gen_proof(...))) = TRUE
-pub trait VDPF {
-    type DPF: DPF;
+pub trait VDPF: DPF {
     type AuthKey;
     type ProofShare;
     type Token;
@@ -19,23 +19,17 @@ pub trait VDPF {
         &self,
         auth_key: &Self::AuthKey,
         point_idx: usize,
-        dpf_keys: &[<Self::DPF as DPF>::Key],
+        dpf_keys: &[<Self as DPF>::Key],
     ) -> Vec<Self::ProofShare>;
 
     fn gen_audit(
         &self,
         auth_keys: &[Self::AuthKey],
-        dpf_key: &<Self::DPF as DPF>::Key,
+        dpf_key: &<Self as DPF>::Key,
         proof_share: &Self::ProofShare,
     ) -> Self::Token;
 
     fn check_audit(&self, tokens: Vec<Self::Token>) -> bool;
-}
-
-/// DPF based on PRG
-#[derive(Clone, PartialEq, Debug)]
-pub struct PRGBasedVDPF<'a> {
-    dpf: &'a PRGBasedDPF,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -51,14 +45,7 @@ pub struct PRGProofShare {
     seed_proof_share: SecretShare,
 }
 
-impl PRGBasedVDPF<'_> {
-    pub fn new(dpf: &PRGBasedDPF) -> PRGBasedVDPF {
-        PRGBasedVDPF { dpf }
-    }
-}
-
-impl VDPF for PRGBasedVDPF<'_> {
-    type DPF = PRGBasedDPF;
+impl VDPF for PRGBasedDPF<AESPRG> {
     type AuthKey = FieldElement;
     type ProofShare = PRGProofShare;
     type Token = PRGAuditToken;
@@ -67,7 +54,7 @@ impl VDPF for PRGBasedVDPF<'_> {
         &self,
         auth_key: &FieldElement,
         point_idx: usize,
-        dpf_keys: &[<PRGBasedDPF as DPF>::Key],
+        dpf_keys: &[<Self as DPF>::Key],
     ) -> Vec<PRGProofShare> {
         // get the field from auth keys
         let field = auth_key.clone().field();
@@ -131,7 +118,7 @@ impl VDPF for PRGBasedVDPF<'_> {
     fn gen_audit(
         &self,
         auth_keys: &[FieldElement],
-        dpf_key: &<PRGBasedDPF as DPF>::Key,
+        dpf_key: &<Self as DPF>::Key,
         proof_share: &PRGProofShare,
     ) -> PRGAuditToken {
         // get the field from auth keys
@@ -183,7 +170,7 @@ impl VDPF for PRGBasedVDPF<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::{dpf::DPF, field::Field, prg::PRG};
+    use crate::crypto::field::Field;
     use bytes::Bytes;
     use proptest::prelude::*;
     use rug::Integer;
@@ -195,42 +182,67 @@ mod tests {
     const MAX_DATA_SIZE: usize = MAX_SECURITY * 3; // in bytes
     const MIN_DATA_SIZE: usize = MAX_SECURITY; // in bytes
 
+    fn make_auth_keys(num: usize, field: Field) -> Vec<FieldElement> {
+        let field = Rc::new(field);
+        let mut rng = RandState::new();
+        let mut auth_keys = vec![];
+        for _ in 0..num {
+            auth_keys.push(FieldElement::rand_element(&mut rng, field.clone()));
+        }
+        auth_keys
+    }
+
+    fn aes_prg_vdpfs() -> impl Strategy<Value = PRGBasedDPF<AESPRG>> {
+        // TODO: just use dpf::tests::aes_prg_dpfs()
+        let prg = AESPRG::new();
+        let num_keys = 2; // PRG DPF implementation handles only 2 keys.
+        (1..MAX_NUM_POINTS, MIN_SECURITY..MAX_SECURITY).prop_map(move |(num_points, sec_bytes)| {
+            PRGBasedDPF::new(prg, sec_bytes, num_keys, num_points)
+        })
+    }
+
     fn num_points_and_point_index() -> impl Strategy<Value = (usize, usize)> {
         (1..MAX_NUM_POINTS).prop_flat_map(|num_points| (Just(num_points), 0..num_points))
     }
 
-    fn field() -> impl Strategy<Value = Rc<Field>> {
+    fn fields() -> impl Strategy<Value = Field> {
         let mut p = Integer::from(800_000_000);
         p.next_prime_mut();
-        Just(Rc::<Field>::new(Field::new(p)))
+        Just(Field::new(p))
+    }
+
+    fn run_test_audit_check_correct<V>(
+        vdpf: V,
+        auth_keys: &[V::AuthKey],
+        data: Bytes,
+        point_idx: usize,
+    ) where
+        V: VDPF,
+    {
+        let dpf_keys = vdpf.gen(data, point_idx);
+        let proof_shares = vdpf.gen_proofs(&auth_keys[point_idx], point_idx, &dpf_keys);
+        let audit_tokens = dpf_keys
+            .iter()
+            .zip(proof_shares.iter())
+            .map(|(dpf_key, proof_share)| vdpf.gen_audit(&auth_keys, dpf_key, proof_share))
+            .collect();
+        assert!(vdpf.check_audit(audit_tokens));
     }
 
     proptest! {
         #[test]
         fn test_audit_check_correct(
-            (num_points, point_idx) in num_points_and_point_index(),
-            num_servers in Just(2),
-            sec_bytes in MIN_SECURITY..MAX_SECURITY,
+            vdpf in aes_prg_vdpfs(),
             data_size_in_bytes in MIN_DATA_SIZE..MAX_DATA_SIZE,
-            field in field()
+            point_idx in any::<proptest::sample::Index>(),
+            field in fields()
         ) {
-            // generate random authentication keys for the vdpf
-            let mut rng = RandState::new();
-            let auth_keys = vec![FieldElement::rand_element(&mut rng, field); num_points];
+            let num_points = vdpf.num_points();
+            let point_idx = point_idx.index(num_points);
+            let data = Bytes::from(vec![0; data_size_in_bytes]);  // TODO: should be param
+            let auth_keys = make_auth_keys(num_points, field);
 
-            let prg = PRG::new();
-            let dpf = PRGBasedDPF::new(prg, sec_bytes, num_servers, num_points);
-            let vdpf = PRGBasedVDPF::new(&dpf);
-
-            // generate dpf keys
-            let dpf_keys = dpf.gen(Bytes::from(vec![0; data_size_in_bytes]), point_idx);
-
-            let proof_shares = vdpf.gen_proofs(&auth_keys[point_idx],  point_idx, &dpf_keys);
-            let audit_tokens: Vec<PRGAuditToken> = dpf_keys.iter().zip(proof_shares.iter()).map(|(dpf_key, proof_share)| {
-                vdpf.gen_audit(&auth_keys, dpf_key, proof_share)
-            }).collect();
-
-            assert_eq!(vdpf.check_audit(audit_tokens), true);
+            run_test_audit_check_correct(vdpf, &auth_keys, data, point_idx);
         }
 
     }

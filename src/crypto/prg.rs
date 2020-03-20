@@ -5,39 +5,55 @@ use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;
 use std::rc::Rc;
 
-const SEED_SIZE: usize = 16; // 16 bytes for AES 128
+const AES_SEED_SIZE: usize = 16; // 16 bytes for AES 128
+
+pub trait PRG {
+    type Seed;
+
+    fn new_seed(&self) -> Self::Seed;
+    fn eval(&self, seed: &Self::Seed, eval_size: usize) -> Bytes;
+}
 
 /// PRG uses AES to expand a seed to desired length
 #[derive(Default, Clone, PartialEq, Debug, Copy)]
-pub struct PRG {}
+pub struct AESPRG {}
 
 /// seed for a specific PRG
-#[derive(Clone, PartialEq, Debug)]
-pub struct PRGSeed {
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub struct AESSeed {
     bytes: Bytes,
 }
 
-impl PRG {
-    /// generate new PRG: seed_size -> eval_size
-    pub fn new() -> PRG {
-        PRG {}
+impl AESSeed {
+    pub fn to_field_element(&self, field: Rc<Field>) -> FieldElement {
+        FieldElement::from_bytes(&self.bytes, field)
     }
+}
+
+impl AESPRG {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
+impl PRG for AESPRG {
+    type Seed = AESSeed;
 
     /// generates a new (random) seed for the given PRG
-    pub fn new_seed(self) -> PRGSeed {
+    fn new_seed(&self) -> AESSeed {
         // seed is just random bytes
-        let mut key = vec![0; SEED_SIZE];
+        let mut key = vec![0; AES_SEED_SIZE];
         thread_rng().fill_bytes(&mut key);
 
-        PRGSeed {
+        AESSeed {
             bytes: Bytes::from(key),
         }
     }
 
     /// evaluates the PRG on the given seed
-    pub fn eval(self, seed: &PRGSeed, eval_size: usize) -> Bytes {
+    fn eval(&self, seed: &AESSeed, eval_size: usize) -> Bytes {
         assert!(
-            SEED_SIZE <= eval_size,
+            AES_SEED_SIZE <= eval_size,
             "eval size must be at least the seed size"
         );
 
@@ -65,57 +81,67 @@ impl PRG {
     }
 }
 
-impl PRGSeed {
-    pub fn to_field_element(&self, field: Rc<Field>) -> FieldElement {
-        FieldElement::from_bytes(&self.bytes, field)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use std::collections::HashSet;
+    use std::fmt::Debug;
+    use std::ops::Range;
 
-    #[test]
-    fn test_prg_seed() {
-        let prg = PRG::new();
+    const SIZES: Range<usize> = AES_SEED_SIZE..1000;
 
-        // PRG seed is of the correct size
-        let seed = prg.new_seed();
-        assert_eq!(seed.bytes.len(), SEED_SIZE);
-
-        // PRG seed is random
-        let seed = prg.new_seed();
-        assert_ne!(seed.bytes, vec![0; SEED_SIZE]);
+    fn aes_prgs() -> impl Strategy<Value = AESPRG> {
+        Just(AESPRG::new())
     }
 
-    #[test]
-    fn test_prg_eval() {
-        let eval_size: usize = 1 << 16;
-        let prg = PRG::new();
+    fn run_test_prg_seed_random<P>(prg: P)
+    where
+        P: PRG,
+        P::Seed: Eq + Debug,
+    {
+        assert_ne!(prg.new_seed(), prg.new_seed());
+    }
 
-        // PRG output is non-zero
-        let seed = prg.new_seed();
-        let eval_bytes = prg.eval(&seed, eval_size);
-        let all_zero = vec![0; eval_size];
-        assert_ne!(eval_bytes, all_zero);
+    fn run_test_prg_eval_correct_size<P: PRG>(prg: P, seed: P::Seed, size: usize) {
+        assert_eq!(prg.eval(&seed, size).len(), size);
+    }
 
-        // PRG output is of the correct size
-        assert_eq!(eval_bytes.len(), eval_size);
+    fn run_test_prg_eval_deterministic<P: PRG>(prg: P, seed: P::Seed, size: usize) {
+        assert_eq!(prg.eval(&seed, size), prg.eval(&seed, size));
+    }
 
-        let prg = PRG::new();
-        let seed = prg.new_seed();
-        let eval1 = prg.eval(&seed, eval_size);
-        let eval2 = prg.eval(&seed, eval_size);
+    fn run_test_prg_eval_random<P: PRG>(prg: P, seeds: &[P::Seed], size: usize) {
+        #![allow(clippy::mutable_key_type)] // https://github.com/rust-lang/rust-clippy/issues/5043
+        let results: HashSet<_> = seeds.iter().map(|s| prg.eval(s, size)).collect();
+        assert_eq!(results.len(), seeds.len());
+    }
 
-        // PRG eval on the same seed should give the same output
-        assert_eq!(eval1, eval2);
+    proptest! {
+        #[test]
+        fn test_aes_prg_seed_random(aes_prg in aes_prgs()) {
+            run_test_prg_seed_random(aes_prg);
+        }
 
-        let prg = PRG::new();
-        let seed_prime = prg.new_seed();
-        let eval1 = prg.eval(&seed, eval_size);
-        let eval2 = prg.eval(&seed_prime, eval_size);
+        #[test]
+        fn test_aes_prg_eval_correct_size(aes_prg in aes_prgs(), size in SIZES) {
+            let seed = aes_prg.new_seed();
+            run_test_prg_eval_correct_size(aes_prg, seed, size);
+        }
 
-        // PRG eval on the diff seeds should give the diff output
-        assert_ne!(eval1, eval2);
+        #[test]
+        fn test_aes_prg_eval_deterministic(aes_prg in aes_prgs(), size in SIZES) {
+            let seed = aes_prg.new_seed();
+            run_test_prg_eval_deterministic(aes_prg, seed, size);
+        }
+
+        #[test]
+        fn test_aes_prg_eval_random(aes_prg in aes_prgs(), num_seeds in 0..10usize, size in SIZES) {
+            let mut seeds = vec![];
+            for _ in 0..num_seeds {
+                seeds.push(aes_prg.new_seed());
+            }
+            run_test_prg_eval_random(aes_prg, &seeds, size);
+        }
     }
 }
