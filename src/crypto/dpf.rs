@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 use crate::bytes::Bytes;
 use crate::crypto::prg::PRG;
-use rand::Rng;
+use rand::{thread_rng, Rng};
 use std::fmt::Debug;
 use std::iter::repeat_with;
 
@@ -17,6 +17,7 @@ pub trait DPF {
 
     /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
     fn gen(&self, msg: &Bytes, idx: usize) -> Vec<Self::Key>;
+    fn gen_empty(&self, len: usize) -> Vec<Self::Key>;
     fn eval(&self, key: &Self::Key) -> Vec<Bytes>;
     fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes>;
 }
@@ -62,6 +63,7 @@ where
 
 impl<P> PRGDPF<P> {
     pub fn new(prg: P, num_keys: usize, num_points: usize) -> PRGDPF<P> {
+        assert_eq!(num_keys, 2, "DPF only implemented for s=2.");
         PRGDPF {
             prg,
             num_keys,
@@ -72,7 +74,7 @@ impl<P> PRGDPF<P> {
 
 impl<P> DPF for PRGDPF<P>
 where
-    P: PRG,
+    P: PRG + Clone,
     P::Seed: Clone + PartialEq + Eq + Debug,
 {
     type Key = PRGKey<P>;
@@ -87,17 +89,16 @@ where
 
     /// generate new instance of PRG based DPF with two DPF keys
     fn gen(&self, msg: &Bytes, point_idx: usize) -> Vec<PRGKey<P>> {
-        assert_eq!(self.num_keys, 2, "DPF only implemented for s=2.");
-
         let seeds_a: Vec<_> = repeat_with(|| self.prg.new_seed())
             .take(self.num_points)
             .collect();
-        let bits_a: Vec<_> = repeat_with(|| rand::thread_rng().gen_range(0, 2))
+        let bits_a: Vec<_> = repeat_with(|| thread_rng().gen_range(0, 2))
             .take(self.num_points)
             .collect();
 
         let mut seeds_b = seeds_a.clone();
         seeds_b[point_idx] = self.prg.new_seed();
+
         let mut bits_b = bits_a.clone();
         bits_b[point_idx] = 1 - bits_b[point_idx];
 
@@ -109,6 +110,18 @@ where
             PRGKey::new(encoded_msg.clone(), bits_a, seeds_a),
             PRGKey::new(encoded_msg, bits_b, seeds_b),
         ]
+    }
+
+    fn gen_empty(&self, size: usize) -> Vec<PRGKey<P>> {
+        let seeds: Vec<_> = repeat_with(|| self.prg.new_seed())
+            .take(self.num_points)
+            .collect();
+        let bits: Vec<_> = repeat_with(|| thread_rng().gen_range(0, 2))
+            .take(self.num_points)
+            .collect();
+        let encoded_msg = Bytes::random(size, &mut thread_rng());
+
+        vec![PRGKey::new(encoded_msg, bits, seeds); 2]
     }
 
     /// evaluates the DPF on a given PRGKey and outputs the resulting data
@@ -161,10 +174,7 @@ pub mod tests {
         prop::collection::vec(any::<u8>(), DATA_SIZE).prop_map(Bytes::from)
     }
 
-    fn run_test_dpf<D>(dpf: D, data: Bytes, index: usize)
-    where
-        D: DPF,
-    {
+    fn run_test_dpf<D: DPF>(dpf: D, data: Bytes, index: usize) {
         let dpf_keys = dpf.gen(&data, index);
         let dpf_shares = dpf_keys.iter().map(|k| dpf.eval(k)).collect();
         let dpf_output = dpf.combine(dpf_shares);
@@ -179,6 +189,17 @@ pub mod tests {
         }
     }
 
+    fn run_test_dpf_empty<D: DPF>(dpf: D, size: usize) {
+        let dpf_keys = dpf.gen_empty(size);
+        let dpf_shares = dpf_keys.iter().map(|k| dpf.eval(k)).collect();
+        let dpf_output = dpf.combine(dpf_shares);
+
+        for chunk in dpf_output {
+            let zeroes = Bytes::empty(DATA_SIZE);
+            assert_eq!(chunk, zeroes);
+        }
+    }
+
     proptest! {
         #[test]
         fn test_prg_dpf(
@@ -188,6 +209,14 @@ pub mod tests {
         ) {
             let index = index.index(dpf.num_points());
             run_test_dpf(dpf, data, index);
+        }
+
+        #[test]
+        fn test_prg_dpf_empty(
+            dpf in aes_prg_dpfs(),
+            size in Just(DATA_SIZE),
+        ) {
+            run_test_dpf_empty(dpf, size);
         }
     }
 }

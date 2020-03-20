@@ -93,6 +93,10 @@ impl<D: DPF> DPF for FieldVDPF<D> {
         self.dpf.gen(msg, idx)
     }
 
+    fn gen_empty(&self, size: usize) -> Vec<Self::Key> {
+        self.dpf.gen_empty(size)
+    }
+
     fn eval(&self, key: &Self::Key) -> Vec<Bytes> {
         self.dpf.eval(key)
     }

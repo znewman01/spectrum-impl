@@ -96,12 +96,7 @@ where
     }
 
     fn null_broadcast(&self) -> Vec<WriteToken<V>> {
-        // generate dpf keys for the message and index
-        // HACK: setting DPF index = num_channels creates NULL DPF
-        // TODO(sss): make a NULL flag which generates the zero DPF
-        let dpf_keys = self
-            .vdpf
-            .gen(&Bytes::empty(self.msg_size), self.num_channels());
+        let dpf_keys = self.vdpf.gen_empty(self.msg_size);
         let proof_shares = self.vdpf.gen_proofs_noop(&dpf_keys);
 
         dpf_keys
