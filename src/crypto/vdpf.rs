@@ -105,11 +105,10 @@ impl VDPF for DPFVDPF<PRGBasedDPF<AESPRG>> {
         let dpf_key_a = dpf_keys[0].clone();
         let dpf_key_b = dpf_keys[1].clone();
 
-        let mut res_seed_a = field.clone().zero();
-        let mut res_seed_b = field.clone().zero();
+        let mut res_seed_a = field.zero();
+        let mut res_seed_b = field.zero();
 
         /* 1) generate the proof using the DPF keys and the channel key */
-
         let mut proof_correction = 1;
 
         for (i, (seed, bit)) in dpf_key_a
@@ -142,18 +141,15 @@ impl VDPF for DPFVDPF<PRGBasedDPF<AESPRG>> {
         let mut rng = RandState::new();
         let bit_proof_shares = LSS::share(bit_proof, dpf_keys.len(), &mut rng);
         let seed_proof_shares = LSS::share(seed_proof, dpf_keys.len(), &mut rng);
-        let mut proof_shares: Vec<PRGProofShare> = Vec::new();
 
-        for (bit_proof_share, seed_proof_share) in
-            bit_proof_shares.iter().zip(seed_proof_shares.iter())
-        {
-            proof_shares.push(PRGProofShare {
-                bit_proof_share: (*bit_proof_share).clone(),
-                seed_proof_share: (*seed_proof_share).clone(),
-            });
-        }
-
-        proof_shares
+        bit_proof_shares
+            .into_iter()
+            .zip(seed_proof_shares.into_iter())
+            .map(|(bit_proof_share, seed_proof_share)| PRGProofShare {
+                bit_proof_share,
+                seed_proof_share,
+            })
+            .collect()
     }
 
     fn gen_proofs_noop(&self, dpf_keys: &[<Self as DPF>::Key]) -> Vec<Self::ProofShare> {

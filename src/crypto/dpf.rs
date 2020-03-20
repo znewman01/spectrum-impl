@@ -4,6 +4,7 @@ use crate::bytes::Bytes;
 use crate::crypto::prg::PRG;
 use rand::Rng;
 use std::fmt::Debug;
+use std::iter::repeat_with;
 
 /// Distributed Point Function
 /// Must generate a set of keys k_1, k_2, ...
@@ -81,38 +82,28 @@ where
     }
 
     /// generate new instance of PRG based DPF with two DPF keys
-    fn gen(&self, msg: &Bytes, idx: usize) -> Vec<DPFKey<P>> {
+    fn gen(&self, msg: &Bytes, point_idx: usize) -> Vec<DPFKey<P>> {
         assert_eq!(self.num_keys, 2, "DPF only implemented for s=2.");
 
-        let mut seeds_a = vec![];
-        let mut seeds_b = vec![];
-        let mut bits_a: Vec<u8> = vec![];
-        let mut bits_b: Vec<u8> = vec![];
+        let seeds_a: Vec<_> = repeat_with(|| self.prg.new_seed())
+            .take(self.num_points)
+            .collect();
+        let bits_a: Vec<_> = repeat_with(|| rand::thread_rng().gen_range(0, 2))
+            .take(self.num_points)
+            .collect();
 
-        // generate the values distributed to servers A and B
-        for j in 0..self.num_points {
-            let seed = self.prg.new_seed();
-            let bit = rand::thread_rng().gen_range(0, 2);
+        let mut seeds_b = seeds_a.clone();
+        seeds_b[point_idx] = self.prg.new_seed();
+        let mut bits_b = bits_a.clone();
+        bits_b[point_idx] = 1 - bits_b[point_idx];
 
-            seeds_a.push(seed.clone());
-            bits_a.push(bit);
-
-            if j == idx {
-                seeds_b.push(self.prg.new_seed());
-                bits_b.push(1 - bit);
-            } else {
-                seeds_b.push(seed.clone());
-                bits_b.push(bit);
-            }
-        }
-
-        let encoded_msg = self.prg.eval(&seeds_a[idx], msg.len())
-            ^ &self.prg.eval(&seeds_b[idx], msg.len())
+        let encoded_msg = self.prg.eval(&seeds_a[point_idx], msg.len())
+            ^ &self.prg.eval(&seeds_b[point_idx], msg.len())
             ^ msg;
 
         vec![
-            DPFKey::<P>::new(encoded_msg.clone(), bits_a, seeds_a),
-            DPFKey::<P>::new(encoded_msg, bits_b, seeds_b),
+            DPFKey::new(encoded_msg.clone(), bits_a, seeds_a),
+            DPFKey::new(encoded_msg, bits_b, seeds_b),
         ]
     }
 
@@ -121,28 +112,28 @@ where
         key.seeds
             .iter()
             .zip(key.bits.iter())
-            .map(|(seed, &bits)| {
-                let mask = self.prg.eval(seed, key.encoded_msg.len());
-
-                if bits == 1 {
-                    mask ^ &key.encoded_msg
-                } else {
-                    mask
+            .map(|(seed, bits)| {
+                let mut data = self.prg.eval(seed, key.encoded_msg.len());
+                if *bits == 1 {
+                    data ^= &key.encoded_msg
                 }
+                data
             })
             .collect()
     }
 
     /// combines the results produced by running eval on both keys
     fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes> {
-        // xor all the parts together
-        let mut res = parts[0].clone();
-        for part in parts.iter().skip(1) {
+        let mut parts = parts.iter();
+        let mut res = parts
+            .next()
+            .expect("Need at least one part to combine.")
+            .clone();
+        for part in parts {
             for (x, y) in res.iter_mut().zip(part.iter()) {
                 *x ^= y;
             }
         }
-
         res
     }
 }
