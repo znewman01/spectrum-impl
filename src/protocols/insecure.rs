@@ -186,7 +186,6 @@ impl Protocol for InsecureProtocol {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::identity_conversion)]
     use super::*;
     use crate::protocols::tests::*;
     use proptest::prelude::*;

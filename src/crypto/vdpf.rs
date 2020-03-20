@@ -69,7 +69,7 @@ impl FieldProofShare {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct FieldVDPF<D> {
     dpf: D,
     field: Rc<Field>,
@@ -163,7 +163,7 @@ impl VDPF for FieldVDPF<PRGDPF<AESPRG>> {
     }
 
     fn gen_proofs_noop(&self, dpf_keys: &[<Self as DPF>::Key]) -> Vec<Self::ProofShare> {
-        self.gen_proofs(&self.field.zero(), self.num_points(), dpf_keys)
+        self.gen_proofs(&self.field.zero(), self.num_points() - 1, dpf_keys)
     }
 
     fn gen_audit(
@@ -204,7 +204,7 @@ impl VDPF for FieldVDPF<PRGDPF<AESPRG>> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::crypto::field::Field;
     use proptest::prelude::*;
@@ -226,7 +226,7 @@ mod tests {
         Just(p.into())
     }
 
-    fn aes_prg_vdpfs() -> impl Strategy<Value = FieldVDPF<PRGDPF<AESPRG>>> {
+    pub fn aes_prg_vdpfs() -> impl Strategy<Value = FieldVDPF<PRGDPF<AESPRG>>> {
         (aes_prg_dpfs(), fields()).prop_map(|(dpf, field)| FieldVDPF::new(dpf, Rc::new(field)))
     }
 

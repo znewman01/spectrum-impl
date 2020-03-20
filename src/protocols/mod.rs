@@ -49,7 +49,7 @@ pub mod tests {
     use std::fmt::Debug;
 
     pub const CHANNELS: usize = 3;
-    pub const MSG_LEN: usize = 10;
+    pub const MSG_LEN: usize = 1024;
 
     pub fn messages() -> impl Strategy<Value = Bytes> {
         prop::collection::vec(any::<u8>(), MSG_LEN).prop_map(Into::into)
