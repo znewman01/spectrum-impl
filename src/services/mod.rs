@@ -4,7 +4,9 @@ pub mod quorum;
 mod retry;
 
 use crate::proto::{ClientId, WorkerId};
-use crate::{bytes::Bytes, protocols::ChannelKeyWrapper};
+use crate::{bytes::Bytes, protocols::wrapper::ChannelKeyWrapper};
+
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Group {
@@ -61,12 +63,26 @@ impl PublisherInfo {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ClientInfo {
     pub idx: u16,
     pub broadcast: Option<(Bytes, ChannelKeyWrapper)>,
     _private: (),
 }
+
+impl Hash for ClientInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.idx.hash(state);
+    }
+}
+
+impl PartialEq for ClientInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.idx == other.idx
+    }
+}
+
+impl Eq for ClientInfo {}
 
 impl ClientInfo {
     pub fn new(idx: u16) -> Self {

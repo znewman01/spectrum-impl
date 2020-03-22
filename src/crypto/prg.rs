@@ -87,13 +87,28 @@ mod tests {
     use proptest::prelude::*;
     use std::collections::HashSet;
     use std::fmt::Debug;
-    use std::iter::repeat_with;
     use std::ops::Range;
 
     const SIZES: Range<usize> = AES_SEED_SIZE..1000;
 
-    fn aes_prgs() -> impl Strategy<Value = AESPRG> {
-        Just(AESPRG::new())
+    impl Arbitrary for AESPRG {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            Just(AESPRG::new()).boxed()
+        }
+    }
+
+    impl Arbitrary for AESSeed {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prop::collection::vec(any::<u8>(), AES_SEED_SIZE)
+                .prop_map(|data| AESSeed { bytes: data.into() })
+                .boxed()
+        }
     }
 
     fn run_test_prg_seed_random<P>(prg: P)
@@ -120,26 +135,27 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_aes_prg_seed_random(aes_prg in aes_prgs()) {
-            run_test_prg_seed_random(aes_prg);
+        fn test_aes_prg_seed_random(prg in any::<AESPRG>()) {
+            run_test_prg_seed_random(prg);
         }
 
         #[test]
-        fn test_aes_prg_eval_correct_size(aes_prg in aes_prgs(), size in SIZES) {
-            let seed = aes_prg.new_seed();
-            run_test_prg_eval_correct_size(aes_prg, seed, size);
+        fn test_aes_prg_eval_correct_size(prg in any::<AESPRG>(), seed in any::<AESSeed>(), size in SIZES) {
+            run_test_prg_eval_correct_size(prg, seed, size);
         }
 
         #[test]
-        fn test_aes_prg_eval_deterministic(aes_prg in aes_prgs(), size in SIZES) {
-            let seed = aes_prg.new_seed();
-            run_test_prg_eval_deterministic(aes_prg, seed, size);
+        fn test_aes_prg_eval_deterministic(prg in any::<AESPRG>(), seed in any::<AESSeed>(), size in SIZES) {
+            run_test_prg_eval_deterministic(prg, seed, size);
         }
 
         #[test]
-        fn test_aes_prg_eval_random(aes_prg in aes_prgs(), num_seeds in 0..10usize, size in SIZES) {
-            let seeds: Vec<_> = repeat_with(|| aes_prg.new_seed()).take(num_seeds).collect();
-            run_test_prg_eval_random(aes_prg, &seeds, size);
+        fn test_aes_prg_eval_random(
+            prg in any::<AESPRG>(),
+            seeds in prop::collection::vec(any::<AESSeed>(), 10),
+            size in SIZES
+        ) {
+            run_test_prg_eval_random(prg, &seeds, size);
         }
     }
 }

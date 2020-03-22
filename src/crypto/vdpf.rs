@@ -110,7 +110,9 @@ impl<D: DPF> DPF for FieldVDPF<D> {
     }
 }
 
-impl VDPF for FieldVDPF<PRGDPF<AESPRG>> {
+pub type ConcreteVdpf = FieldVDPF<PRGDPF<AESPRG>>;
+
+impl VDPF for ConcreteVdpf {
     type AuthKey = FieldElement;
     type ProofShare = FieldProofShare;
     type Token = FieldToken;
@@ -206,37 +208,51 @@ impl VDPF for FieldVDPF<PRGDPF<AESPRG>> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::crypto::field::Field;
     use proptest::prelude::*;
-    use rug::Integer;
     use std::ops::Range;
 
-    use crate::crypto::dpf::tests::aes_prg_dpfs;
+    use crate::{
+        bytes::tests::bytes,
+        crypto::field::tests::{fields, integers},
+    };
 
-    const DATA_SIZE: Range<usize> = 100..300; // in bytes
+    const DATA_SIZE: Range<usize> = 16..20; // in bytes
 
     fn data() -> impl Strategy<Value = Bytes> {
-        prop::collection::vec(any::<u8>(), DATA_SIZE).prop_map(Bytes::from)
+        DATA_SIZE.prop_flat_map(|size| bytes(size))
     }
 
-    fn fields() -> impl Strategy<Value = Field> {
-        let mut p = Integer::from(800_000_000);
-        p.next_prime_mut();
-        Just(p.into())
+    impl<D: Arbitrary + 'static> Arbitrary for FieldVDPF<D> {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (any::<D>(), fields())
+                .prop_map(|(dpf, field)| FieldVDPF::new(dpf, field))
+                .boxed()
+        }
     }
 
-    pub fn aes_prg_vdpfs() -> impl Strategy<Value = FieldVDPF<PRGDPF<AESPRG>>> {
-        (aes_prg_dpfs(), fields()).prop_map(|(dpf, field)| FieldVDPF::new(dpf, Arc::new(field)))
+    impl Arbitrary for FieldProofShare {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (fields(), integers(), 0..1u8)
+                .prop_map(|(field, seed_value, bit)| FieldProofShare {
+                    bit: SecretShare::new(field.new_element(bit.into())),
+                    seed: SecretShare::new(field.new_element(seed_value.into())),
+                })
+                .boxed()
+        }
     }
 
-    fn run_test_audit_check_correct<V>(
+    fn run_test_audit_check_correct<V: VDPF>(
         vdpf: V,
         auth_keys: &[V::AuthKey],
         data: &Bytes,
         point_idx: usize,
-    ) where
-        V: VDPF,
-    {
+    ) {
         let dpf_keys = vdpf.gen(data, point_idx);
         let proof_shares = vdpf.gen_proofs(&auth_keys[point_idx], point_idx, &dpf_keys);
         let audit_tokens = dpf_keys
@@ -247,10 +263,11 @@ pub mod tests {
         assert!(vdpf.check_audit(audit_tokens));
     }
 
-    fn run_test_audit_check_correct_for_noop<V>(vdpf: V, auth_keys: &[V::AuthKey], data_size: usize)
-    where
-        V: VDPF,
-    {
+    fn run_test_audit_check_correct_for_noop<V: VDPF>(
+        vdpf: V,
+        auth_keys: &[V::AuthKey],
+        data_size: usize,
+    ) {
         let dpf_keys = vdpf.gen(&Bytes::empty(data_size), vdpf.num_points());
         let proof_shares = vdpf.gen_proofs_noop(&dpf_keys);
         let audit_tokens = dpf_keys
@@ -264,7 +281,7 @@ pub mod tests {
     proptest! {
         #[test]
         fn test_audit_check_correct(
-            vdpf in aes_prg_vdpfs(),
+            vdpf in any::<ConcreteVdpf>(),
             data in data(),
             point_idx in any::<prop::sample::Index>(),
         ) {
@@ -275,7 +292,7 @@ pub mod tests {
         }
 
         fn test_audit_check_correct_for_noop(
-            vdpf in aes_prg_vdpfs(),
+            vdpf in any::<ConcreteVdpf>(),
             data_size in DATA_SIZE,
         ) {
             let auth_keys = vdpf.sample_keys();

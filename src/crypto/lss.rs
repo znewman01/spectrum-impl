@@ -17,7 +17,7 @@ pub struct LSS {}
 
 impl SecretShare {
     /// generates new secret share in a field element
-    fn new(value: FieldElement) -> SecretShare {
+    pub fn new(value: FieldElement) -> SecretShare {
         SecretShare { value }
     }
 }

@@ -6,8 +6,9 @@ use std::fmt::Debug;
 use std::ops;
 use std::sync::Arc;
 
+// TODO(zjn): move the Arc<> into the field; implement Arbitrary
 /// prime order field
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Field {
     order: Integer,
 }
@@ -19,7 +20,7 @@ impl From<Integer> for Field {
 }
 
 /// element in a prime order field
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct FieldElement {
     value: Integer,
     field: Arc<Field>,
@@ -176,7 +177,6 @@ impl ops::AddAssign<FieldElement> for FieldElement {
     }
 }
 
-/// override -= operation
 impl ops::SubAssign<FieldElement> for FieldElement {
     fn sub_assign(&mut self, other: FieldElement) {
         assert_eq!(self.field, other.field);
@@ -188,20 +188,58 @@ impl ops::SubAssign<FieldElement> for FieldElement {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use std::collections::HashSet;
+    use std::iter::repeat_with;
+
+    pub fn integers() -> impl Strategy<Value = Integer> {
+        (0..1000).prop_map(Integer::from)
+    }
+
+    pub fn prime_integers() -> impl Strategy<Value = Integer> {
+        integers().prop_map(Integer::next_prime)
+    }
+
+    pub fn fields() -> impl Strategy<Value = Arc<Field>> {
+        prime_integers().prop_map(Field::from).prop_map(Arc::new)
+    }
+
+    impl Arbitrary for FieldElement {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (fields(), integers())
+                .prop_map(|(field, value)| field.new_element(value))
+                .boxed()
+        }
+    }
+
+    // Several field elements, *all in the same field*
+    pub fn field_element_vecs(num: usize) -> impl Strategy<Value = Vec<FieldElement>> {
+        fields().prop_flat_map(move |field| {
+            prop::collection::vec(integers().prop_map(move |v| field.new_element(v)), num)
+        })
+    }
 
     // TODO: additional tests:
     // 1) ==, != work as expected
     // 2) all these ops w/ different fields result in panic
 
-    #[test]
-    fn test_field_rand_element() {
-        let p = Integer::from(23);
-        let field = Arc::new(Field::new(p));
-
-        let mut rng = RandState::new();
-        assert_ne!(field.rand_element(&mut rng), field.rand_element(&mut rng));
+    proptest! {
+        #[test]
+        fn test_field_rand_element_not_deterministic(field in fields()) {
+            let mut rng = RandState::new();
+            let elements: HashSet<_> = repeat_with(|| field.rand_element(&mut rng))
+                .take(10)
+                .collect();
+            assert!(
+                elements.len() > 1,
+                "Many random elements should not all be the same."
+            );
+        }
     }
 
     #[test]

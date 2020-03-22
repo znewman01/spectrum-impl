@@ -1,50 +1,68 @@
-use crate::bytes::Bytes;
-use crate::crypto::{
-    dpf::{DPF, PRGDPF},
-    field::Field,
-    prg::AESPRG,
-    vdpf::{FieldVDPF, VDPF},
+use crate::proto;
+use crate::{
+    bytes::Bytes,
+    crypto::{
+        dpf::{DPF, PRGDPF},
+        field::Field,
+        prg::AESPRG,
+        vdpf::{FieldVDPF, VDPF},
+    },
+    protocols::Protocol,
 };
-use crate::protocols::Protocol;
-
+use derivative::Derivative;
 use rug::Integer;
-use std::fmt::Debug;
+use std::convert::TryFrom;
+use std::fmt;
 use std::iter::repeat;
 use std::sync::Arc;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ChannelKey<V>
-where
-    V: VDPF,
-    V::AuthKey: Debug + PartialEq,
-{
-    idx: usize,
-    secret: V::AuthKey,
+pub use crate::crypto::vdpf::ConcreteVdpf;
+
+#[derive(Derivative)]
+#[derivative(
+    Clone(bound = "V::AuthKey: Clone"),
+    Debug(bound = "V::AuthKey: fmt::Debug"),
+    PartialEq(bound = "V::AuthKey: PartialEq"),
+    Eq(bound = "V::AuthKey: Eq")
+)]
+pub struct ChannelKey<V: VDPF> {
+    pub(in crate::protocols) idx: usize,
+    pub(in crate::protocols) secret: V::AuthKey,
 }
 
-impl<V> ChannelKey<V>
-where
-    V: VDPF,
-    V::AuthKey: Debug + PartialEq,
-{
+impl<V: VDPF> ChannelKey<V> {
     pub fn new(idx: usize, secret: V::AuthKey) -> Self {
         ChannelKey { idx, secret }
     }
 }
 
-#[derive(Debug)]
-pub struct WriteToken<V>(<V as DPF>::Key, V::ProofShare)
-where
-    V: VDPF,
-    <V as DPF>::Key: Debug;
+#[derive(Derivative)]
+#[derivative(
+    Debug(bound = "V::ProofShare: fmt::Debug, <V as DPF>::Key: fmt::Debug"),
+    PartialEq(bound = "V::ProofShare: PartialEq, <V as DPF>::Key: PartialEq"),
+    Eq(bound = "V::ProofShare: Eq, <V as DPF>::Key: Eq"),
+    Clone(bound = "V::ProofShare: Clone, <V as DPF>::Key: Clone")
+)]
+pub struct WriteToken<V: VDPF>(<V as DPF>::Key, V::ProofShare);
 
-impl<V> WriteToken<V>
-where
-    V: VDPF,
-    <V as DPF>::Key: Debug,
-{
+impl<V: VDPF> WriteToken<V> {
     fn new(key: <V as DPF>::Key, proof_share: V::ProofShare) -> Self {
         WriteToken(key, proof_share)
+    }
+}
+
+impl Into<proto::WriteToken> for WriteToken<ConcreteVdpf> {
+    fn into(self) -> proto::WriteToken {
+        proto::WriteToken { token: None }
+    }
+}
+
+impl TryFrom<proto::WriteToken> for WriteToken<ConcreteVdpf> {
+    type Error = &'static str;
+
+    fn try_from(token: proto::WriteToken) -> Result<Self, Self::Error> {
+        // Ok(Self::new(0, 0))
+        Err("not implemented")
     }
 }
 
@@ -54,11 +72,7 @@ pub struct SecureProtocol<V> {
     vdpf: V,
 }
 
-impl<V> SecureProtocol<V>
-where
-    V: VDPF,
-    V::AuthKey: Debug + PartialEq,
-{
+impl<V: VDPF> SecureProtocol<V> {
     pub fn new(vdpf: V, msg_size: usize) -> SecureProtocol<V> {
         SecureProtocol { msg_size, vdpf }
     }
@@ -69,14 +83,19 @@ where
             .sample_keys()
             .into_iter()
             .enumerate()
-            .map(|(idx, secret)| ChannelKey::new(idx, secret))
+            .map(|(idx, secret)| ChannelKey::<V>::new(idx, secret))
             .collect()
     }
 }
 
-impl SecureProtocol<FieldVDPF<PRGDPF<AESPRG>>> {
+impl SecureProtocol<ConcreteVdpf> {
     #[allow(dead_code)]
-    fn with_aes_prg_dpf(sec_bytes: u32, parties: usize, channels: usize, msg_size: usize) -> Self {
+    pub fn with_aes_prg_dpf(
+        sec_bytes: u32,
+        parties: usize,
+        channels: usize,
+        msg_size: usize,
+    ) -> Self {
         let prime: Integer = (Integer::from(2) << sec_bytes).next_prime_ref().into();
         let field = Arc::new(Field::from(prime));
         let vdpf = FieldVDPF::new(PRGDPF::new(AESPRG::new(), parties, channels), field);
@@ -87,9 +106,8 @@ impl SecureProtocol<FieldVDPF<PRGDPF<AESPRG>>> {
 impl<V> Protocol for SecureProtocol<V>
 where
     V: VDPF,
-    <V as DPF>::Key: Debug,
     V::Token: Clone,
-    V::AuthKey: Debug + Clone + PartialEq,
+    V::AuthKey: Clone,
 {
     type ChannelKey = ChannelKey<V>; // channel number, password
     type WriteToken = WriteToken<V>; // message, index, maybe a key
@@ -145,21 +163,49 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    use crate::crypto::vdpf::tests::aes_prg_vdpfs;
+    use std::convert::TryInto;
+
+    use crate::crypto::field::FieldElement;
     use crate::protocols::tests::*;
 
-    fn protocols() -> impl Strategy<Value = SecureProtocol<FieldVDPF<PRGDPF<AESPRG>>>> {
-        aes_prg_vdpfs().prop_map(|vdpf| SecureProtocol::new(vdpf, MSG_LEN))
+    impl<V> Arbitrary for SecureProtocol<V>
+    where
+        V: VDPF + Arbitrary,
+        <V as Arbitrary>::Strategy: 'static,
+    {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            any::<V>()
+                .prop_map(|vdpf| SecureProtocol::new(vdpf, MSG_LEN))
+                .boxed()
+        }
+    }
+
+    impl Arbitrary for ChannelKey<ConcreteVdpf> {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (
+                any::<ConcreteVdpf>(),
+                any::<prop::sample::Index>(),
+                any::<FieldElement>(),
+            )
+                .prop_map(|(vdpf, idx, value)| Self::new(idx.index(vdpf.num_points()), value))
+                .boxed()
+        }
     }
 
     proptest! {
         #[test]
         fn test_null_broadcast_passes_audit(
-            protocol in protocols(),
+            protocol in any::<SecureProtocol<ConcreteVdpf>>(),
         ) {
             let keys = protocol.sample_keys();
             check_null_broadcast_passes_audit(protocol, keys);
@@ -167,7 +213,7 @@ mod tests {
 
         #[test]
         fn test_broadcast_passes_audit(
-            protocol in protocols(),
+            protocol in any::<SecureProtocol<ConcreteVdpf>>(),
             msg in messages(),
             idx in any::<prop::sample::Index>(),
         ) {
@@ -178,7 +224,7 @@ mod tests {
 
         #[test]
         fn test_broadcast_bad_key_fails_audit(
-            protocol in protocols(),
+            protocol in any::<SecureProtocol<ConcreteVdpf>>(),
             msg in messages().prop_filter("Broadcasting null message okay!", |m| *m != Bytes::empty(MSG_LEN)),
             idx in any::<prop::sample::Index>(),
         ) {
@@ -190,20 +236,44 @@ mod tests {
 
         #[test]
         fn test_null_broadcast_messages_unchanged(
-            (protocol, accumulator) in protocols().prop_flat_map(and_accumulators)
+            (protocol, accumulator) in any::<SecureProtocol<ConcreteVdpf>>().prop_flat_map(and_accumulators)
         ) {
             check_null_broadcast_messages_unchanged(protocol, accumulator);
         }
 
         #[test]
         fn test_broadcast_recovers_message(
-            protocol in protocols(),
+            protocol in any::<SecureProtocol<ConcreteVdpf>>(),
             msg in messages(),
             idx in any::<prop::sample::Index>(),
         ) {
             let keys = protocol.sample_keys();
             let idx = idx.index(keys.len());
             check_broadcast_recovers_message(protocol, msg, keys, idx);
+        }
+    }
+
+    impl<V> Arbitrary for WriteToken<V>
+    where
+        V: VDPF,
+        <V as DPF>::Key: Arbitrary + 'static,
+        V::ProofShare: Arbitrary + 'static,
+    {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (any::<<V as DPF>::Key>(), any::<V::ProofShare>())
+                .prop_map(|(dpf_key, share)| WriteToken::new(dpf_key, share))
+                .boxed()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_write_token_proto_roundtrip(token in any::<WriteToken<ConcreteVdpf>>()) {
+            let wrapped: proto::WriteToken = token.clone().into();
+            assert_eq!(token, wrapped.try_into().unwrap());
         }
     }
 }

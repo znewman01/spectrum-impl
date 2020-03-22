@@ -122,6 +122,19 @@ pub mod tests {
 
     const SIZE_RANGE: Range<usize> = 0..4097;
 
+    impl Arbitrary for Bytes {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            any::<Vec<u8>>().prop_map(Bytes::from).boxed()
+        }
+    }
+
+    pub fn bytes(len: usize) -> impl Strategy<Value = Bytes> {
+        prop::collection::vec(any::<u8>(), len).prop_map(Bytes::from)
+    }
+
     proptest! {
 
         #[test]

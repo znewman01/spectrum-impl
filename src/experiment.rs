@@ -1,8 +1,7 @@
 use crate::config::store::{Error, Store};
 use crate::protocols::{
     insecure::{self, InsecureProtocol},
-    wrapper::ProtocolWrapper,
-    ChannelKeyWrapper,
+    wrapper::{ChannelKeyWrapper, ProtocolWrapper},
 };
 use crate::services::{
     discovery::Node, ClientInfo, Group, LeaderInfo, PublisherInfo, Service, WorkerInfo,

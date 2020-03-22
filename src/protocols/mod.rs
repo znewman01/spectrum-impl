@@ -5,11 +5,6 @@ pub mod wrapper;
 
 use crate::bytes::Bytes;
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub enum ChannelKeyWrapper {
-    Insecure(usize, String),
-}
-
 type Accumulator = Vec<Bytes>;
 
 pub trait Protocol {

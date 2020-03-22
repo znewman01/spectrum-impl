@@ -1,34 +1,17 @@
 use crate::proto;
-use crate::protocols::{Bytes, ChannelKeyWrapper, Protocol};
+use crate::{bytes::Bytes, protocols::Protocol};
 
-use std::convert::TryFrom;
 use std::convert::TryInto;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ChannelKey(usize, String);
+pub struct ChannelKey(
+    pub(in crate::protocols) usize,
+    pub(in crate::protocols) String,
+);
 
 impl ChannelKey {
     pub fn new(idx: usize, password: String) -> Self {
         ChannelKey(idx, password)
-    }
-}
-
-impl TryFrom<ChannelKeyWrapper> for ChannelKey {
-    type Error = &'static str;
-
-    fn try_from(wrapper: ChannelKeyWrapper) -> Result<Self, Self::Error> {
-        #![allow(irrefutable_let_patterns)] // until we introduce multiple protocols
-        if let ChannelKeyWrapper::Insecure(idx, password) = wrapper {
-            Ok(ChannelKey::new(idx, password))
-        } else {
-            Err("Invalid channel key")
-        }
-    }
-}
-
-impl Into<ChannelKeyWrapper> for ChannelKey {
-    fn into(self) -> ChannelKeyWrapper {
-        ChannelKeyWrapper::Insecure(self.0, self.1)
     }
 }
 

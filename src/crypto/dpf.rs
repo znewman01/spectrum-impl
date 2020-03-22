@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 use crate::bytes::Bytes;
 use crate::crypto::prg::PRG;
+use derivative::Derivative;
 use rand::{thread_rng, Rng};
 use std::fmt::Debug;
 use std::iter::repeat_with;
@@ -31,24 +32,23 @@ pub struct PRGDPF<P> {
 }
 
 // DPF key for PRGDPF
-#[derive(Clone, PartialEq, Debug)]
-pub struct PRGKey<P>
-where
-    P: PRG,
-    P::Seed: Clone + PartialEq + Eq + Debug,
-{
+#[derive(Derivative)]
+#[derivative(
+    Debug(bound = "P::Seed: Debug"),
+    PartialEq(bound = "P::Seed: PartialEq"),
+    Eq(bound = "P::Seed: Eq"),
+    Clone(bound = "P::Seed: Clone")
+)]
+pub struct PRGKey<P: PRG> {
     pub encoded_msg: Bytes,
     pub bits: Vec<u8>,
     pub seeds: Vec<<P as PRG>::Seed>,
 }
 
-impl<P> PRGKey<P>
-where
-    P: PRG,
-    P::Seed: Clone + PartialEq + Eq + Debug,
-{
+impl<P: PRG> PRGKey<P> {
     // generates a new DPF key with the necessary parameters needed for evaluation
     fn new(encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<P::Seed>) -> PRGKey<P> {
+        assert_eq!(bits.len(), seeds.len());
         assert!(
             bits.iter().all(|b| *b == 0 || *b == 1),
             "All bits must be 0 or 1"
@@ -161,13 +161,41 @@ pub mod tests {
     use crate::crypto::prg::AESPRG;
     use proptest::prelude::*;
 
-    const DATA_SIZE: usize = 1 << 10;
-    const MAX_NUM_POINTS: usize = 20;
+    const DATA_SIZE: usize = 20;
+    const MAX_NUM_POINTS: usize = 10;
 
-    pub fn aes_prg_dpfs() -> impl Strategy<Value = PRGDPF<AESPRG>> {
-        let prg = AESPRG::new();
-        let num_keys = 2; // PRG DPF implementation handles only 2 keys.
-        (1..MAX_NUM_POINTS).prop_map(move |num_points| PRGDPF::new(prg, num_keys, num_points))
+    impl<P: Arbitrary + 'static> Arbitrary for PRGDPF<P> {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            let num_keys = 2; // PRG DPF implementation handles only 2 keys.
+            (any::<P>(), 1..=MAX_NUM_POINTS)
+                .prop_map(move |(prg, num_points)| PRGDPF::new(prg, num_keys, num_points))
+                .boxed()
+        }
+    }
+
+    impl<P> Arbitrary for PRGKey<P>
+    where
+        P: PRG,
+        P::Seed: Arbitrary,
+    {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (1..10usize)
+                .prop_flat_map(|num_keys| {
+                    (
+                        any::<Bytes>(),
+                        prop::collection::vec(0..1u8, num_keys),
+                        prop::collection::vec(any::<P::Seed>(), num_keys),
+                    )
+                        .prop_map(|(msg, bits, seeds)| Self::new(msg, bits, seeds))
+                })
+                .boxed()
+        }
     }
 
     fn data() -> impl Strategy<Value = Bytes> {
@@ -203,7 +231,7 @@ pub mod tests {
     proptest! {
         #[test]
         fn test_prg_dpf(
-            dpf in aes_prg_dpfs(),
+            dpf in any::<PRGDPF<AESPRG>>(),
             index in any::<proptest::sample::Index>(),
             data in data()
         ) {
@@ -213,7 +241,7 @@ pub mod tests {
 
         #[test]
         fn test_prg_dpf_empty(
-            dpf in aes_prg_dpfs(),
+            dpf in any::<PRGDPF<AESPRG>>(),
             size in Just(DATA_SIZE),
         ) {
             run_test_dpf_empty(dpf, size);

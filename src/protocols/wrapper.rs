@@ -1,5 +1,12 @@
 use crate::proto::{AuditShare, WriteToken};
-use crate::protocols::{Accumulator, Bytes, ChannelKeyWrapper, Protocol};
+use crate::{
+    crypto::field::FieldElement,
+    protocols::{
+        insecure,
+        secure::{self, ConcreteVdpf},
+        Accumulator, Bytes, Protocol,
+    },
+};
 
 use std::convert::TryFrom;
 use std::convert::TryInto;
@@ -14,6 +21,48 @@ pub trait ProtocolWrapper {
 
     fn new_accumulator(&self) -> Accumulator;
     fn expand_write_token(&self, token: WriteToken) -> Accumulator;
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ChannelKeyWrapper {
+    Insecure(usize, String),
+    Secure(usize, FieldElement),
+}
+
+impl TryFrom<ChannelKeyWrapper> for secure::ChannelKey<ConcreteVdpf> {
+    type Error = &'static str;
+
+    fn try_from(wrapper: ChannelKeyWrapper) -> Result<Self, Self::Error> {
+        if let ChannelKeyWrapper::Secure(idx, secret) = wrapper {
+            Ok(secure::ChannelKey::<ConcreteVdpf>::new(idx, secret))
+        } else {
+            Err("Invalid channel key")
+        }
+    }
+}
+
+impl Into<ChannelKeyWrapper> for secure::ChannelKey<ConcreteVdpf> {
+    fn into(self) -> ChannelKeyWrapper {
+        ChannelKeyWrapper::Secure(self.idx, self.secret)
+    }
+}
+
+impl TryFrom<ChannelKeyWrapper> for insecure::ChannelKey {
+    type Error = &'static str;
+
+    fn try_from(wrapper: ChannelKeyWrapper) -> Result<Self, Self::Error> {
+        if let ChannelKeyWrapper::Insecure(idx, password) = wrapper {
+            Ok(insecure::ChannelKey::new(idx, password))
+        } else {
+            Err("Invalid channel key")
+        }
+    }
+}
+
+impl Into<ChannelKeyWrapper> for insecure::ChannelKey {
+    fn into(self) -> ChannelKeyWrapper {
+        ChannelKeyWrapper::Insecure(self.0, self.1)
+    }
 }
 
 impl<P> ProtocolWrapper for P
@@ -56,5 +105,19 @@ where
 
     fn expand_write_token(&self, token: WriteToken) -> Vec<Bytes> {
         self.to_accumulator(token.try_into().unwrap())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn test_secure_channel_key_proto_roundtrips(key in any::<secure::ChannelKey<ConcreteVdpf>>()) {
+            let wrapped: ChannelKeyWrapper = key.clone().into();
+            assert_eq!(key, wrapped.try_into().unwrap());
+        }
     }
 }
