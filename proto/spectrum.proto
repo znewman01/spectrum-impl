@@ -34,9 +34,40 @@ message InsecureAuditShare {
   bool okay = 1;
 }
 
+// Corresponds to a GMP integer
+message Integer {}
+
+message SecureWriteToken {
+  message DpfKey {
+    bytes encoded_msg = 1;
+    bytes bits = 2; // one bit per bytes
+    repeated bytes seeds = 3;
+  }
+
+  message ProofShare {
+    Integer bit = 1;
+    Integer seed = 2;
+  }
+
+  DpfKey key = 1;
+  ProofShare proof = 2;
+  // TODO(zjn): loosen From/Into requirements on ProtocolWrapper so this doesn't get repeated
+  Integer modulus = 3;
+}
+
+message SecureAuditShare {
+  Integer bit = 1;
+  Integer seed = 2;
+  Integer data = 3;  // TODO(zjn): this will have to change when we properly hash the message
+  // TODO(zjn): loosen From/Into requirements on ProtocolWrapper so this doesn't get repeated
+  Integer modulus = 4;
+}
+
+
 message WriteToken {
   oneof token {
     InsecureWriteToken insecure_token = 1;
+    SecureWriteToken secure_token = 2;
   }
 }
 
