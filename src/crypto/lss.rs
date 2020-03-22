@@ -103,13 +103,13 @@ mod tests {
     use super::*;
     use crate::crypto::field::Field;
     use proptest::prelude::*;
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     #[test]
     fn test_share_recover() {
         let mut rng = RandState::new();
         let field = Field::new(101.into()); // 101 is prime
-        let value = FieldElement::new(100.into(), Rc::<Field>::new(field));
+        let value = FieldElement::new(100.into(), Arc::new(field));
 
         assert_eq!(value.clone(), LSS::recover(LSS::share(value, 10, &mut rng)));
     }
@@ -118,7 +118,7 @@ mod tests {
     fn test_share_splitting() {
         let mut rng = RandState::new();
         let field = Field::new(101.into()); // 101 is prime
-        let value = FieldElement::new(100.into(), Rc::<Field>::new(field));
+        let value = FieldElement::new(100.into(), Arc::new(field));
 
         // Share generates different shares each time
         assert_ne!(
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn test_share_add() {
         let mut rng = RandState::new();
-        let field = Rc::<Field>::new(Field::new(101.into())); // 101 is prime
+        let field = Arc::new(Field::new(101.into())); // 101 is prime
 
         // setup
         let value1 = FieldElement::new(100.into(), field.clone());
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn test_share_sub() {
         let mut rng = RandState::new();
-        let field = Rc::<Field>::new(Field::new(101.into())); // 101 is prime
+        let field = Arc::new(Field::new(101.into())); // 101 is prime
 
         // setup
         let value1 = FieldElement::new(100.into(), field.clone());
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn test_share_constant_add() {
         let mut rng = RandState::new();
-        let field = Rc::<Field>::new(Field::new(101.into())); // 101 is prime
+        let field = Arc::new(Field::new(101.into())); // 101 is prime
         let value = FieldElement::new(100.into(), field.clone());
 
         // share the value
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn test_share_constant_mul() {
         let mut rng = RandState::new();
-        let field = Rc::<Field>::new(Field::new(101.into())); // 101 is prime
+        let field = Arc::new(Field::new(101.into())); // 101 is prime
         let value = FieldElement::new(100.into(), field.clone());
 
         // share the value
@@ -214,7 +214,7 @@ mod tests {
         ) {
             let mut rng = RandState::new();
             let field = Field::new(101.into()); // 101 is prime
-            let value = FieldElement::new(100.into(), Rc::<Field>::new(field));
+            let value = FieldElement::new(100.into(), Arc::new(field));
 
             // share the value {split}
             let rec = LSS::recover(LSS::share(value.clone(), split, &mut rng));
@@ -229,7 +229,7 @@ mod tests {
     fn test_share_invalid() {
         let mut rng = RandState::new();
         let field = Field::new(101.into()); // 101 is prime
-        let value = FieldElement::new(100.into(), Rc::<Field>::new(field));
+        let value = FieldElement::new(100.into(), Arc::new(field));
         LSS::share(value, 1, &mut rng);
     }
 }

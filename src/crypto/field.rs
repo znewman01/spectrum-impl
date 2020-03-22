@@ -4,7 +4,7 @@ use rug::{integer::IsPrime, rand::RandState, Integer};
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// prime order field
 #[derive(Clone, PartialEq, Debug)]
@@ -22,7 +22,7 @@ impl From<Integer> for Field {
 #[derive(Clone, PartialEq, Debug)]
 pub struct FieldElement {
     value: Integer,
-    field: Rc<Field>,
+    field: Arc<Field>,
 }
 
 impl Field {
@@ -38,19 +38,19 @@ impl Field {
         Field { order }
     }
 
-    pub fn zero(self: &Rc<Field>) -> FieldElement {
+    pub fn zero(self: &Arc<Field>) -> FieldElement {
         FieldElement {
             value: 0.into(),
             field: self.clone(),
         }
     }
 
-    pub fn new_element(self: &Rc<Field>, value: Integer) -> FieldElement {
+    pub fn new_element(self: &Arc<Field>, value: Integer) -> FieldElement {
         FieldElement::new(value, self.clone())
     }
 
     // generates a new random field element
-    pub fn rand_element(self: &Rc<Field>, rng: &mut RandState) -> FieldElement {
+    pub fn rand_element(self: &Arc<Field>, rng: &mut RandState) -> FieldElement {
         // TODO: figure out how to generate a random value
         let random = self.order.clone().random_below(rng);
 
@@ -60,7 +60,7 @@ impl Field {
         }
     }
 
-    pub fn from_bytes(self: &Rc<Field>, bytes: &Bytes) -> FieldElement {
+    pub fn from_bytes(self: &Arc<Field>, bytes: &Bytes) -> FieldElement {
         // TODO: fix this
         let byte_str = hex::encode(bytes);
         let val = Integer::from_str_radix(&byte_str, 16).unwrap();
@@ -70,14 +70,14 @@ impl Field {
 
 impl FieldElement {
     /// generates a new field element; value mod field.order
-    pub fn new(v: Integer, field: Rc<Field>) -> FieldElement {
+    pub fn new(v: Integer, field: Arc<Field>) -> FieldElement {
         FieldElement {
             value: reduce_modulo(v, field.order.clone()),
             field,
         }
     }
 
-    pub fn field(&self) -> Rc<Field> {
+    pub fn field(&self) -> Arc<Field> {
         self.field.clone()
     }
 }
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn test_field_rand_element() {
         let p = Integer::from(23);
-        let field = Rc::<Field>::new(Field::new(p));
+        let field = Arc::new(Field::new(p));
 
         let mut rng = RandState::new();
         assert_ne!(field.rand_element(&mut rng), field.rand_element(&mut rng));
@@ -209,7 +209,7 @@ mod tests {
         let val1 = Integer::from(10);
         let val2 = Integer::from(20);
         let p = Integer::from(23);
-        let field = Rc::<Field>::new(Field::new(p));
+        let field = Arc::new(Field::new(p));
 
         let elem1 = FieldElement::new(val1.clone(), field.clone());
         let elem2 = FieldElement::new(val2.clone(), field.clone());
@@ -223,7 +223,7 @@ mod tests {
         let val1 = Integer::from(20);
         let val2 = Integer::from(10);
         let p = Integer::from(23);
-        let field = Rc::<Field>::new(Field::new(p));
+        let field = Arc::new(Field::new(p));
 
         let elem1 = FieldElement::new(Integer::from(&val1), field.clone());
         let elem2 = FieldElement::new(Integer::from(&val2), field.clone());
@@ -237,7 +237,7 @@ mod tests {
         let val1 = Integer::from(10);
         let val2 = Integer::from(20);
         let p = Integer::from(23);
-        let field = Rc::<Field>::new(Field::new(p));
+        let field = Arc::new(Field::new(p));
 
         let elem1 = FieldElement::new(Integer::from(&val1), field.clone());
         let elem2 = FieldElement::new(Integer::from(&val2), field.clone());
@@ -250,7 +250,7 @@ mod tests {
     fn test_field_element_neg() {
         let val = Integer::from(20);
         let p = Integer::from(23);
-        let field = Rc::<Field>::new(Field::new(p));
+        let field = Arc::new(Field::new(p));
 
         let elem1 = FieldElement::new(Integer::from(&val), field.clone());
         let actual = -elem1;

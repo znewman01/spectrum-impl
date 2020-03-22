@@ -2,7 +2,7 @@
 use rug::Integer;
 use std::fmt::Debug;
 use std::ops;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// mathematical group object
 #[derive(Clone, PartialEq, Debug)]
@@ -14,8 +14,8 @@ pub struct Group {
 /// element within a group
 #[derive(Clone, PartialEq, Debug)]
 pub struct GroupElement {
-    value: Integer,   // gen^k for some k
-    group: Rc<Group>, // reference to the group the element resides in
+    value: Integer,    // gen^k for some k
+    group: Arc<Group>, // reference to the group the element resides in
 }
 
 impl Group {
@@ -27,7 +27,7 @@ impl Group {
 
 impl GroupElement {
     /// generates a new group element gen^v mod group.modulus
-    pub fn new(v: Integer, group: Rc<Group>) -> GroupElement {
+    pub fn new(v: Integer, group: Arc<Group>) -> GroupElement {
         let value = group.gen.clone().pow_mod(&v, &group.modulus).unwrap();
         GroupElement { value, group }
     }
@@ -53,7 +53,7 @@ mod tests {
         let val2 = Integer::from(10);
         let m = Integer::from(23);
         let g = Integer::from(2);
-        let group = Rc::<Group>::new(Group::new(g, m));
+        let group = Arc::<Group>::new(Group::new(g, m));
 
         let elem1 = GroupElement::new(val1, group.clone());
         let elem2 = GroupElement::new(val2, group.clone());

@@ -10,7 +10,7 @@ use crate::protocols::Protocol;
 use rug::Integer;
 use std::fmt::Debug;
 use std::iter::repeat;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ChannelKey<V>
@@ -78,7 +78,7 @@ impl SecureProtocol<FieldVDPF<PRGDPF<AESPRG>>> {
     #[allow(dead_code)]
     fn with_aes_prg_dpf(sec_bytes: u32, parties: usize, channels: usize, msg_size: usize) -> Self {
         let prime: Integer = (Integer::from(2) << sec_bytes).next_prime_ref().into();
-        let field = Rc::new(Field::from(prime));
+        let field = Arc::new(Field::from(prime));
         let vdpf = FieldVDPF::new(PRGDPF::new(AESPRG::new(), parties, channels), field);
         SecureProtocol::new(vdpf, msg_size)
     }

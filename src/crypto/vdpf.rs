@@ -10,7 +10,7 @@ use crate::crypto::{
 use rug::rand::RandState;
 use std::fmt::Debug;
 use std::iter::repeat_with;
-use std::rc::Rc;
+use std::sync::Arc;
 
 // check_audit(gen_audit(gen_proof(...))) = TRUE
 pub trait VDPF: DPF {
@@ -72,11 +72,11 @@ impl FieldProofShare {
 #[derive(Clone, PartialEq, Debug)]
 pub struct FieldVDPF<D> {
     dpf: D,
-    field: Rc<Field>,
+    field: Arc<Field>,
 }
 
 impl<D> FieldVDPF<D> {
-    pub fn new(dpf: D, field: Rc<Field>) -> Self {
+    pub fn new(dpf: D, field: Arc<Field>) -> Self {
         FieldVDPF { dpf, field }
     }
 }
@@ -210,7 +210,6 @@ pub mod tests {
     use proptest::prelude::*;
     use rug::Integer;
     use std::ops::Range;
-    use std::rc::Rc;
 
     use crate::crypto::dpf::tests::aes_prg_dpfs;
 
@@ -227,7 +226,7 @@ pub mod tests {
     }
 
     pub fn aes_prg_vdpfs() -> impl Strategy<Value = FieldVDPF<PRGDPF<AESPRG>>> {
-        (aes_prg_dpfs(), fields()).prop_map(|(dpf, field)| FieldVDPF::new(dpf, Rc::new(field)))
+        (aes_prg_dpfs(), fields()).prop_map(|(dpf, field)| FieldVDPF::new(dpf, Arc::new(field)))
     }
 
     fn run_test_audit_check_correct<V>(
