@@ -5,7 +5,7 @@ use crate::{
         dpf::{PRGKey, DPF, PRGDPF},
         field::Field,
         prg::AESPRG,
-        vdpf::{FieldProofShare, FieldVDPF, VDPF},
+        vdpf::{FieldProofShare, FieldToken, FieldVDPF, VDPF},
     },
     protocols::Protocol,
 };
@@ -100,6 +100,61 @@ impl TryFrom<proto::WriteToken> for WriteToken<ConcreteVdpf> {
     }
 }
 
+#[derive(Derivative)]
+#[derivative(
+    Clone(bound = "V::Token: Clone"),
+    Debug(bound = "V::Token: fmt::Debug"),
+    PartialEq(bound = "V::Token: PartialEq"),
+    Eq(bound = "V::Token: Eq")
+)]
+pub struct AuditShare<V: VDPF> {
+    token: V::Token,
+}
+
+impl<V: VDPF> AuditShare<V> {
+    fn new(token: V::Token) -> Self {
+        AuditShare::<V> { token }
+    }
+}
+
+impl Into<proto::AuditShare> for AuditShare<ConcreteVdpf> {
+    fn into(self) -> proto::AuditShare {
+        let bit = self.token.bit.value();
+        let field = bit.field();
+        let modulus: proto::Integer = (*field).clone().into();
+
+        let inner = proto::audit_share::Inner::Secure(proto::SecureAuditShare {
+            bit: Some(bit.into()),
+            seed: Some(self.token.seed.value().into()),
+            data: self.token.data,
+            modulus: Some(modulus),
+        });
+        proto::AuditShare { inner: Some(inner) }
+    }
+}
+
+impl TryFrom<proto::AuditShare> for AuditShare<ConcreteVdpf> {
+    type Error = &'static str;
+
+    fn try_from(share: proto::AuditShare) -> Result<Self, Self::Error> {
+        if let proto::audit_share::Inner::Secure(inner) = share.inner.unwrap() {
+            let modulus: proto::Integer = inner.modulus.unwrap();
+            let field = Arc::new(Field::from(modulus));
+
+            let bit = field.from_proto(inner.bit.unwrap().into());
+            let seed = field.from_proto(inner.seed.unwrap().into());
+
+            Ok(Self::new(FieldToken::new(
+                bit.into(),
+                seed.into(),
+                inner.data,
+            )))
+        } else {
+            Err("Invalid proto::AuditShare.")
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SecureProtocol<V> {
     msg_size: usize,
@@ -144,7 +199,7 @@ where
 {
     type ChannelKey = ChannelKey<V>; // channel number, password
     type WriteToken = WriteToken<V>; // message, index, maybe a key
-    type AuditShare = V::Token;
+    type AuditShare = AuditShare<V>;
 
     fn num_parties(&self) -> usize {
         self.vdpf.num_keys()
@@ -179,14 +234,16 @@ where
             .collect()
     }
 
-    fn gen_audit(&self, keys: &[ChannelKey<V>], token: &WriteToken<V>) -> Vec<<V as VDPF>::Token> {
+    fn gen_audit(&self, keys: &[ChannelKey<V>], token: &WriteToken<V>) -> Vec<AuditShare<V>> {
         let auth_keys: Vec<_> = keys.iter().map(|key| key.secret.clone()).collect();
-        let token = self.vdpf.gen_audit(&auth_keys, &token.0, &token.1);
+        let token = AuditShare::new(self.vdpf.gen_audit(&auth_keys, &token.0, &token.1));
+        let _ = token.clone();
         repeat(token).take(self.num_parties()).collect()
     }
 
-    fn check_audit(&self, tokens: Vec<<V as VDPF>::Token>) -> bool {
+    fn check_audit(&self, tokens: Vec<AuditShare<V>>) -> bool {
         assert_eq!(tokens.len(), self.num_parties());
+        let tokens = tokens.into_iter().map(|t| t.token).collect();
         self.vdpf.check_audit(tokens)
     }
 
@@ -302,11 +359,30 @@ pub mod tests {
         }
     }
 
+    impl<V> Arbitrary for AuditShare<V>
+    where
+        V: VDPF + 'static,
+        V::Token: Arbitrary + fmt::Debug + 'static,
+    {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            any::<V::Token>().prop_map(AuditShare::new).boxed()
+        }
+    }
+
     proptest! {
         #[test]
         fn test_write_token_proto_roundtrip(token in any::<WriteToken<ConcreteVdpf>>()) {
             let wrapped: proto::WriteToken = token.clone().into();
             assert_eq!(token, wrapped.try_into().unwrap());
+        }
+
+        #[test]
+        fn test_audit_share_proto_roundtrip(share in any::<AuditShare<ConcreteVdpf>>()) {
+            let wrapped: proto::AuditShare = share.clone().into();
+            assert_eq!(share, wrapped.try_into().unwrap());
         }
     }
 }

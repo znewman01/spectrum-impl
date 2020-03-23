@@ -244,13 +244,18 @@ pub mod tests {
     }
 
     impl Arbitrary for FieldElement {
-        type Parameters = ();
+        type Parameters = Option<Arc<Field>>;
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (fields(), integers())
-                .prop_map(|(field, value)| field.new_element(value))
-                .boxed()
+        fn arbitrary_with(field: Self::Parameters) -> Self::Strategy {
+            match field {
+                Some(field) => integers()
+                    .prop_map(move |value| field.new_element(value))
+                    .boxed(),
+                None => (integers(), fields())
+                    .prop_map(|(value, field)| field.new_element(value))
+                    .boxed(),
+            }
         }
     }
 

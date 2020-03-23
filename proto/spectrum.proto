@@ -60,7 +60,7 @@ message SecureWriteToken {
 message SecureAuditShare {
   Integer bit = 1;
   Integer seed = 2;
-  Integer data = 3;  // TODO(zjn): this will have to change when we properly hash the message
+  uint64 data = 3;
   // TODO(zjn): loosen From/Into requirements on ProtocolWrapper so this doesn't get repeated
   Integer modulus = 4;
 }

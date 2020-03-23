@@ -45,9 +45,15 @@ pub trait VDPF: DPF {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct FieldToken {
-    bit: SecretShare,
-    seed: SecretShare,
-    data: u64,
+    pub(in crate) bit: SecretShare,
+    pub(in crate) seed: SecretShare,
+    pub(in crate) data: u64,
+}
+
+impl FieldToken {
+    pub fn new(bit: SecretShare, seed: SecretShare, data: u64) -> Self {
+        Self { bit, seed, data }
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -251,6 +257,27 @@ pub mod tests {
                 .prop_map(|(field, seed_value, bit)| FieldProofShare {
                     bit: SecretShare::new(field.new_element(bit.into())),
                     seed: SecretShare::new(field.new_element(seed_value)),
+                })
+                .boxed()
+        }
+    }
+
+    impl Arbitrary for FieldToken {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (fields(), 0..1000u64)
+                .prop_flat_map(|(field, data)| {
+                    (
+                        any_with::<FieldElement>(Some(field.clone())),
+                        any_with::<FieldElement>(Some(field)),
+                    )
+                        .prop_map(move |(bit, seed)| FieldToken {
+                            bit: SecretShare::new(bit),
+                            seed: SecretShare::new(seed),
+                            data,
+                        })
                 })
                 .boxed()
         }
