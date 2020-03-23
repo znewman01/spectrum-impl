@@ -1,5 +1,4 @@
 //! Spectrum implementation.
-#![allow(dead_code)]
 use crate::bytes::Bytes;
 use crate::crypto::{
     dpf::{DPF, PRGDPF},
@@ -278,7 +277,7 @@ pub mod tests {
         auth_keys: &[V::AuthKey],
         data_size: usize,
     ) {
-        let dpf_keys = vdpf.gen(&Bytes::empty(data_size), vdpf.num_points());
+        let dpf_keys = vdpf.gen_empty(data_size);
         let proof_shares = vdpf.gen_proofs_noop(&dpf_keys);
         let audit_tokens = dpf_keys
             .iter()
@@ -301,6 +300,7 @@ pub mod tests {
             run_test_audit_check_correct(vdpf, &auth_keys, &data, point_idx);
         }
 
+        #[test]
         fn test_audit_check_correct_for_noop(
             vdpf in any::<ConcreteVdpf>(),
             data_size in DATA_SIZE,

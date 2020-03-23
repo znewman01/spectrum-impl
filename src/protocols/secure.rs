@@ -123,7 +123,6 @@ impl<V: VDPF> SecureProtocol<V> {
 }
 
 impl SecureProtocol<ConcreteVdpf> {
-    #[allow(dead_code)]
     pub fn with_aes_prg_dpf(
         sec_bytes: u32,
         parties: usize,

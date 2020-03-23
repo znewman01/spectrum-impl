@@ -1,5 +1,4 @@
 //! Spectrum implementation.
-#![allow(dead_code)]
 use crate::bytes::Bytes;
 use crate::crypto::prg::PRG;
 use derivative::Derivative;
