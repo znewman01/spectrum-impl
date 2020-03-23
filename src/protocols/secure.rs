@@ -64,13 +64,13 @@ impl Into<proto::WriteToken> for WriteToken<ConcreteVdpf> {
             bit: Some(bit.into()),
             seed: Some(self.1.seed.value().into()),
         };
-        let inner_token = proto::SecureWriteToken {
+        let inner = proto::SecureWriteToken {
             key: Some(dpf_key_proto),
             proof: Some(proof),
             modulus: Some(modulus),
         };
         proto::WriteToken {
-            token: Some(proto::write_token::Token::SecureToken(inner_token)),
+            inner: Some(proto::write_token::Inner::Secure(inner)),
         }
     }
 }
@@ -79,7 +79,7 @@ impl TryFrom<proto::WriteToken> for WriteToken<ConcreteVdpf> {
     type Error = &'static str;
 
     fn try_from(token: proto::WriteToken) -> Result<Self, Self::Error> {
-        if let proto::write_token::Token::SecureToken(inner) = token.token.unwrap() {
+        if let proto::write_token::Inner::Secure(inner) = token.inner.unwrap() {
             let key_proto = inner.key.unwrap();
             let dpf_key = PRGKey::<AESPRG>::new(
                 key_proto.encoded_msg.into(),

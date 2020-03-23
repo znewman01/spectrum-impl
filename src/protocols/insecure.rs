@@ -20,17 +20,12 @@ pub struct WriteToken(Option<(Bytes, ChannelKey)>);
 
 impl From<proto::WriteToken> for WriteToken {
     fn from(token: proto::WriteToken) -> Self {
-        #![allow(irrefutable_let_patterns)] // until we introduce multiple protocols
-        if let proto::write_token::Token::InsecureToken(insecure_token_proto) = token.token.unwrap()
-        {
-            let data = insecure_token_proto.data;
+        if let proto::write_token::Inner::Insecure(inner) = token.inner.unwrap() {
+            let data = inner.data;
             if !data.is_empty() {
                 WriteToken(Some((
                     data.into(),
-                    ChannelKey(
-                        insecure_token_proto.channel_idx.try_into().unwrap(),
-                        insecure_token_proto.key,
-                    ),
+                    ChannelKey(inner.channel_idx.try_into().unwrap(), inner.key),
                 )))
             } else {
                 WriteToken(None)
@@ -44,7 +39,7 @@ impl From<proto::WriteToken> for WriteToken {
 impl Into<proto::WriteToken> for WriteToken {
     fn into(self) -> proto::WriteToken {
         proto::WriteToken {
-            token: Some(proto::write_token::Token::InsecureToken(match self.0 {
+            inner: Some(proto::write_token::Inner::Insecure(match self.0 {
                 Some((data, key)) => proto::InsecureWriteToken {
                     data: data.into(),
                     channel_idx: key.0 as u32,
@@ -71,10 +66,8 @@ pub struct AuditShare(bool);
 
 impl From<proto::AuditShare> for AuditShare {
     fn from(share: proto::AuditShare) -> Self {
-        if let proto::audit_share::AuditShare::InsecureAuditShare(insecure_share_proto) =
-            share.audit_share.unwrap()
-        {
-            AuditShare(insecure_share_proto.okay)
+        if let proto::audit_share::Inner::Insecure(inner) = share.inner.unwrap() {
+            AuditShare(inner.okay)
         } else {
             panic!();
         }
@@ -84,7 +77,7 @@ impl From<proto::AuditShare> for AuditShare {
 impl Into<proto::AuditShare> for AuditShare {
     fn into(self) -> proto::AuditShare {
         proto::AuditShare {
-            audit_share: Some(proto::audit_share::AuditShare::InsecureAuditShare(
+            inner: Some(proto::audit_share::Inner::Insecure(
                 proto::InsecureAuditShare { okay: self.0 },
             )),
         }

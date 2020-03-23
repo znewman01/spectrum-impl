@@ -67,19 +67,17 @@ message SecureAuditShare {
 
 
 message WriteToken {
-  // TODO(zjn): rename to "inner"
-  oneof token {
-    InsecureWriteToken insecure_token = 1;
-    SecureWriteToken secure_token = 2;
+  oneof inner {
+    InsecureWriteToken insecure = 1;
+    SecureWriteToken secure = 2;
   }
 }
 
 // what workers exchange to collaboratively verify shares
 message AuditShare {
-  // TODO(zjn): rename to "inner"
-  oneof audit_share {
-    InsecureAuditShare insecure_audit_share = 1;
-    SecureAuditShare secure_audit_share = 2;
+  oneof inner {
+    InsecureAuditShare insecure = 1;
+    SecureAuditShare secure = 2;
   }
 }
 
