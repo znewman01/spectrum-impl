@@ -141,8 +141,8 @@ impl TryFrom<proto::AuditShare> for AuditShare<ConcreteVdpf> {
             let modulus: proto::Integer = inner.modulus.unwrap();
             let field = Arc::new(Field::from(modulus));
 
-            let bit = field.from_proto(inner.bit.unwrap().into());
-            let seed = field.from_proto(inner.seed.unwrap().into());
+            let bit = field.from_proto(inner.bit.unwrap());
+            let seed = field.from_proto(inner.seed.unwrap());
 
             Ok(Self::new(FieldToken::new(
                 bit.into(),
