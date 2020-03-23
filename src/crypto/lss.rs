@@ -20,6 +20,16 @@ impl SecretShare {
     pub fn new(value: FieldElement) -> SecretShare {
         SecretShare { value }
     }
+
+    pub fn value(self) -> FieldElement {
+        self.value
+    }
+}
+
+impl From<FieldElement> for SecretShare {
+    fn from(element: FieldElement) -> Self {
+        Self::new(element)
+    }
 }
 
 impl LSS {

@@ -1,10 +1,21 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
+use crate::proto;
 use rug::{integer::IsPrime, rand::RandState, Integer};
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops;
 use std::sync::Arc;
+
+// NOTE: can't use From/Into due to Rust orphaning rules. Define an extension trait?
+// TODO(zjn): more efficient data format?
+fn parse_integer(data: &str) -> Integer {
+    Integer::parse(data).unwrap().into()
+}
+
+fn emit_integer(value: &Integer) -> String {
+    value.to_string()
+}
 
 // TODO(zjn): move the Arc<> into the field; implement Arbitrary
 /// prime order field
@@ -16,6 +27,20 @@ pub struct Field {
 impl From<Integer> for Field {
     fn from(value: Integer) -> Field {
         Field::new(value)
+    }
+}
+
+impl From<proto::Integer> for Field {
+    fn from(msg: proto::Integer) -> Field {
+        Field::from(parse_integer(msg.data.as_ref()))
+    }
+}
+
+impl Into<proto::Integer> for Field {
+    fn into(self) -> proto::Integer {
+        proto::Integer {
+            data: emit_integer(&self.order),
+        }
     }
 }
 
@@ -61,6 +86,10 @@ impl Field {
         }
     }
 
+    pub fn from_proto(self: &Arc<Field>, msg: proto::Integer) -> FieldElement {
+        FieldElement::new(parse_integer(msg.data.as_ref()), self.clone())
+    }
+
     pub fn from_bytes(self: &Arc<Field>, bytes: &Bytes) -> FieldElement {
         // TODO: fix this
         let byte_str = hex::encode(bytes);
@@ -80,6 +109,14 @@ impl FieldElement {
 
     pub fn field(&self) -> Arc<Field> {
         self.field.clone()
+    }
+}
+
+impl Into<proto::Integer> for FieldElement {
+    fn into(self) -> proto::Integer {
+        proto::Integer {
+            data: emit_integer(&self.value),
+        }
     }
 }
 

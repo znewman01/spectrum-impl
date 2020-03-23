@@ -56,12 +56,21 @@ impl Into<proto::WriteToken> for WriteToken {
     }
 }
 
+impl WriteToken {
+    fn new(data: Bytes, key: ChannelKey) -> Self {
+        WriteToken(Some((data, key)))
+    }
+
+    fn empty() -> Self {
+        WriteToken(None)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AuditShare(bool);
 
 impl From<proto::AuditShare> for AuditShare {
     fn from(share: proto::AuditShare) -> Self {
-        #![allow(irrefutable_let_patterns)] // until we introduce multiple protocols
         if let proto::audit_share::AuditShare::InsecureAuditShare(insecure_share_proto) =
             share.audit_share.unwrap()
         {
@@ -79,16 +88,6 @@ impl Into<proto::AuditShare> for AuditShare {
                 proto::InsecureAuditShare { okay: self.0 },
             )),
         }
-    }
-}
-
-impl WriteToken {
-    fn new(data: Bytes, key: ChannelKey) -> Self {
-        WriteToken(Some((data, key)))
-    }
-
-    fn empty() -> Self {
-        WriteToken(None)
     }
 }
 

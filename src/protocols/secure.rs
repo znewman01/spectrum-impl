@@ -2,10 +2,10 @@ use crate::proto;
 use crate::{
     bytes::Bytes,
     crypto::{
-        dpf::{DPF, PRGDPF},
+        dpf::{PRGKey, DPF, PRGDPF},
         field::Field,
         prg::AESPRG,
-        vdpf::{FieldVDPF, VDPF},
+        vdpf::{FieldProofShare, FieldVDPF, VDPF},
     },
     protocols::Protocol,
 };
@@ -53,7 +53,25 @@ impl<V: VDPF> WriteToken<V> {
 
 impl Into<proto::WriteToken> for WriteToken<ConcreteVdpf> {
     fn into(self) -> proto::WriteToken {
-        proto::WriteToken { token: None }
+        let dpf_key_proto = proto::secure_write_token::DpfKey {
+            encoded_msg: self.0.encoded_msg.into(),
+            bits: self.0.bits,
+            seeds: self.0.seeds.into_iter().map(|s| s.into()).collect(),
+        };
+        let bit = self.1.bit.value();
+        let modulus: proto::Integer = (*bit.field()).clone().into();
+        let proof = proto::secure_write_token::ProofShare {
+            bit: Some(bit.into()),
+            seed: Some(self.1.seed.value().into()),
+        };
+        let inner_token = proto::SecureWriteToken {
+            key: Some(dpf_key_proto),
+            proof: Some(proof),
+            modulus: Some(modulus),
+        };
+        proto::WriteToken {
+            token: Some(proto::write_token::Token::SecureToken(inner_token)),
+        }
     }
 }
 
@@ -61,8 +79,24 @@ impl TryFrom<proto::WriteToken> for WriteToken<ConcreteVdpf> {
     type Error = &'static str;
 
     fn try_from(token: proto::WriteToken) -> Result<Self, Self::Error> {
-        // Ok(Self::new(0, 0))
-        Err("not implemented")
+        if let proto::write_token::Token::SecureToken(inner) = token.token.unwrap() {
+            let key_proto = inner.key.unwrap();
+            let dpf_key = PRGKey::<AESPRG>::new(
+                key_proto.encoded_msg.into(),
+                key_proto.bits,
+                key_proto.seeds.into_iter().map(|s| s.into()).collect(),
+            );
+            let modulus: proto::Integer = inner.modulus.unwrap();
+            let field = Arc::new(Field::from(modulus));
+            let proof_proto = inner.proof.unwrap();
+            let proof_share = FieldProofShare::new(
+                field.from_proto(proof_proto.bit.unwrap()).into(),
+                field.from_proto(proof_proto.seed.unwrap()).into(),
+            );
+            Ok(WriteToken::<ConcreteVdpf>(dpf_key, proof_share))
+        } else {
+            Err("Invalid proto::WriteToken.")
+        }
     }
 }
 

@@ -7,8 +7,12 @@ use crate::crypto::{
     lss::{SecretShare, LSS},
     prg::AESPRG,
 };
+
 use rug::rand::RandState;
+
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
 use std::iter::repeat_with;
 use std::sync::Arc;
 
@@ -44,16 +48,20 @@ pub trait VDPF: DPF {
 pub struct FieldToken {
     bit: SecretShare,
     seed: SecretShare,
-    data: FieldElement,
+    data: u64,
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct FieldProofShare {
-    bit: SecretShare,
-    seed: SecretShare,
+    pub(in crate) bit: SecretShare,
+    pub(in crate) seed: SecretShare,
 }
 
 impl FieldProofShare {
+    pub fn new(bit: SecretShare, seed: SecretShare) -> Self {
+        Self { bit, seed }
+    }
+
     fn share(
         bit_proof: FieldElement,
         seed_proof: FieldElement,
@@ -64,7 +72,7 @@ impl FieldProofShare {
         let seeds = LSS::share(seed_proof, len, &mut rng);
         bits.into_iter()
             .zip(seeds.into_iter())
-            .map(|(bit, seed)| FieldProofShare { bit, seed })
+            .map(|(bit, seed)| FieldProofShare::new(bit, seed))
             .collect()
     }
 }
@@ -189,8 +197,10 @@ impl VDPF for ConcreteVdpf {
             }
         }
 
-        // TODO(sss): actually hash the message?
-        let data = self.field.from_bytes(&dpf_key.encoded_msg);
+        // TODO(sss): actually crypto hash the message?
+        let mut hasher = DefaultHasher::new();
+        dpf_key.encoded_msg.hash(&mut hasher);
+        let data = hasher.finish();
 
         FieldToken {
             bit: bit_check,
@@ -219,7 +229,7 @@ pub mod tests {
     const DATA_SIZE: Range<usize> = 16..20; // in bytes
 
     fn data() -> impl Strategy<Value = Bytes> {
-        DATA_SIZE.prop_flat_map(|size| bytes(size))
+        DATA_SIZE.prop_flat_map(bytes)
     }
 
     impl<D: Arbitrary + 'static> Arbitrary for FieldVDPF<D> {
@@ -241,7 +251,7 @@ pub mod tests {
             (fields(), integers(), 0..1u8)
                 .prop_map(|(field, seed_value, bit)| FieldProofShare {
                     bit: SecretShare::new(field.new_element(bit.into())),
-                    seed: SecretShare::new(field.new_element(seed_value.into())),
+                    seed: SecretShare::new(field.new_element(seed_value)),
                 })
                 .boxed()
         }

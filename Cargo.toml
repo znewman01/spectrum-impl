@@ -17,7 +17,7 @@ tonic = "0.1.1"
 log = "0.4"
 simplelog = "^0.7.4"
 tokio = { version = "0.2.11", features = [ "macros", "signal" ] }
-rug = "1.6"
+rug = "1.7"
 async-trait = "0.1.22"
 chrono = "0.4"
 futures-retry = "0.4"

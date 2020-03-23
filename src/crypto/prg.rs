@@ -30,6 +30,20 @@ impl AESSeed {
     }
 }
 
+impl Into<Vec<u8>> for AESSeed {
+    fn into(self) -> Vec<u8> {
+        self.bytes.into()
+    }
+}
+
+impl From<Vec<u8>> for AESSeed {
+    fn from(other: Vec<u8>) -> Self {
+        Self {
+            bytes: other.into(),
+        }
+    }
+}
+
 impl AESPRG {
     pub fn new() -> Self {
         Default::default()
@@ -53,7 +67,7 @@ impl PRG for AESPRG {
     /// evaluates the PRG on the given seed
     fn eval(&self, seed: &AESSeed, eval_size: usize) -> Bytes {
         assert!(
-            AES_SEED_SIZE <= eval_size,
+            eval_size >= AES_SEED_SIZE,
             "eval size must be at least the seed size"
         );
 

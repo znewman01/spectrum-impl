@@ -47,7 +47,7 @@ pub struct PRGKey<P: PRG> {
 
 impl<P: PRG> PRGKey<P> {
     // generates a new DPF key with the necessary parameters needed for evaluation
-    fn new(encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<P::Seed>) -> PRGKey<P> {
+    pub fn new(encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<P::Seed>) -> PRGKey<P> {
         assert_eq!(bits.len(), seeds.len());
         assert!(
             bits.iter().all(|b| *b == 0 || *b == 1),
