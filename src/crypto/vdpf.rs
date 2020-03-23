@@ -85,7 +85,7 @@ impl FieldProofShare {
 #[derive(Clone, PartialEq, Debug)]
 pub struct FieldVDPF<D> {
     dpf: D,
-    field: Arc<Field>,
+    pub(in crate) field: Arc<Field>,
 }
 
 impl<D> FieldVDPF<D> {

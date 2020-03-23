@@ -158,7 +158,7 @@ impl TryFrom<proto::AuditShare> for AuditShare<ConcreteVdpf> {
 #[derive(Clone, Debug)]
 pub struct SecureProtocol<V> {
     msg_size: usize,
-    vdpf: V,
+    pub(in crate) vdpf: V,
 }
 
 impl<V: VDPF> SecureProtocol<V> {

@@ -1,6 +1,7 @@
 use crate::config::store::{Error, Store};
 use crate::protocols::{
     insecure::{self, InsecureProtocol},
+    secure::{self, SecureProtocol},
     wrapper::{ChannelKeyWrapper, ProtocolWrapper},
 };
 use crate::services::{
@@ -11,6 +12,9 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::iter::{once, IntoIterator};
 
+const MSG_SIZE: usize = 100;
+
+// TODO: properly serialize protocol details
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq)]
 pub struct Experiment {
     // TODO(zjn): when nonzero types hit stable, replace u16 with NonZeroU16.
@@ -19,6 +23,7 @@ pub struct Experiment {
     pub workers_per_group: u16,
     pub clients: u16,
     pub channels: usize,
+    pub secure: bool,
 }
 
 impl Experiment {
@@ -38,6 +43,7 @@ impl Experiment {
             workers_per_group,
             clients,
             channels,
+            secure: true,
         }
     }
 
@@ -57,7 +63,10 @@ impl Experiment {
         let viewers = (0..(self.channels as u16))
             .zip(self.get_keys().into_iter())
             .map(|(idx, key)| {
-                let msg = vec![1, 2, 3, (idx as u8) + 100].into();
+                let msg = (1u8..MSG_SIZE.try_into().unwrap())
+                    .chain(once((idx as u8) + 100))
+                    .collect::<Vec<_>>()
+                    .into();
                 ClientInfo::new_broadcaster(idx, msg, key)
             })
             .map(Service::from);
@@ -68,17 +77,45 @@ impl Experiment {
     }
 
     pub fn get_protocol(&self) -> Box<dyn ProtocolWrapper + Sync + Send> {
-        Box::new(InsecureProtocol::new(
-            self.groups.try_into().unwrap(),
-            self.channels,
-            4,
-        ))
+        if self.secure {
+            Box::new(SecureProtocol::with_aes_prg_dpf(
+                40,
+                self.groups.try_into().unwrap(),
+                self.channels,
+                MSG_SIZE,
+            ))
+        } else {
+            Box::new(InsecureProtocol::new(
+                self.groups.try_into().unwrap(),
+                self.channels,
+                MSG_SIZE,
+            ))
+        }
     }
 
     pub fn get_keys(&self) -> Vec<ChannelKeyWrapper> {
-        (0..self.channels)
-            .map(|idx| insecure::ChannelKey::new(idx, format!("password{}", idx)).into())
-            .collect()
+        if self.secure {
+            let protocol = SecureProtocol::with_aes_prg_dpf(
+                40,
+                self.groups.try_into().unwrap(),
+                self.channels,
+                MSG_SIZE,
+            );
+            let field = protocol.vdpf.field;
+            (0..self.channels)
+                .map(|idx| {
+                    secure::ChannelKey::<secure::ConcreteVdpf>::new(
+                        idx,
+                        field.new_element(idx.into()),
+                    )
+                    .into()
+                })
+                .collect()
+        } else {
+            (0..self.channels)
+                .map(|idx| insecure::ChannelKey::new(idx, format!("password{}", idx)).into())
+                .collect()
+        }
     }
 }
 
