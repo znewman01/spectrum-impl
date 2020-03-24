@@ -88,16 +88,11 @@ impl Field {
         FieldElement::new(parse_integer(msg.data.as_ref()), self.clone())
     }
 
-    pub fn element_from_bytes(self: &Rc<Field>, bytes: &Bytes) -> FieldElement {
+    pub fn element_from_bytes(&self, bytes: &Bytes) -> FieldElement {
         // TODO(sss): find a less hacky way of doing this?
         let byte_str = hex::encode(bytes);
         let val = Integer::from_str_radix(&byte_str, 16).unwrap();
-        FieldElement::new(val, self.clone())
-    }
-
-    // TODO(zjn): reconcile with new_element
-    pub fn element_from_integer(self: &Rc<Field>, val: Integer) -> FieldElement {
-        FieldElement::new(val, self.clone())
+        self.new_element(val)
     }
 }
 

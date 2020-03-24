@@ -5,7 +5,6 @@ use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::rc::Rc;
 
 pub trait PRG {
     type Seed;
@@ -109,7 +108,6 @@ mod tests {
     use proptest::prelude::*;
     use std::collections::HashSet;
     use std::fmt::Debug;
-    use std::iter::repeat_with;
     use std::ops::Range;
 
     const SIZES: Range<usize> = 16..1000;
@@ -120,7 +118,9 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            Just(AESPRG::new()).boxed()
+            SIZES
+                .prop_map(|output_size| AESPRG::new(SEED_SIZE, output_size))
+                .boxed()
         }
     }
 
@@ -129,13 +129,10 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            prop::collection::vec(any::<u8>(), AES_SEED_SIZE)
+            prop::collection::vec(any::<u8>(), SEED_SIZE)
                 .prop_map(|data| AESSeed { bytes: data.into() })
                 .boxed()
         }
-
-    fn aes_prgs() -> impl Strategy<Value = AESPRG> {
-        (SIZES).prop_map(move |eval_size| AESPRG::new(SEED_SIZE, eval_size))
     }
 
     fn run_test_prg_seed_random<P>(prg: P)
@@ -147,11 +144,21 @@ mod tests {
         assert_ne!(prg.new_seed(), prg.new_seed());
     }
 
-    fn run_test_prg_eval_deterministic<P: PRG>(prg: P, seed: P::Seed) {
+    fn run_test_prg_eval_deterministic<P>(prg: P, seed: P::Seed)
+    where
+        P: PRG,
+        P::Seed: Eq + Debug,
+        P::Output: Eq + Debug,
+    {
         assert_eq!(prg.eval(&seed), prg.eval(&seed));
     }
 
-    fn run_test_prg_eval_random<P: PRG>(prg: P, seeds: &[P::Seed]) {
+    fn run_test_prg_eval_random<P>(prg: P, seeds: &[P::Seed])
+    where
+        P: PRG,
+        P::Seed: Eq + Debug,
+        P::Output: Eq + Debug + Hash,
+    {
         #![allow(clippy::mutable_key_type)] // https://github.com/rust-lang/rust-clippy/issues/5043
         let results: HashSet<_> = seeds.iter().map(|s| prg.eval(s)).collect();
         assert_eq!(results.len(), seeds.len());
@@ -164,22 +171,19 @@ mod tests {
         }
 
         #[test]
-        fn test_aes_prg_eval_correct_size(prg in any::<AESPRG>(), seed in any::<AESSeed>(), size in SIZES) {
-            run_test_prg_eval_correct_size(prg, seed, size);
-        }
-
-        #[test]
-        fn test_aes_prg_eval_deterministic(prg in any::<AESPRG>(), seed in any::<AESSeed>(), size in SIZES) {
-            run_test_prg_eval_deterministic(prg, seed, size);
+        fn test_aes_prg_eval_deterministic(
+            prg in any::<AESPRG>(),
+            seed in any::<AESSeed>()
+        ) {
+            run_test_prg_eval_deterministic(prg, seed);
         }
 
         #[test]
         fn test_aes_prg_eval_random(
             prg in any::<AESPRG>(),
             seeds in prop::collection::vec(any::<AESSeed>(), 10),
-            size in SIZES
         ) {
-            run_test_prg_eval_random(prg, &seeds, size);
+            run_test_prg_eval_random(prg, &seeds);
         }
     }
 }

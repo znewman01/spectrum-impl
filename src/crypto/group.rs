@@ -26,7 +26,7 @@ impl Group {
         Group { gen, modulus }
     }
 
-    pub fn element_from_bytes(self: &Rc<Group>, bytes: &Bytes) -> GroupElement {
+    pub fn element_from_bytes(self: &Arc<Group>, bytes: &Bytes) -> GroupElement {
         // TODO: find a less hacky way of doing this?
         let byte_str = hex::encode(bytes);
         let val = Integer::from_str_radix(&byte_str, 16).unwrap();

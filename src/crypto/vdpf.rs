@@ -1,6 +1,5 @@
 //! Spectrum implementation.
 use crate::crypto::{
-    bytes::Bytes,
     dpf::{DPF, PRGDPF},
     field::{Field, FieldElement},
     lss::{SecretShare, LSS},
@@ -223,6 +222,7 @@ impl VDPF for ConcreteVdpf {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::bytes::Bytes;
     use proptest::prelude::*;
     use std::ops::Range;
 
@@ -283,7 +283,7 @@ pub mod tests {
     fn run_test_audit_check_correct<V: VDPF>(
         vdpf: V,
         auth_keys: &[V::AuthKey],
-        data: &Bytes,
+        data: <V as DPF>::Message,
         point_idx: usize,
     ) {
         let dpf_keys = vdpf.gen(data, point_idx);
@@ -321,7 +321,7 @@ pub mod tests {
             let auth_keys = vdpf.sample_keys();
             let point_idx = point_idx.index(auth_keys.len());
 
-            run_test_audit_check_correct(vdpf, &auth_keys, &data, point_idx);
+            run_test_audit_check_correct(vdpf, &auth_keys, data, point_idx);
         }
 
         #[test]

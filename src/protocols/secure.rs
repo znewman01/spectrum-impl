@@ -197,7 +197,7 @@ impl SecureProtocol<ConcreteVdpf> {
 impl<V> Protocol for SecureProtocol<V>
 where
     V: VDPF,
-    <V as DPF>::Key: Debug,
+    <V as DPF>::Key: fmt::Debug,
     <V as DPF>::Message: From<Bytes> + Into<Bytes>,
     V::Token: Clone,
     V::AuthKey: Clone,

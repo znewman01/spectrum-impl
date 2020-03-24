@@ -1,5 +1,4 @@
 //! Spectrum implementation.
-use crate::bytes::Bytes;
 use crate::crypto::prg::PRG;
 use derivative::Derivative;
 use rand::{thread_rng, Rng};
@@ -35,10 +34,10 @@ pub struct PRGDPF<P> {
 // DPF key for PRGDPF
 #[derive(Derivative)]
 #[derivative(
-    Debug(bound = "P::Seed: Debug"),
-    PartialEq(bound = "P::Seed: PartialEq"),
-    Eq(bound = "P::Seed: Eq"),
-    Clone(bound = "P::Seed: Clone")
+    Debug(bound = "P::Seed: Debug, P::Output: Debug"),
+    PartialEq(bound = "P::Seed: PartialEq, P::Output: PartialEq"),
+    Eq(bound = "P::Seed: Eq, P::Output: Eq"),
+    Clone(bound = "P::Seed: Clone, P::Output: Clone")
 )]
 pub struct PRGKey<P: PRG> {
     pub encoded_msg: P::Output,
@@ -48,7 +47,7 @@ pub struct PRGKey<P: PRG> {
 
 impl<P: PRG> PRGKey<P> {
     // generates a new DPF key with the necessary parameters needed for evaluation
-    pub fn new(encoded_msg: Bytes, bits: Vec<u8>, seeds: Vec<P::Seed>) -> PRGKey<P> {
+    pub fn new(encoded_msg: P::Output, bits: Vec<u8>, seeds: Vec<P::Seed>) -> PRGKey<P> {
         assert_eq!(bits.len(), seeds.len());
         assert!(
             bits.iter().all(|b| *b == 0 || *b == 1),
@@ -189,6 +188,7 @@ pub mod tests {
     where
         P: PRG,
         P::Seed: Arbitrary,
+        P::Output: Arbitrary,
     {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
@@ -197,7 +197,7 @@ pub mod tests {
             (1..10usize)
                 .prop_flat_map(|num_keys| {
                     (
-                        any::<Bytes>(),
+                        any::<P::Output>(),
                         prop::collection::vec(0..1u8, num_keys),
                         prop::collection::vec(any::<P::Seed>(), num_keys),
                     )
@@ -205,6 +205,7 @@ pub mod tests {
                 })
                 .boxed()
         }
+    }
 
     const SEED_SIZE: usize = 16; // 16 bytes for AES 128
     const EVAL_SIZE: usize = 128;
@@ -219,8 +220,12 @@ pub mod tests {
         prop::collection::vec(any::<u8>(), DATA_SIZE).prop_map(Bytes::from)
     }
 
-    fn run_test_dpf<D: DPF>(dpf: D, data: Bytes, index: usize) {
-        let dpf_keys = dpf.gen(&data, index);
+    fn run_test_dpf<D>(dpf: D, data: D::Message, index: usize)
+    where
+        D: DPF,
+        D::Message: Eq + Debug + Default + Clone,
+    {
+        let dpf_keys = dpf.gen(data.clone(), index);
         let dpf_shares = dpf_keys.iter().map(|k| dpf.eval(k)).collect();
         let dpf_output = dpf.combine(dpf_shares);
 
@@ -228,20 +233,22 @@ pub mod tests {
             if chunk_idx == index {
                 assert_eq!(chunk, data);
             } else {
-                let zeroes = Bytes::empty(DATA_SIZE);
-                assert_eq!(chunk, zeroes);
+                assert_eq!(chunk, D::Message::default());
             }
         }
     }
 
-    fn run_test_dpf_empty<D: DPF>(dpf: D, size: usize) {
+    fn run_test_dpf_empty<D>(dpf: D, size: usize)
+    where
+        D: DPF,
+        D::Message: Default + Eq + Debug,
+    {
         let dpf_keys = dpf.gen_empty(size);
         let dpf_shares = dpf_keys.iter().map(|k| dpf.eval(k)).collect();
         let dpf_output = dpf.combine(dpf_shares);
 
         for chunk in dpf_output {
-            let zeroes = Bytes::empty(DATA_SIZE);
-            assert_eq!(chunk, zeroes);
+            assert_eq!(chunk, D::Message::default());
         }
     }
 
