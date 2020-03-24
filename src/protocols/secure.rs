@@ -59,7 +59,7 @@ impl Into<proto::WriteToken> for WriteToken<ConcreteVdpf> {
             seeds: self.0.seeds.into_iter().map(|s| s.into()).collect(),
         };
         let bit = self.1.bit.value();
-        let modulus: proto::Integer = (*bit.field()).clone().into();
+        let modulus: proto::Integer = bit.field().into();
         let proof = proto::secure_write_token::ProofShare {
             bit: Some(bit.into()),
             seed: Some(self.1.seed.value().into()),
@@ -121,7 +121,7 @@ impl Into<proto::AuditShare> for AuditShare<ConcreteVdpf> {
     fn into(self) -> proto::AuditShare {
         let bit = self.token.bit.value();
         let field = bit.field();
-        let modulus: proto::Integer = (*field).clone().into();
+        let modulus: proto::Integer = field.into();
 
         let inner = proto::audit_share::Inner::Secure(proto::SecureAuditShare {
             bit: Some(bit.into()),
@@ -185,7 +185,7 @@ impl SecureProtocol<ConcreteVdpf> {
         msg_size: usize,
     ) -> Self {
         let prime: Integer = (Integer::from(2) << sec_bytes).next_prime_ref().into();
-        let field = Arc::new(Field::from(prime));
+        let field = Field::from(prime);
         let vdpf = FieldVDPF::new(PRGDPF::new(AESPRG::new(), parties, channels), field);
         SecureProtocol::new(vdpf, msg_size)
     }

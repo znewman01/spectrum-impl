@@ -111,135 +111,83 @@ impl ops::Mul<FieldElement> for SecretShare {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::field::Field;
+    use crate::crypto::field::tests::field_element_pairs;
     use proptest::prelude::*;
-    use std::sync::Arc;
-
-    #[test]
-    fn test_share_recover() {
-        let mut rng = RandState::new();
-        let field = Field::new(101.into()); // 101 is prime
-        let value = FieldElement::new(100.into(), Arc::new(field));
-
-        assert_eq!(value.clone(), LSS::recover(LSS::share(value, 10, &mut rng)));
-    }
-
-    #[test]
-    fn test_share_splitting() {
-        let mut rng = RandState::new();
-        let field = Field::new(101.into()); // 101 is prime
-        let value = FieldElement::new(100.into(), Arc::new(field));
-
-        // Share generates different shares each time
-        assert_ne!(
-            LSS::share(value.clone(), 10, &mut rng),
-            LSS::share(value, 10, &mut rng)
-        );
-    }
-
-    #[test]
-    fn test_share_add() {
-        let mut rng = RandState::new();
-        let field = Arc::new(Field::new(101.into())); // 101 is prime
-
-        // setup
-        let value1 = FieldElement::new(100.into(), field.clone());
-        let value2 = FieldElement::new(100.into(), field);
-        let shares1 = LSS::share(value1.clone(), 10, &mut rng);
-        let shares2 = LSS::share(value2.clone(), 10, &mut rng);
-
-        // test share addition
-        let mut shares_sum: Vec<SecretShare> = Vec::new();
-        for (share1, share2) in shares1.iter().zip(shares2.iter()) {
-            shares_sum.push(share1.clone() + share2.clone());
-        }
-
-        // make sure adding shares results in the correct sum
-        assert_eq!(value1 + value2, LSS::recover(shares_sum));
-    }
-
-    #[test]
-    fn test_share_sub() {
-        let mut rng = RandState::new();
-        let field = Arc::new(Field::new(101.into())); // 101 is prime
-
-        // setup
-        let value1 = FieldElement::new(100.into(), field.clone());
-        let value2 = FieldElement::new(100.into(), field);
-        let shares1 = LSS::share(value1.clone(), 10, &mut rng);
-        let shares2 = LSS::share(value2.clone(), 10, &mut rng);
-
-        // test share subtraction
-        let mut shares_sum: Vec<SecretShare> = Vec::new();
-        for (share1, share2) in shares1.iter().zip(shares2.iter()) {
-            shares_sum.push(share1.clone() - share2.clone());
-        }
-
-        // assert that subtraction works
-        assert_eq!(value1 - value2, LSS::recover(shares_sum));
-    }
-
-    #[test]
-    fn test_share_constant_add() {
-        let mut rng = RandState::new();
-        let field = Arc::new(Field::new(101.into())); // 101 is prime
-        let value = FieldElement::new(100.into(), field.clone());
-
-        // share the value
-        let mut shares = LSS::share(value.clone(), 10, &mut rng);
-
-        // add a constant to it
-        let constant = FieldElement::new(5.into(), field);
-        shares[0] = shares[0].clone() + constant.clone();
-
-        // make sure the recovered shares are correct
-        assert_eq!(value + constant, LSS::recover(shares));
-    }
-
-    #[test]
-    fn test_share_constant_mul() {
-        let mut rng = RandState::new();
-        let field = Arc::new(Field::new(101.into())); // 101 is prime
-        let value = FieldElement::new(100.into(), field.clone());
-
-        // share the value
-        let mut shares = LSS::share(value.clone(), 10, &mut rng);
-
-        // multiply all shares by a constant
-        let constant = FieldElement::new(5.into(), field);
-        for share in shares.iter_mut() {
-            *share = (*share).clone() * constant.clone();
-        }
-
-        // ensure correct recovery
-        assert_eq!(value * constant, LSS::recover(shares));
-    }
 
     const MAX_SPLIT: usize = 100;
 
     proptest! {
         #[test]
-        fn test_share_different_n(
-            split in (2..MAX_SPLIT)
+        fn test_share_recover_identity(
+            value in any::<FieldElement>(),
+            num_shares in 2..MAX_SPLIT
         ) {
             let mut rng = RandState::new();
-            let field = Field::new(101.into()); // 101 is prime
-            let value = FieldElement::new(100.into(), Arc::new(field));
-
-            // share the value {split}
-            let rec = LSS::recover(LSS::share(value.clone(), split, &mut rng));
-
-            // sharing with different n works
-            assert_eq!(rec, value);
+            assert_eq!(
+                LSS::recover(LSS::share(value.clone(), num_shares, &mut rng)),
+                value
+            );
         }
-    }
 
-    #[test]
-    #[should_panic]
-    fn test_share_invalid() {
-        let mut rng = RandState::new();
-        let field = Field::new(101.into()); // 101 is prime
-        let value = FieldElement::new(100.into(), Arc::new(field));
-        LSS::share(value, 1, &mut rng);
+        #[test]
+        fn test_share_randomized(
+            value in any::<FieldElement>(),
+            num_shares in 2..MAX_SPLIT
+        ) {
+            let mut rng = RandState::new();
+            assert_ne!(
+                LSS::share(value.clone(), num_shares, &mut rng),
+                LSS::share(value, num_shares, &mut rng),
+            );
+        }
+
+        #[test]
+        fn test_homomorphic_constant_add(
+            (value, constant) in field_element_pairs(),
+            num_shares in 2..MAX_SPLIT
+        ) {
+            let mut rng = RandState::new();
+            assert_eq!(
+                LSS::recover(LSS::share(value.clone(), num_shares, &mut rng)) + constant.clone(),
+                value + constant
+            );
+        }
+
+        #[test]
+        fn test_homomorphic_share_add(
+            (value1, value2) in field_element_pairs(),
+            num_shares in 2..MAX_SPLIT
+        ) {
+            let mut rng = RandState::new();
+            let shares = LSS::share(value1.clone(), num_shares, &mut rng)
+                .into_iter()
+                .zip(LSS::share(value2.clone(), num_shares, &mut rng).into_iter())
+                .map(|(x, y)| x + y)
+                .collect();
+            assert_eq!(LSS::recover(shares), value1 + value2);
+        }
+
+        #[test]
+        fn test_homomorphic_constant_mul(
+            (value, constant) in field_element_pairs(),
+            num_shares in 2..MAX_SPLIT
+        ) {
+            let mut rng = RandState::new();
+            let shares = LSS::share(value.clone(), num_shares, &mut rng)
+                .into_iter()
+                .map(|x| x * constant.clone())
+                .collect();
+            assert_eq!(
+                LSS::recover(shares),
+                value * constant
+            );
+        }
+
+        #[test]
+        #[should_panic]
+        fn test_one_share_invalid(value in any::<FieldElement>()) {
+            let mut rng = RandState::new();
+            LSS::share(value, 1, &mut rng);
+        }
     }
 }

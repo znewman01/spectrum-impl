@@ -3,7 +3,6 @@ use crate::bytes::Bytes;
 use crate::crypto::field::{Field, FieldElement};
 use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;
-use std::sync::Arc;
 
 const AES_SEED_SIZE: usize = 16; // 16 bytes for AES 128
 
@@ -25,7 +24,7 @@ pub struct AESSeed {
 }
 
 impl AESSeed {
-    pub fn to_field_element(&self, field: Arc<Field>) -> FieldElement {
+    pub fn to_field_element(&self, field: Field) -> FieldElement {
         field.from_bytes(&self.bytes)
     }
 }

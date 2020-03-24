@@ -17,11 +17,10 @@ fn emit_integer(value: &Integer) -> String {
     value.to_string()
 }
 
-// TODO(zjn): move the Arc<> into the field; implement Arbitrary
 /// prime order field
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Field {
-    order: Integer,
+    order: Arc<Integer>,
 }
 
 impl From<Integer> for Field {
@@ -32,7 +31,7 @@ impl From<Integer> for Field {
 
 impl From<proto::Integer> for Field {
     fn from(msg: proto::Integer) -> Field {
-        Field::from(parse_integer(msg.data.as_ref()))
+        parse_integer(msg.data.as_ref()).into()
     }
 }
 
@@ -48,7 +47,7 @@ impl Into<proto::Integer> for Field {
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct FieldElement {
     value: Integer,
-    field: Arc<Field>,
+    field: Field,
 }
 
 impl Field {
@@ -61,36 +60,35 @@ impl Field {
             panic!("field must have prime order!");
         }
 
-        Field { order }
+        Field {
+            order: Arc::new(order),
+        }
     }
 
-    pub fn zero(self: &Arc<Field>) -> FieldElement {
+    pub fn zero(&self) -> FieldElement {
         FieldElement {
             value: 0.into(),
             field: self.clone(),
         }
     }
 
-    pub fn new_element(self: &Arc<Field>, value: Integer) -> FieldElement {
+    pub fn new_element(&self, value: Integer) -> FieldElement {
         FieldElement::new(value, self.clone())
     }
 
     // generates a new random field element
-    pub fn rand_element(self: &Arc<Field>, rng: &mut RandState) -> FieldElement {
-        // TODO: figure out how to generate a random value
-        let random = self.order.clone().random_below(rng);
-
+    pub fn rand_element(&self, rng: &mut RandState) -> FieldElement {
         FieldElement {
-            value: random,
+            value: self.order.random_below_ref(rng).into(),
             field: self.clone(),
         }
     }
 
-    pub fn from_proto(self: &Arc<Field>, msg: proto::Integer) -> FieldElement {
+    pub fn from_proto(&self, msg: proto::Integer) -> FieldElement {
         FieldElement::new(parse_integer(msg.data.as_ref()), self.clone())
     }
 
-    pub fn from_bytes(self: &Arc<Field>, bytes: &Bytes) -> FieldElement {
+    pub fn from_bytes(&self, bytes: &Bytes) -> FieldElement {
         // TODO: fix this
         let byte_str = hex::encode(bytes);
         let val = Integer::from_str_radix(&byte_str, 16).unwrap();
@@ -99,15 +97,16 @@ impl Field {
 }
 
 impl FieldElement {
+    // TODO: move reduce_modulo to Field::new_element and remove
     /// generates a new field element; value mod field.order
-    pub fn new(v: Integer, field: Arc<Field>) -> FieldElement {
+    pub fn new(v: Integer, field: Field) -> FieldElement {
         FieldElement {
-            value: reduce_modulo(v, field.order.clone()),
+            value: reduce_modulo(v, &field.order),
             field,
         }
     }
 
-    pub fn field(&self) -> Arc<Field> {
+    pub fn field(&self) -> Field {
         self.field.clone()
     }
 }
@@ -123,7 +122,7 @@ impl Into<proto::Integer> for FieldElement {
 // perform modulo reducation after a field operation.
 // note: different from % given that reduce_modulo compares
 // to zero rather than just take the remainder.
-fn reduce_modulo(v: Integer, order: Integer) -> Integer {
+fn reduce_modulo(v: Integer, order: &Integer) -> Integer {
     if v.cmp0() == Ordering::Less {
         (order.clone() + v) % order
     } else {
@@ -141,8 +140,8 @@ impl ops::Add<FieldElement> for FieldElement {
         let mut value = self.value + other.value;
 
         // perform modulo reduction after adding
-        if value >= self.field.order {
-            value -= self.field.order.clone()
+        if (&value) >= self.field.order.as_ref() {
+            value -= self.field.order.as_ref();
         }
 
         FieldElement::new(value, other.field)
@@ -158,8 +157,8 @@ impl ops::Sub<FieldElement> for FieldElement {
         let mut value = self.value - other.value;
 
         // perform modulo reduction after subtracting
-        if value >= self.field.order {
-            value -= self.field.order.clone()
+        if value < 0 {
+            value += self.field.order.as_ref();
         }
 
         FieldElement::new(value, other.field)
@@ -173,7 +172,7 @@ impl ops::Mul<FieldElement> for FieldElement {
     fn mul(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
         FieldElement::new(
-            reduce_modulo(self.value * &other.value, other.field.order.clone()),
+            reduce_modulo(self.value * &other.value, &other.field.order),
             other.field,
         )
     }
@@ -185,7 +184,7 @@ impl ops::Mul<u8> for FieldElement {
 
     fn mul(self, scalar: u8) -> FieldElement {
         FieldElement::new(
-            reduce_modulo(self.value * scalar, self.field.order.clone()),
+            reduce_modulo(self.value * scalar, &self.field.order),
             self.field,
         )
     }
@@ -196,10 +195,7 @@ impl ops::Neg for FieldElement {
     type Output = FieldElement;
 
     fn neg(self) -> FieldElement {
-        FieldElement::new(
-            reduce_modulo(-self.value, self.field.order.clone()),
-            self.field,
-        )
+        FieldElement::new(reduce_modulo(-self.value, &self.field.order), self.field)
     }
 }
 
@@ -208,7 +204,7 @@ impl ops::AddAssign<FieldElement> for FieldElement {
     fn add_assign(&mut self, other: FieldElement) {
         assert_eq!(self.field, other.field);
         *self = Self {
-            value: reduce_modulo(self.value.clone() + other.value, other.field.order.clone()),
+            value: reduce_modulo(self.value.clone() + other.value, &other.field.order),
             field: other.field,
         };
     }
@@ -218,7 +214,7 @@ impl ops::SubAssign<FieldElement> for FieldElement {
     fn sub_assign(&mut self, other: FieldElement) {
         assert_eq!(self.field, other.field);
         *self = Self {
-            value: reduce_modulo(self.value.clone() - other.value, other.field.order.clone()),
+            value: reduce_modulo(self.value.clone() - other.value, &other.field.order),
             field: other.field,
         };
     }
@@ -239,12 +235,17 @@ pub mod tests {
         integers().prop_map(Integer::next_prime)
     }
 
-    pub fn fields() -> impl Strategy<Value = Arc<Field>> {
-        prime_integers().prop_map(Field::from).prop_map(Arc::new)
+    impl Arbitrary for Field {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prime_integers().prop_map(Field::from).boxed()
+        }
     }
 
     impl Arbitrary for FieldElement {
-        type Parameters = Option<Arc<Field>>;
+        type Parameters = Option<Field>;
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(field: Self::Parameters) -> Self::Strategy {
@@ -252,16 +253,38 @@ pub mod tests {
                 Some(field) => integers()
                     .prop_map(move |value| field.new_element(value))
                     .boxed(),
-                None => (integers(), fields())
+                None => (integers(), any::<Field>())
                     .prop_map(|(value, field)| field.new_element(value))
                     .boxed(),
             }
         }
     }
 
+    // Pair of field elements *in the same field*
+    pub fn field_element_pairs() -> impl Strategy<Value = (FieldElement, FieldElement)> {
+        any::<Field>().prop_flat_map(|field| {
+            (
+                any_with::<FieldElement>(Some(field.clone())),
+                any_with::<FieldElement>(Some(field)),
+            )
+        })
+    }
+
+    // Pair of field elements *in the same field*
+    fn field_element_triples() -> impl Strategy<Value = (FieldElement, FieldElement, FieldElement)>
+    {
+        any::<Field>().prop_flat_map(|field| {
+            (
+                any_with::<FieldElement>(Some(field.clone())),
+                any_with::<FieldElement>(Some(field.clone())),
+                any_with::<FieldElement>(Some(field)),
+            )
+        })
+    }
+
     // Several field elements, *all in the same field*
     pub fn field_element_vecs(num: usize) -> impl Strategy<Value = Vec<FieldElement>> {
-        fields().prop_flat_map(move |field| {
+        any::<Field>().prop_flat_map(move |field| {
             prop::collection::vec(integers().prop_map(move |v| field.new_element(v)), num)
         })
     }
@@ -272,7 +295,7 @@ pub mod tests {
 
     proptest! {
         #[test]
-        fn test_field_rand_element_not_deterministic(field in fields()) {
+        fn test_field_rand_element_not_deterministic(field in any::<Field>()) {
             let mut rng = RandState::new();
             let elements: HashSet<_> = repeat_with(|| field.rand_element(&mut rng))
                 .take(10)
@@ -284,63 +307,45 @@ pub mod tests {
         }
     }
 
-    #[test]
-    fn test_field_element_add() {
-        let val1 = Integer::from(10);
-        let val2 = Integer::from(20);
-        let p = Integer::from(23);
-        let field = Arc::new(Field::new(p));
+    proptest! {
+        #[test]
+        fn test_add_commutative((x, y) in field_element_pairs()) {
+            assert_eq!(x.clone() + y.clone(), y + x);
+        }
+        #[test]
+        fn test_add_associative((x, y, z) in field_element_triples()) {
+            assert_eq!((x.clone() + y.clone()) + z.clone(), x + (y + z));
+        }
 
-        let elem1 = FieldElement::new(val1.clone(), field.clone());
-        let elem2 = FieldElement::new(val2.clone(), field.clone());
-        let acutal = (elem1 + elem2).value;
-        let expected = Integer::from(&val1 + &val2) % field.order.clone();
-        assert_eq!(acutal, expected);
-    }
+        #[test]
+        fn test_add_sub_inverses((x, y) in field_element_pairs()) {
+            assert_eq!(x.clone() - y.clone(), x + (-y));
+        }
 
-    #[test]
-    fn test_field_element_sub() {
-        let val1 = Integer::from(20);
-        let val2 = Integer::from(10);
-        let p = Integer::from(23);
-        let field = Arc::new(Field::new(p));
+        #[test]
+        fn test_add_inverse(x in any::<FieldElement>()) {
+            assert_eq!(x.field().zero(), x.clone() + (-x));
+        }
 
-        let elem1 = FieldElement::new(Integer::from(&val1), field.clone());
-        let elem2 = FieldElement::new(Integer::from(&val2), field.clone());
-        let acutal = (elem1 - elem2).value;
-        let expected = Integer::from(&val1 - &val2) % field.order.clone();
-        assert_eq!(acutal, expected);
-    }
+        #[test]
+        fn test_mul_commutative((x, y) in field_element_pairs()) {
+            assert_eq!(x.clone() * y.clone(), y * x);
+        }
 
-    #[test]
-    fn test_field_element_mul() {
-        let val1 = Integer::from(10);
-        let val2 = Integer::from(20);
-        let p = Integer::from(23);
-        let field = Arc::new(Field::new(p));
+        #[test]
+        fn test_mul_associative((x, y, z) in field_element_triples()) {
+            assert_eq!((x.clone() * y.clone()) * z.clone(), x * (y * z));
+        }
 
-        let elem1 = FieldElement::new(Integer::from(&val1), field.clone());
-        let elem2 = FieldElement::new(Integer::from(&val2), field.clone());
-        let actual = (elem1 * elem2).value;
-        let expected = Integer::from(&val1 * &val2) % field.order.clone();
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_field_element_neg() {
-        let val = Integer::from(20);
-        let p = Integer::from(23);
-        let field = Arc::new(Field::new(p));
-
-        let elem1 = FieldElement::new(Integer::from(&val), field.clone());
-        let actual = -elem1;
-        let expected = FieldElement::new(field.order.clone() - val, field);
-        assert_eq!(actual, expected);
+        #[test]
+        fn test_distributive((x, y, z) in field_element_triples()) {
+            assert_eq!(x.clone() * (y.clone() + z.clone()), (x.clone() * y) + (x * z));
+        }
     }
 
     #[test]
     #[should_panic]
-    fn test_field_gen_non_prime() {
+    fn test_field_must_be_prime() {
         Field::new(Integer::from(4));
     }
 }

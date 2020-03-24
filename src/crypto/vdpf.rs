@@ -13,7 +13,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::iter::repeat_with;
-use std::sync::Arc;
 
 // check_audit(gen_audit(gen_proof(...))) = TRUE
 pub trait VDPF: DPF {
@@ -85,11 +84,11 @@ impl FieldProofShare {
 #[derive(Clone, PartialEq, Debug)]
 pub struct FieldVDPF<D> {
     dpf: D,
-    pub(in crate) field: Arc<Field>,
+    pub(in crate) field: Field,
 }
 
 impl<D> FieldVDPF<D> {
-    pub fn new(dpf: D, field: Arc<Field>) -> Self {
+    pub fn new(dpf: D, field: Field) -> Self {
         FieldVDPF { dpf, field }
     }
 }
@@ -226,10 +225,7 @@ pub mod tests {
     use proptest::prelude::*;
     use std::ops::Range;
 
-    use crate::{
-        bytes::tests::bytes,
-        crypto::field::tests::{fields, integers},
-    };
+    use crate::{bytes::tests::bytes, crypto::field::tests::integers};
 
     const DATA_SIZE: Range<usize> = 16..20; // in bytes
 
@@ -242,7 +238,7 @@ pub mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (any::<D>(), fields())
+            (any::<D>(), any::<Field>())
                 .prop_map(|(dpf, field)| FieldVDPF::new(dpf, field))
                 .boxed()
         }
@@ -253,7 +249,7 @@ pub mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (fields(), integers(), 0..1u8)
+            (any::<Field>(), integers(), 0..1u8)
                 .prop_map(|(field, seed_value, bit)| FieldProofShare {
                     bit: SecretShare::new(field.new_element(bit.into())),
                     seed: SecretShare::new(field.new_element(seed_value)),
@@ -267,7 +263,7 @@ pub mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (fields(), 0..1000u64)
+            (any::<Field>(), 0..1000u64)
                 .prop_flat_map(|(field, data)| {
                     (
                         any_with::<FieldElement>(Some(field.clone())),
