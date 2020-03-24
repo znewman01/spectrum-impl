@@ -1,6 +1,6 @@
 //! Spectrum implementation.
-use crate::bytes::Bytes;
 use crate::crypto::{
+    bytes::Bytes,
     dpf::{DPF, PRGDPF},
     field::{Field, FieldElement},
     lss::{SecretShare, LSS},
@@ -96,6 +96,7 @@ impl<D> FieldVDPF<D> {
 // Pass through DPF methods
 impl<D: DPF> DPF for FieldVDPF<D> {
     type Key = D::Key;
+    type Messsage = D::Message;
 
     fn num_points(&self) -> usize {
         self.dpf.num_points()
@@ -105,7 +106,7 @@ impl<D: DPF> DPF for FieldVDPF<D> {
         self.dpf.num_keys()
     }
 
-    fn gen(&self, msg: &Bytes, idx: usize) -> Vec<Self::Key> {
+    fn gen(&self, msg: &Self::Message, idx: usize) -> Vec<Self::Key> {
         self.dpf.gen(msg, idx)
     }
 
@@ -113,11 +114,11 @@ impl<D: DPF> DPF for FieldVDPF<D> {
         self.dpf.gen_empty(size)
     }
 
-    fn eval(&self, key: &Self::Key) -> Vec<Bytes> {
+    fn eval(&self, key: &Self::Key) -> Vec<Self::Message> {
         self.dpf.eval(key)
     }
 
-    fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes> {
+    fn combine(&self, parts: Vec<Vec<Self::Message>>) -> Vec<Self::Message> {
         self.dpf.combine(parts)
     }
 }

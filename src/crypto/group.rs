@@ -1,18 +1,20 @@
 //! Spectrum implementation.
+use crate::bytes::Bytes;
 use rug::Integer;
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::ops;
 use std::sync::Arc;
 
 /// mathematical group object
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Group {
     gen: Integer,     // generator for the group
     modulus: Integer, // group modulus
 }
 
 /// element within a group
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct GroupElement {
     value: Integer,    // gen^k for some k
     group: Arc<Group>, // reference to the group the element resides in
@@ -23,6 +25,13 @@ impl Group {
     pub fn new(gen: Integer, modulus: Integer) -> Group {
         Group { gen, modulus }
     }
+
+    pub fn element_from_bytes(self: &Rc<Group>, bytes: &Bytes) -> GroupElement {
+        // TODO: find a less hacky way of doing this?
+        let byte_str = hex::encode(bytes);
+        let val = Integer::from_str_radix(&byte_str, 16).unwrap();
+        GroupElement::new(val, self.clone())
+    }
 }
 
 impl GroupElement {
@@ -30,6 +39,21 @@ impl GroupElement {
     pub fn new(v: Integer, group: Arc<Group>) -> GroupElement {
         let value = group.gen.clone().pow_mod(&v, &group.modulus).unwrap();
         GroupElement { value, group }
+    }
+
+    pub fn get_value(&self) -> Integer {
+        self.value
+    }
+
+    pub fn exp(&self, pow: Integer) -> GroupElement {
+        GroupElement {
+            value: self
+                .value
+                .clone()
+                .pow_mod(&pow, &self.group.modulus)
+                .unwrap(),
+            group: self.group,
+        }
     }
 }
 

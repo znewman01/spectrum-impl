@@ -6,20 +6,22 @@ use rand::{thread_rng, Rng};
 use std::fmt::Debug;
 use std::iter::repeat_with;
 
+
 /// Distributed Point Function
 /// Must generate a set of keys k_1, k_2, ...
 /// such that combine(eval(k_1), eval(k_2), ...) = e_i * msg
 pub trait DPF {
     type Key;
+    type Message;
 
     fn num_points(&self) -> usize;
     fn num_keys(&self) -> usize;
 
     /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
-    fn gen(&self, msg: &Bytes, idx: usize) -> Vec<Self::Key>;
+    fn gen(&self, msg: Self::Message, idx: usize) -> Vec<Self::Key>;
     fn gen_empty(&self, len: usize) -> Vec<Self::Key>;
-    fn eval(&self, key: &Self::Key) -> Vec<Bytes>;
-    fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes>;
+    fn eval(&self, key: &Self::Key) -> Vec<Self::Message>;
+    fn combine(&self, parts: Vec<Vec<Self::Message>>) -> Vec<Self::Message>;
 }
 
 /// DPF based on PRG
@@ -39,7 +41,7 @@ pub struct PRGDPF<P> {
     Clone(bound = "P::Seed: Clone")
 )]
 pub struct PRGKey<P: PRG> {
-    pub encoded_msg: Bytes,
+    pub encoded_msg: P::Output,
     pub bits: Vec<u8>,
     pub seeds: Vec<<P as PRG>::Seed>,
 }
@@ -75,8 +77,10 @@ impl<P> DPF for PRGDPF<P>
 where
     P: PRG + Clone,
     P::Seed: Clone + PartialEq + Eq + Debug,
+    P::Output: Clone + PartialEq + Eq + Debug,
 {
     type Key = PRGKey<P>;
+    type Message = P::Output;
 
     fn num_points(&self) -> usize {
         self.num_points
@@ -87,7 +91,7 @@ where
     }
 
     /// generate new instance of PRG based DPF with two DPF keys
-    fn gen(&self, msg: &Bytes, point_idx: usize) -> Vec<PRGKey<P>> {
+    fn gen(&self, msg: Self::Message, point_idx: usize) -> Vec<PRGKey<P>> {
         let seeds_a: Vec<_> = repeat_with(|| self.prg.new_seed())
             .take(self.num_points)
             .collect();
@@ -101,9 +105,8 @@ where
         let mut bits_b = bits_a.clone();
         bits_b[point_idx] = 1 - bits_b[point_idx];
 
-        let encoded_msg = self.prg.eval(&seeds_a[point_idx], msg.len())
-            ^ &self.prg.eval(&seeds_b[point_idx], msg.len())
-            ^ msg;
+        let encoded_msg =
+            self.prg.eval(&seeds_a[point_idx]) ^ self.prg.eval(&seeds_b[point_idx]) ^ msg;
 
         vec![
             PRGKey::new(encoded_msg.clone(), bits_a, seeds_a),
@@ -118,20 +121,20 @@ where
         let bits: Vec<_> = repeat_with(|| thread_rng().gen_range(0, 2))
             .take(self.num_points)
             .collect();
-        let encoded_msg = Bytes::random(size, &mut thread_rng());
+        let encoded_msg = self.prg.eval(&self.prg.new_seed()); // random message
 
         vec![PRGKey::new(encoded_msg, bits, seeds); 2]
     }
 
     /// evaluates the DPF on a given PRGKey and outputs the resulting data
-    fn eval(&self, key: &PRGKey<P>) -> Vec<Bytes> {
+    fn eval(&self, key: &PRGKey<P>) -> Vec<P::Output> {
         key.seeds
             .iter()
             .zip(key.bits.iter())
             .map(|(seed, bits)| {
-                let mut data = self.prg.eval(seed, key.encoded_msg.len());
+                let mut data = self.prg.eval(seed);
                 if *bits == 1 {
-                    data ^= &key.encoded_msg
+                    data ^= key.encoded_msg
                 }
                 data
             })
@@ -139,7 +142,7 @@ where
     }
 
     /// combines the results produced by running eval on both keys
-    fn combine(&self, parts: Vec<Vec<Bytes>>) -> Vec<Bytes> {
+    fn combine(&self, parts: Vec<Vec<P::Output>>) -> Vec<P::Output> {
         let mut parts = parts.iter();
         let mut res = parts
             .next()
@@ -159,6 +162,7 @@ pub mod tests {
     use super::*;
     use crate::crypto::prg::AESPRG;
     use proptest::prelude::*;
+    use bytes::Bytes;
 
     const DATA_SIZE: usize = 20;
     const MAX_NUM_POINTS: usize = 10;
@@ -195,6 +199,14 @@ pub mod tests {
                 })
                 .boxed()
         }
+
+    const SEED_SIZE: usize = 16; // 16 bytes for AES 128
+    const EVAL_SIZE: usize = 128;
+
+    pub fn aes_prg_dpfs() -> impl Strategy<Value = PRGDPF<AESPRG>> {
+        let prg = AESPRG::new(SEED_SIZE, EVAL_SIZE);
+        let num_keys = 2; // PRG DPF implementation handles only 2 keys.
+        (1..MAX_NUM_POINTS).prop_map(move |num_points| PRGDPF::new(prg, num_keys, num_points))
     }
 
     fn data() -> impl Strategy<Value = Bytes> {
