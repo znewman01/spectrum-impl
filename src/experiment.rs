@@ -43,7 +43,7 @@ impl Experiment {
             workers_per_group,
             clients,
             channels,
-            secure: true,
+            secure: false,
         }
     }
 
