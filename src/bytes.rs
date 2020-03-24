@@ -146,11 +146,13 @@ pub mod tests {
     const SIZE_RANGE: Range<usize> = 0..4097;
 
     impl Arbitrary for Bytes {
-        type Parameters = ();
+        type Parameters = prop::collection::SizeRange;
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            any::<Vec<u8>>().prop_map(Bytes::from).boxed()
+        fn arbitrary_with(size: Self::Parameters) -> Self::Strategy {
+            any_with::<Vec<u8>>((size, ()))
+                .prop_map(Bytes::from)
+                .boxed()
         }
     }
 

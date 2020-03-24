@@ -15,10 +15,11 @@ pub trait DPF {
 
     fn num_points(&self) -> usize;
     fn num_keys(&self) -> usize;
+    fn null_message(&self) -> Self::Message;
 
     /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
     fn gen(&self, msg: Self::Message, idx: usize) -> Vec<Self::Key>;
-    fn gen_empty(&self, len: usize) -> Vec<Self::Key>;
+    fn gen_empty(&self) -> Vec<Self::Key>;
     fn eval(&self, key: &Self::Key) -> Vec<Self::Message>;
     fn combine(&self, parts: Vec<Vec<Self::Message>>) -> Vec<Self::Message>;
 }
@@ -94,6 +95,10 @@ where
         self.num_keys
     }
 
+    fn null_message(&self) -> Self::Message {
+        self.prg.null_output()
+    }
+
     /// generate new instance of PRG based DPF with two DPF keys
     fn gen(&self, msg: Self::Message, point_idx: usize) -> Vec<PRGKey<P>> {
         let seeds_a: Vec<_> = repeat_with(|| self.prg.new_seed())
@@ -118,7 +123,7 @@ where
         ]
     }
 
-    fn gen_empty(&self, size: usize) -> Vec<PRGKey<P>> {
+    fn gen_empty(&self) -> Vec<PRGKey<P>> {
         let seeds: Vec<_> = repeat_with(|| self.prg.new_seed())
             .take(self.num_points)
             .collect();
@@ -149,10 +154,7 @@ where
     /// combines the results produced by running eval on both keys
     fn combine(&self, parts: Vec<Vec<P::Output>>) -> Vec<P::Output> {
         let mut parts = parts.into_iter();
-        let mut res = parts
-            .next()
-            .expect("Need at least one part to combine.")
-            .clone();
+        let mut res = parts.next().expect("Need at least one part to combine.");
         for part in parts {
             for (x, y) in res.iter_mut().zip(part.into_iter()) {
                 *x ^= y;
@@ -169,7 +171,6 @@ pub mod tests {
     use crate::crypto::prg::AESPRG;
     use proptest::prelude::*;
 
-    const DATA_SIZE: usize = 20;
     const MAX_NUM_POINTS: usize = 10;
 
     impl<P: Arbitrary + 'static> Arbitrary for PRGDPF<P> {
@@ -216,8 +217,16 @@ pub mod tests {
         (1..MAX_NUM_POINTS).prop_map(move |num_points| PRGDPF::new(prg, num_keys, num_points))
     }
 
-    fn data() -> impl Strategy<Value = Bytes> {
-        prop::collection::vec(any::<u8>(), DATA_SIZE).prop_map(Bytes::from)
+    pub fn data_with_dpf<D>() -> impl Strategy<Value = (Bytes, D)>
+    where
+        D: DPF<Message = Bytes> + Arbitrary + Clone,
+    {
+        any::<D>().prop_flat_map(|dpf| {
+            (
+                any_with::<Bytes>(dpf.null_message().len().into()),
+                Just(dpf),
+            )
+        })
     }
 
     fn run_test_dpf<D>(dpf: D, data: D::Message, index: usize)
@@ -233,31 +242,30 @@ pub mod tests {
             if chunk_idx == index {
                 assert_eq!(chunk, data);
             } else {
-                assert_eq!(chunk, D::Message::default());
+                assert_eq!(chunk, dpf.null_message());
             }
         }
     }
 
-    fn run_test_dpf_empty<D>(dpf: D, size: usize)
+    fn run_test_dpf_empty<D>(dpf: D)
     where
         D: DPF,
         D::Message: Default + Eq + Debug,
     {
-        let dpf_keys = dpf.gen_empty(size);
+        let dpf_keys = dpf.gen_empty();
         let dpf_shares = dpf_keys.iter().map(|k| dpf.eval(k)).collect();
         let dpf_output = dpf.combine(dpf_shares);
 
         for chunk in dpf_output {
-            assert_eq!(chunk, D::Message::default());
+            assert_eq!(chunk, dpf.null_message());
         }
     }
 
     proptest! {
         #[test]
         fn test_prg_dpf(
-            dpf in any::<PRGDPF<AESPRG>>(),
+            (data, dpf) in data_with_dpf::<PRGDPF<AESPRG>>(),
             index in any::<proptest::sample::Index>(),
-            data in data()
         ) {
             let index = index.index(dpf.num_points());
             run_test_dpf(dpf, data, index);
@@ -266,9 +274,8 @@ pub mod tests {
         #[test]
         fn test_prg_dpf_empty(
             dpf in any::<PRGDPF<AESPRG>>(),
-            size in Just(DATA_SIZE),
         ) {
-            run_test_dpf_empty(dpf, size);
+            run_test_dpf_empty(dpf);
         }
     }
 }

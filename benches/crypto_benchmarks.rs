@@ -17,18 +17,18 @@ const EVAL_SIZE: usize = 1 << 20; // approx 1MB
 
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("PRG eval benchmark", |b| {
-        let prg = AESPRG::new();
+        let prg = AESPRG::new(16, EVAL_SIZE);
         let seed = prg.new_seed();
-        b.iter(|| prg.eval(&seed, EVAL_SIZE))
+        b.iter(|| prg.eval(&seed))
     });
 
     let num_keys = 2;
     let num_points = 1;
     let point_idx = 0;
     c.bench_function("PRGDPF eval benchmark", |b| {
-        let dpf = PRGDPF::new(AESPRG::new(), num_keys, num_points);
+        let dpf = PRGDPF::new(AESPRG::new(16, EVAL_SIZE), num_keys, num_points);
         let data = Bytes::empty(EVAL_SIZE);
-        let keys = dpf.gen(&data, point_idx);
+        let keys = dpf.gen(data, point_idx);
         let key = &keys[0];
         b.iter(|| dpf.eval(key))
     });
@@ -39,11 +39,11 @@ fn criterion_benchmark(c: &mut Criterion) {
     let prime: Integer = Integer::from(800_000_000).next_prime_ref().into();
     c.bench_function("gen_audit", |b| {
         let field = Field::new(prime.clone());
-        let dpf = PRGDPF::new(AESPRG::new(), num_keys, num_points);
+        let dpf = PRGDPF::new(AESPRG::new(16, EVAL_SIZE), num_keys, num_points);
         let vdpf = FieldVDPF::new(dpf, field.clone());
 
         let data = Bytes::empty(EVAL_SIZE);
-        let dpf_keys = vdpf.gen(&data, point_idx);
+        let dpf_keys = vdpf.gen(data, point_idx);
         let auth_keys = vec![field.zero(); 2];
         let proof_shares = vdpf.gen_proofs(&auth_keys[point_idx], point_idx, &dpf_keys);
 

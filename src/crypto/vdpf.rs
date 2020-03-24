@@ -105,12 +105,16 @@ impl<D: DPF> DPF for FieldVDPF<D> {
         self.dpf.num_keys()
     }
 
+    fn null_message(&self) -> Self::Message {
+        self.dpf.null_message()
+    }
+
     fn gen(&self, msg: Self::Message, idx: usize) -> Vec<Self::Key> {
         self.dpf.gen(msg, idx)
     }
 
-    fn gen_empty(&self, size: usize) -> Vec<Self::Key> {
-        self.dpf.gen_empty(size)
+    fn gen_empty(&self) -> Vec<Self::Key> {
+        self.dpf.gen_empty()
     }
 
     fn eval(&self, key: &Self::Key) -> Vec<Self::Message> {
@@ -222,17 +226,9 @@ impl VDPF for ConcreteVdpf {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::bytes::Bytes;
     use proptest::prelude::*;
-    use std::ops::Range;
 
-    use crate::{bytes::tests::bytes, crypto::field::tests::integers};
-
-    const DATA_SIZE: Range<usize> = 16..20; // in bytes
-
-    fn data() -> impl Strategy<Value = Bytes> {
-        DATA_SIZE.prop_flat_map(bytes)
-    }
+    use crate::crypto::{dpf::tests::data_with_dpf, field::tests::integers};
 
     impl<D: Arbitrary + 'static> Arbitrary for FieldVDPF<D> {
         type Parameters = ();
@@ -296,12 +292,8 @@ pub mod tests {
         assert!(vdpf.check_audit(audit_tokens));
     }
 
-    fn run_test_audit_check_correct_for_noop<V: VDPF>(
-        vdpf: V,
-        auth_keys: &[V::AuthKey],
-        data_size: usize,
-    ) {
-        let dpf_keys = vdpf.gen_empty(data_size);
+    fn run_test_audit_check_correct_for_noop<V: VDPF>(vdpf: V, auth_keys: &[V::AuthKey]) {
+        let dpf_keys = vdpf.gen_empty();
         let proof_shares = vdpf.gen_proofs_noop(&dpf_keys);
         let audit_tokens = dpf_keys
             .iter()
@@ -314,8 +306,7 @@ pub mod tests {
     proptest! {
         #[test]
         fn test_audit_check_correct(
-            vdpf in any::<ConcreteVdpf>(),
-            data in data(),
+            (data, vdpf) in data_with_dpf::<ConcreteVdpf>(),
             point_idx in any::<prop::sample::Index>(),
         ) {
             let auth_keys = vdpf.sample_keys();
@@ -327,10 +318,9 @@ pub mod tests {
         #[test]
         fn test_audit_check_correct_for_noop(
             vdpf in any::<ConcreteVdpf>(),
-            data_size in DATA_SIZE,
         ) {
             let auth_keys = vdpf.sample_keys();
-            run_test_audit_check_correct_for_noop(vdpf, &auth_keys, data_size);
+            run_test_audit_check_correct_for_noop(vdpf, &auth_keys);
         }
 
     }

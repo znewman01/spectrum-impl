@@ -12,6 +12,7 @@ pub trait PRG {
 
     fn new_seed(&self) -> Self::Seed;
     fn eval(&self, seed: &Self::Seed) -> Self::Output;
+    fn null_output(&self) -> Self::Output;
 }
 
 /// PRG uses AES to expand a seed to desired length
@@ -99,6 +100,10 @@ impl PRG for AESPRG {
 
         ciphertext.truncate(self.eval_size);
         ciphertext.into()
+    }
+
+    fn null_output(&self) -> Bytes {
+        Bytes::empty(self.eval_size)
     }
 }
 

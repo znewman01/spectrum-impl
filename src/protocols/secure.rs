@@ -229,7 +229,7 @@ where
     }
 
     fn null_broadcast(&self) -> Vec<WriteToken<V>> {
-        let dpf_keys = self.vdpf.gen_empty(self.msg_size);
+        let dpf_keys = self.vdpf.gen_empty();
         let proof_shares = self.vdpf.gen_proofs_noop(&dpf_keys);
 
         dpf_keys
@@ -273,7 +273,7 @@ pub mod tests {
 
     impl<V> Arbitrary for SecureProtocol<V>
     where
-        V: VDPF + Arbitrary,
+        V: VDPF<Message = Bytes> + Arbitrary,
         <V as Arbitrary>::Strategy: 'static,
     {
         type Parameters = ();
@@ -281,7 +281,10 @@ pub mod tests {
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             any::<V>()
-                .prop_map(|vdpf| SecureProtocol::new(vdpf, MSG_LEN))
+                .prop_map(|vdpf| {
+                    let msg_size = vdpf.null_message().len();
+                    SecureProtocol::new(vdpf, msg_size)
+                })
                 .boxed()
         }
     }
@@ -312,8 +315,7 @@ pub mod tests {
 
         #[test]
         fn test_broadcast_passes_audit(
-            protocol in any::<SecureProtocol<ConcreteVdpf>>(),
-            msg in messages(),
+            (protocol, msg) in any::<SecureProtocol<ConcreteVdpf>>().prop_flat_map(and_messages),
             idx in any::<prop::sample::Index>(),
         ) {
             let keys = protocol.sample_keys();
@@ -323,10 +325,10 @@ pub mod tests {
 
         #[test]
         fn test_broadcast_bad_key_fails_audit(
-            protocol in any::<SecureProtocol<ConcreteVdpf>>(),
-            msg in messages().prop_filter("Broadcasting null message okay!", |m| *m != Bytes::empty(MSG_LEN)),
+            (protocol, msg) in any::<SecureProtocol<ConcreteVdpf>>().prop_flat_map(and_messages),
             idx in any::<prop::sample::Index>(),
         ) {
+            prop_assume!(msg != Bytes::empty(msg.len()), "Broadcasting null message okay!");
             let keys = protocol.sample_keys();
             let bad_key = ChannelKey::new(idx.index(keys.len()), protocol.vdpf.sample_key());
             prop_assume!(!keys.contains(&bad_key));
@@ -342,8 +344,7 @@ pub mod tests {
 
         #[test]
         fn test_broadcast_recovers_message(
-            protocol in any::<SecureProtocol<ConcreteVdpf>>(),
-            msg in messages(),
+            (protocol, msg) in any::<SecureProtocol<ConcreteVdpf>>().prop_flat_map(and_messages),
             idx in any::<prop::sample::Index>(),
         ) {
             let keys = protocol.sample_keys();

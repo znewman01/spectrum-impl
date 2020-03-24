@@ -44,10 +44,18 @@ pub mod tests {
     use std::fmt::Debug;
 
     pub const CHANNELS: usize = 3;
-    pub const MSG_LEN: usize = 1024;
+    pub const MSG_LEN: usize = 64;
 
     pub fn messages() -> impl Strategy<Value = Bytes> {
         prop::collection::vec(any::<u8>(), MSG_LEN).prop_map(Into::into)
+    }
+
+    pub fn and_messages<P>(protocol: P) -> impl Strategy<Value = (P, Bytes)>
+    where
+        P: Protocol + Debug + Clone,
+    {
+        let size = protocol.message_len();
+        (Just(protocol), any_with::<Bytes>(size.into()))
     }
 
     pub fn and_accumulators<P>(protocol: P) -> impl Strategy<Value = (P, Vec<Bytes>)>
@@ -55,7 +63,11 @@ pub mod tests {
         P: Protocol + Debug + Clone,
     {
         let channels = protocol.num_channels();
-        (Just(protocol), prop::collection::vec(messages(), channels))
+        let size = protocol.message_len();
+        (
+            Just(protocol),
+            prop::collection::vec(any_with::<Bytes>(size.into()), channels),
+        )
     }
 
     pub fn get_server_shares<P: Protocol>(
@@ -164,7 +176,7 @@ pub mod tests {
             if msg_idx == key_idx {
                 assert_eq!(actual_msg, msg);
             } else {
-                assert_eq!(actual_msg, Bytes::empty(MSG_LEN))
+                assert_eq!(actual_msg, Bytes::empty(protocol.message_len()))
             }
         }
     }

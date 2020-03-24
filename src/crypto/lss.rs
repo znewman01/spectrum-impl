@@ -132,7 +132,7 @@ mod tests {
         #[test]
         fn test_share_randomized(
             value in any::<FieldElement>(),
-            num_shares in 2..MAX_SPLIT
+            num_shares in 10..MAX_SPLIT  // Need more than 2 shares to avoid them being equal by chance
         ) {
             let mut rng = RandState::new();
             assert_ne!(
