@@ -116,7 +116,7 @@ impl FieldElement {
     }
 
     pub fn get_value(&self) -> Integer {
-        self.value
+        self.value.clone()
     }
 }
 

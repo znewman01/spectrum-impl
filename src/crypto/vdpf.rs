@@ -96,7 +96,7 @@ impl<D> FieldVDPF<D> {
 // Pass through DPF methods
 impl<D: DPF> DPF for FieldVDPF<D> {
     type Key = D::Key;
-    type Messsage = D::Message;
+    type Message = D::Message;
 
     fn num_points(&self) -> usize {
         self.dpf.num_points()
@@ -106,7 +106,7 @@ impl<D: DPF> DPF for FieldVDPF<D> {
         self.dpf.num_keys()
     }
 
-    fn gen(&self, msg: &Self::Message, idx: usize) -> Vec<Self::Key> {
+    fn gen(&self, msg: Self::Message, idx: usize) -> Vec<Self::Key> {
         self.dpf.gen(msg, idx)
     }
 

@@ -42,7 +42,7 @@ impl GroupElement {
     }
 
     pub fn get_value(&self) -> Integer {
-        self.value
+        self.value.clone()
     }
 
     pub fn exp(&self, pow: Integer) -> GroupElement {
@@ -52,7 +52,7 @@ impl GroupElement {
                 .clone()
                 .pow_mod(&pow, &self.group.modulus)
                 .unwrap(),
-            group: self.group,
+            group: self.group.clone(),
         }
     }
 }

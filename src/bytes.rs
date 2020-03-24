@@ -103,8 +103,31 @@ impl ops::BitXor<&Bytes> for Bytes {
     }
 }
 
+impl ops::BitXor<Bytes> for Bytes {
+    type Output = Bytes;
+
+    fn bitxor(self, rhs: Bytes) -> Bytes {
+        assert_eq!(self.len(), rhs.len());
+        self.0
+            .iter()
+            .zip(rhs.0.iter())
+            .map(|(x, y)| x ^ y)
+            .collect()
+    }
+}
+
 impl ops::BitXorAssign<&Bytes> for Bytes {
     fn bitxor_assign(&mut self, rhs: &Bytes) {
+        assert_eq!(self.len(), rhs.len());
+        self.0
+            .iter_mut()
+            .zip(rhs.0.iter())
+            .for_each(|(x, y)| *x ^= y);
+    }
+}
+
+impl ops::BitXorAssign<Bytes> for Bytes {
+    fn bitxor_assign(&mut self, rhs: Bytes) {
         assert_eq!(self.len(), rhs.len());
         self.0
             .iter_mut()

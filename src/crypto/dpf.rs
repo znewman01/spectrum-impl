@@ -5,7 +5,7 @@ use derivative::Derivative;
 use rand::{thread_rng, Rng};
 use std::fmt::Debug;
 use std::iter::repeat_with;
-
+use std::ops;
 
 /// Distributed Point Function
 /// Must generate a set of keys k_1, k_2, ...
@@ -77,7 +77,12 @@ impl<P> DPF for PRGDPF<P>
 where
     P: PRG + Clone,
     P::Seed: Clone + PartialEq + Eq + Debug,
-    P::Output: Clone + PartialEq + Eq + Debug,
+    P::Output: Clone
+        + PartialEq
+        + Eq
+        + Debug
+        + ops::BitXor<P::Output, Output = P::Output>
+        + ops::BitXorAssign<P::Output>,
 {
     type Key = PRGKey<P>;
     type Message = P::Output;
@@ -134,7 +139,8 @@ where
             .map(|(seed, bits)| {
                 let mut data = self.prg.eval(seed);
                 if *bits == 1 {
-                    data ^= key.encoded_msg
+                    // TODO(zjn): futz with lifetimes; remove clone()
+                    data ^= key.encoded_msg.clone();
                 }
                 data
             })
@@ -143,13 +149,13 @@ where
 
     /// combines the results produced by running eval on both keys
     fn combine(&self, parts: Vec<Vec<P::Output>>) -> Vec<P::Output> {
-        let mut parts = parts.iter();
+        let mut parts = parts.into_iter();
         let mut res = parts
             .next()
             .expect("Need at least one part to combine.")
             .clone();
         for part in parts {
-            for (x, y) in res.iter_mut().zip(part.iter()) {
+            for (x, y) in res.iter_mut().zip(part.into_iter()) {
                 *x ^= y;
             }
         }
@@ -160,9 +166,9 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::bytes::Bytes;
     use crate::crypto::prg::AESPRG;
     use proptest::prelude::*;
-    use bytes::Bytes;
 
     const DATA_SIZE: usize = 20;
     const MAX_NUM_POINTS: usize = 10;

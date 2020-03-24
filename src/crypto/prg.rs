@@ -1,18 +1,15 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
 use crate::crypto::field::{Field, FieldElement};
-use crate::crypto::group::{Group, GroupElement};
 use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;
-use rug::rand::RandState;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::ops::{BitXor, BitXorAssign};
 use std::rc::Rc;
 
 pub trait PRG {
     type Seed;
-    type Output: Eq + Debug + Hash + BitXor + BitXorAssign;
+    type Output;
 
     fn new_seed(&self) -> Self::Seed;
     fn eval(&self, seed: &Self::Seed) -> Self::Output;
@@ -32,12 +29,6 @@ pub struct AESSeed {
 }
 
 /// evaluation type for seed-homomorphic PRG
-#[derive(Clone, Eq, PartialEq, Debug, Hash)]
-pub struct AESPRGOutput {
-    value: Bytes,
-}
-
-
 impl AESSeed {
     pub fn to_field_element(&self, field: Field) -> FieldElement {
         field.element_from_bytes(&self.bytes)
@@ -75,7 +66,7 @@ impl AESPRG {
 // Implementation of an AES-based PRG
 impl PRG for AESPRG {
     type Seed = AESSeed;
-    type Output = AESPRGOutput;
+    type Output = Bytes;
 
     /// generates a new (random) seed for the given PRG
     fn new_seed(&self) -> AESSeed {
@@ -107,47 +98,10 @@ impl PRG for AESPRG {
         )
         .unwrap();
 
-        // truncate to correct expanded size
         ciphertext.truncate(self.eval_size);
-        AESPRGOutput {
-            value: ciphertext.into(),
-        }
+        ciphertext.into()
     }
 }
-
-impl BitXor for AESPRGOutput {
-    type Output = AESPRGOutput;
-
-    // rhs is the "right-hand side" of the expression `a ^ b`
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        AESPRGOutput {
-            value: self.value.clone() ^ &rhs.value,
-        } // xor the bytes
-    }
-}
-
-impl BitXorAssign for AESPRGOutput {
-    fn bitxor_assign(&mut self, rhs: Self) {
-        self.value = self.value ^ &rhs.value
-    }
-}
-
-impl BitXor<&AESPRGOutput> for AESPRGOutput {
-    type Output = AESPRGOutput;
-
-    fn bitxor(self, rhs: &AESPRGOutput) -> Self::Output {
-        AESPRGOutput {
-            value: self.value ^ &rhs.value, // xor the bytes
-        } 
-    }
-}
-
-impl BitXorAssign<&AESPRGOutput> for AESPRGOutput {
-    fn bitxor_assign(&mut self, rhs: &AESPRGOutput) {
-        self.value = self.value ^ &rhs.value
-    }
-}
-
 
 #[cfg(test)]
 mod tests {

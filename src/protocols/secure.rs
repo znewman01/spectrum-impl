@@ -186,7 +186,10 @@ impl SecureProtocol<ConcreteVdpf> {
     ) -> Self {
         let prime: Integer = (Integer::from(2) << sec_bytes).next_prime_ref().into();
         let field = Field::from(prime);
-        let vdpf = FieldVDPF::new(PRGDPF::new(AESPRG::new(), parties, channels), field);
+        let vdpf = FieldVDPF::new(
+            PRGDPF::new(AESPRG::new(16, msg_size), parties, channels),
+            field,
+        );
         SecureProtocol::new(vdpf, msg_size)
     }
 }
@@ -194,6 +197,8 @@ impl SecureProtocol<ConcreteVdpf> {
 impl<V> Protocol for SecureProtocol<V>
 where
     V: VDPF,
+    <V as DPF>::Key: Debug,
+    <V as DPF>::Message: From<Bytes> + Into<Bytes>,
     V::Token: Clone,
     V::AuthKey: Clone,
 {
@@ -214,7 +219,7 @@ where
     }
 
     fn broadcast(&self, message: Bytes, key: ChannelKey<V>) -> Vec<WriteToken<V>> {
-        let dpf_keys = self.vdpf.gen(&message, key.idx);
+        let dpf_keys = self.vdpf.gen(message.into(), key.idx);
         let proof_shares = self.vdpf.gen_proofs(&key.secret, key.idx, &dpf_keys);
         dpf_keys
             .into_iter()
@@ -248,7 +253,11 @@ where
     }
 
     fn to_accumulator(&self, token: WriteToken<V>) -> Vec<Bytes> {
-        self.vdpf.eval(&token.0)
+        self.vdpf
+            .eval(&token.0)
+            .into_iter()
+            .map(Into::into)
+            .collect()
     }
 }
 
