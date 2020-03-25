@@ -32,6 +32,24 @@ use services::Service::{Client, Leader, Publisher, Worker};
 
 const TIMEOUT: Duration = Duration::from_secs(3);
 
+#[derive(Clone)]
+struct PublisherRemote {
+    done: Arc<Barrier>,
+}
+
+impl PublisherRemote {
+    fn new(done: Arc<Barrier>) -> Self {
+        Self { done }
+    }
+}
+
+#[tonic::async_trait]
+impl publisher::Remote for PublisherRemote {
+    async fn done(&self) {
+        self.done.wait().await;
+    }
+}
+
 pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;
     let experiment = Experiment::new(2, 2, 10, 2);
@@ -40,7 +58,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let barrier = Arc::new(Barrier::new(
         experiment.iter_clients().count() + experiment.iter_services().count() + 1,
     ));
-
+    let remote = PublisherRemote::new(barrier.clone());
     let handles = futures::stream::FuturesUnordered::new();
     for service in experiment.iter_services().chain(experiment.iter_clients()) {
         let shutdown = {
@@ -53,8 +71,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         let protocol = experiment.get_protocol();
         handles.push(match service {
             Publisher(info) => {
-                let barrier = barrier.clone();
-                publisher::run(config.clone(), protocol, info, Some(barrier), shutdown).boxed()
+                publisher::run(config.clone(), protocol, info, remote.clone(), shutdown).boxed()
             }
             Leader(info) => {
                 leader::run(config.clone(), experiment, protocol, info, shutdown).boxed()

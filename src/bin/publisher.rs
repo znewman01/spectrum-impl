@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         config,
         experiment.get_protocol(),
         info,
-        None,
+        publisher::NoopRemote,
         ctrl_c().map(|_| ()),
     )
     .await

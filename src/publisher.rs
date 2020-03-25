@@ -21,27 +21,40 @@ use chrono::prelude::*;
 use futures::prelude::*;
 use log::{debug, error, info, trace};
 use std::sync::Arc;
-use tokio::{spawn, sync::Barrier};
+use tokio::spawn;
 use tonic::{Request, Response, Status};
 
-pub struct MyPublisher {
-    accumulator: Arc<Accumulator<Vec<Bytes>>>,
-    total_groups: usize,
-    done: Option<Arc<Barrier>>,
+#[tonic::async_trait]
+pub trait Remote: Sync + Send + Clone {
+    async fn done(&self);
 }
 
-impl MyPublisher {
-    fn from_protocol<P: Protocol>(protocol: P, done: Option<Arc<Barrier>>) -> Self {
+#[derive(Clone)]
+pub struct NoopRemote;
+
+#[tonic::async_trait]
+impl Remote for NoopRemote {
+    async fn done(&self) {}
+}
+
+pub struct MyPublisher<R: Remote> {
+    accumulator: Arc<Accumulator<Vec<Bytes>>>,
+    total_groups: usize,
+    remote: R,
+}
+
+impl<R: Remote> MyPublisher<R> {
+    fn from_protocol<P: Protocol>(protocol: P, remote: R) -> Self {
         MyPublisher {
             accumulator: Arc::new(Accumulator::new(protocol.new_accumulator())),
             total_groups: protocol.num_parties(),
-            done,
+            remote,
         }
     }
 }
 
 #[tonic::async_trait]
-impl Publisher for MyPublisher {
+impl<R: Remote + 'static> Publisher for MyPublisher<R> {
     async fn aggregate_group(
         &self,
         request: Request<AggregateGroupRequest>,
@@ -53,7 +66,7 @@ impl Publisher for MyPublisher {
         let total_groups = self.total_groups;
         let accumulator = self.accumulator.clone();
 
-        let done = self.done.clone();
+        let remote = self.remote.clone();
         // TODO: factor out?
         spawn(async move {
             // TODO: spawn_blocking for heavy computation?
@@ -77,28 +90,27 @@ impl Publisher for MyPublisher {
 
             let share = accumulator.get().await;
             info!("Publisher final shares: {:?}", share);
-            if let Some(done) = done {
-                done.wait().await;
-            }
+            remote.done().await;
         });
 
         Ok(Response::new(AggregateGroupResponse {}))
     }
 }
 
-async fn inner_run<C, F, P>(
+async fn inner_run<C, F, R, P>(
     config: C,
     protocol: P,
     info: PublisherInfo,
-    done: Option<Arc<Barrier>>,
+    remote: R,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
     C: Store,
+    R: Remote + 'static,
     F: Future<Output = ()> + Send + 'static,
     P: Protocol,
 {
-    let state = MyPublisher::from_protocol(protocol, done);
+    let state = MyPublisher::from_protocol(protocol, remote);
     info!("Publisher starting up.");
     let addr = get_addr();
     let server_task = tokio::spawn(async move {
@@ -130,24 +142,24 @@ where
     Ok(())
 }
 
-pub async fn run<C, F>(
+pub async fn run<C, R, F>(
     config: C,
     protocol: ProtocolWrapper2,
     info: PublisherInfo,
-    done: Option<Arc<Barrier>>,
+    remote: R,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
     C: Store,
-
+    R: Remote + 'static,
     F: Future<Output = ()> + Send + 'static,
 {
     match protocol {
         ProtocolWrapper2::Secure(protocol) => {
-            inner_run(config, protocol, info, done, shutdown).await?;
+            inner_run(config, protocol, info, remote, shutdown).await?;
         }
         ProtocolWrapper2::Insecure(protocol) => {
-            inner_run(config, protocol, info, done, shutdown).await?;
+            inner_run(config, protocol, info, remote, shutdown).await?;
         }
     }
     Ok(())
