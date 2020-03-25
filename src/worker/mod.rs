@@ -1,15 +1,19 @@
 use crate::proto::{
-    expect_field,
+    self, expect_field,
     worker_server::{Worker, WorkerServer},
-    AggregateWorkerRequest, AuditShare, RegisterClientRequest, RegisterClientResponse, Share,
-    UploadRequest, UploadResponse, VerifyRequest, VerifyResponse, WriteToken,
+    AggregateWorkerRequest, RegisterClientRequest, RegisterClientResponse, Share, UploadRequest,
+    UploadResponse, VerifyRequest, VerifyResponse,
 };
 use crate::{
     bytes::Bytes,
     config::store::Store,
     experiment::Experiment,
     net::get_addr,
-    protocols::accumulator::Accumulator,
+    protocols::{
+        accumulator::Accumulator,
+        wrapper::{ChannelKeyWrapper, ProtocolWrapper2},
+        Protocol,
+    },
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -20,6 +24,8 @@ use crate::{
 
 use futures::prelude::*;
 use log::{info, trace, warn};
+use std::convert::{TryFrom, TryInto};
+use std::fmt;
 use std::sync::Arc;
 use tokio::{spawn, sync::watch, task::spawn_blocking};
 use tonic::{Request, Response, Status};
@@ -34,42 +40,58 @@ use service_registry::{Registry as ServiceRegistry, SharedClient};
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
-// TODO: candidate for parameterization (over the protocol) to avoid dynamic dispatch
-struct WorkerState {
-    audit_registry: AuditRegistry<AuditShare, WriteToken>,
+struct WorkerState<P: Protocol> {
+    audit_registry: AuditRegistry<P::AuditShare, P::WriteToken>,
     accumulator: Accumulator<Vec<Bytes>>,
     experiment: Experiment,
     client_registry: ClientRegistry,
+    protocol: P,
 }
 
-impl WorkerState {
-    fn from_experiment(experiment: Experiment) -> Self {
+impl<P: Protocol> WorkerState<P> {
+    fn from_experiment(experiment: Experiment, protocol: P) -> Self {
         WorkerState {
             audit_registry: AuditRegistry::new(experiment.clients),
-            accumulator: Accumulator::new(experiment.get_protocol().new_accumulator()),
+            accumulator: Accumulator::new(protocol.new_accumulator()),
             experiment,
             client_registry: ClientRegistry::new(),
+            protocol,
         }
     }
+}
 
-    async fn upload(&self, client: &ClientInfo, write_token: WriteToken) -> Vec<AuditShare> {
-        let protocol = self.experiment.get_protocol();
-        let keys = self.experiment.get_keys();
-
+impl<P> WorkerState<P>
+where
+    P: Protocol + 'static + Sync + Send + Clone,
+    P::WriteToken: Clone + Send,
+    P::AuditShare: Send,
+    P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
+    <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
+{
+    async fn upload(&self, client: &ClientInfo, write_token: P::WriteToken) -> Vec<P::AuditShare> {
         self.audit_registry.init(&client, write_token.clone()).await;
-        spawn_blocking(move || (protocol.gen_audit(keys, write_token)))
+
+        let protocol = self.protocol.clone();
+        let keys = self.experiment.get_keys(); // TODO(zjn): move into WorkerState
+        let keys = keys
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<P::ChannelKey>, _>>()
+            .unwrap();
+
+        spawn_blocking(move || protocol.gen_audit(&keys, &write_token))
             .await
             .expect("Generating audit should not panic.")
     }
 
-    async fn verify(&self, client: &ClientInfo, share: AuditShare) -> Option<Vec<Bytes>> {
+    async fn verify(&self, client: &ClientInfo, share: P::AuditShare) -> Option<Vec<Bytes>> {
         let check_count = self.audit_registry.add(client, share).await;
-        if check_count < self.experiment.groups as usize {
+        if check_count < self.protocol.num_parties() {
             return None;
         }
 
         let (token, shares) = self.audit_registry.drain(client).await;
-        let protocol = self.experiment.get_protocol();
+        let protocol = self.protocol.clone();
         let verify = spawn_blocking(move || protocol.check_audit(shares))
             .await
             .unwrap();
@@ -78,8 +100,8 @@ impl WorkerState {
             return None;
         }
 
-        let protocol = self.experiment.get_protocol();
-        let data = spawn_blocking(move || protocol.expand_write_token(token))
+        let protocol = self.protocol.clone();
+        let data = spawn_blocking(move || protocol.to_accumulator(token))
             .await
             .expect("Accepting write token should never fail.");
 
@@ -96,22 +118,24 @@ impl WorkerState {
     }
 }
 
-pub struct MyWorker {
+pub struct MyWorker<P: Protocol> {
     start_rx: watch::Receiver<bool>,
     services: ServiceRegistry,
-    state: Arc<WorkerState>,
+    state: Arc<WorkerState<P>>,
 }
 
-impl MyWorker {
+impl<P: Protocol> MyWorker<P> {
     fn new(
         start_rx: watch::Receiver<bool>,
         services: ServiceRegistry,
         experiment: Experiment,
+        protocol: P,
     ) -> Self {
+        let state = WorkerState::from_experiment(experiment, protocol);
         MyWorker {
             start_rx,
             services,
-            state: Arc::new(WorkerState::from_experiment(experiment)),
+            state: Arc::new(state),
         }
     }
 
@@ -138,7 +162,16 @@ impl MyWorker {
 }
 
 #[tonic::async_trait]
-impl Worker for MyWorker {
+impl<P> Worker for MyWorker<P>
+where
+    P: Protocol + 'static + Sync + Send + Clone,
+    P::WriteToken: Clone + TryFrom<proto::WriteToken> + Sync + Send,
+    <P::WriteToken as TryFrom<proto::WriteToken>>::Error: fmt::Debug + Send,
+    P::AuditShare: TryFrom<proto::AuditShare> + Into<proto::AuditShare> + Sync + Send,
+    <P::AuditShare as TryFrom<proto::AuditShare>>::Error: fmt::Debug,
+    P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
+    <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
+{
     async fn upload(
         &self,
         request: Request<UploadRequest>,
@@ -153,12 +186,14 @@ impl Worker for MyWorker {
         let peers: Vec<SharedClient> = self.get_peers(&client_info).await?;
 
         spawn(async move {
-            let audit_shares = state.upload(&client_info, write_token).await;
+            let audit_shares = state
+                .upload(&client_info, write_token.try_into().unwrap())
+                .await;
 
             for (peer, audit_share) in peers.into_iter().zip(audit_shares.into_iter()) {
                 let req = Request::new(VerifyRequest {
                     client_id: Some(client_id.clone()),
-                    audit_share: Some(audit_share),
+                    audit_share: Some(audit_share.into()),
                 });
                 spawn(async move {
                     peer.lock().await.verify(req).await.unwrap();
@@ -180,6 +215,7 @@ impl Worker for MyWorker {
         // TODO(zjn): check which worker this comes from, don't double-insert
         let client_info = ClientInfo::from(&expect_field(request.client_id, "Client ID")?);
         let share = expect_field(request.audit_share, "Audit Share")?;
+        let share = share.try_into().unwrap();
         let state = self.state.clone();
         let leader = self.services.get_my_leader();
 
@@ -213,27 +249,36 @@ impl Worker for MyWorker {
     }
 }
 
-pub async fn run<C, F>(
+async fn inner_run<C, F, P>(
     config: C,
     experiment: Experiment,
+    protocol: P,
     info: WorkerInfo,
     shutdown: F,
 ) -> Result<(), Error>
 where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
+    P: Protocol + 'static + Sync + Send + Clone,
+    P::WriteToken: Clone + TryFrom<proto::WriteToken> + Sync + Send,
+    <P::WriteToken as TryFrom<proto::WriteToken>>::Error: fmt::Debug + Send,
+    P::AuditShare: TryFrom<proto::AuditShare> + Into<proto::AuditShare> + Sync + Send,
+    <P::AuditShare as TryFrom<proto::AuditShare>>::Error: fmt::Debug,
+    P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
+    <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
 {
     info!("Worker starting up.");
     let addr = get_addr();
 
     let (start_tx, start_rx) = watch::channel(false);
     let (registry, registry_remote) = ServiceRegistry::new_with_remote();
-    let worker = MyWorker::new(start_rx, registry, experiment);
 
+    let worker = MyWorker::new(start_rx, registry, experiment, protocol);
     let server = tonic::transport::server::Server::builder()
         .add_service(HealthServer::new(AllGoodHealthServer::default()))
         .add_service(WorkerServer::new(worker))
         .serve_with_shutdown(addr, shutdown);
+
     let server_task = spawn(server);
 
     wait_for_health(format!("http://{}", addr)).await?;
@@ -246,5 +291,27 @@ where
 
     server_task.await??;
     info!("Worker shutting down.");
+    Ok(())
+}
+
+pub async fn run<C, F>(
+    config: C,
+    experiment: Experiment,
+    protocol: ProtocolWrapper2,
+    info: WorkerInfo,
+    shutdown: F,
+) -> Result<(), Error>
+where
+    C: Store,
+    F: Future<Output = ()> + Send + 'static,
+{
+    match protocol {
+        ProtocolWrapper2::Secure(protocol) => {
+            inner_run(config, experiment, protocol, info, shutdown).await?;
+        }
+        ProtocolWrapper2::Insecure(protocol) => {
+            inner_run(config, experiment, protocol, info, shutdown).await?;
+        }
+    }
     Ok(())
 }

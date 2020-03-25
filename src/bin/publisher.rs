@@ -8,5 +8,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let experiment = experiment::read_from_store(&config).await?;
     // TODO(zjn): construct from environment/args
     let info = PublisherInfo::new();
-    publisher::run(config, experiment, info, ctrl_c().map(|_| ())).await
+    publisher::run(
+        config,
+        experiment.get_protocol(),
+        info,
+        ctrl_c().map(|_| ()),
+    )
+    .await
 }

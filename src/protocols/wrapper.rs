@@ -108,6 +108,11 @@ where
     }
 }
 
+pub enum ProtocolWrapper2 {
+    Secure(secure::SecureProtocol<ConcreteVdpf>),
+    Insecure(insecure::InsecureProtocol),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

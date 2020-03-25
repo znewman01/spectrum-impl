@@ -9,7 +9,7 @@ use crate::{
     config::store::Store,
     experiment::Experiment,
     net::get_addr,
-    protocols::accumulator::Accumulator,
+    protocols::{accumulator::Accumulator, wrapper::ProtocolWrapper2, Protocol},
     services::{
         discovery::{register, resolve_all, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -36,15 +36,14 @@ pub struct MyLeader {
 }
 
 impl MyLeader {
-    fn from_experiment(
-        experiment: Experiment,
+    fn from_protocol<P: Protocol>(
+        protocol: P,
+        workers_per_group: u16,
         publisher_client: watch::Receiver<Option<SharedPublisherClient>>,
     ) -> Self {
         MyLeader {
-            accumulator: Arc::new(Accumulator::new(
-                experiment.get_protocol().new_accumulator(),
-            )),
-            total_workers: experiment.workers_per_group as usize,
+            accumulator: Arc::new(Accumulator::new(protocol.new_accumulator())),
+            total_workers: workers_per_group as usize,
             publisher_client,
         }
     }
@@ -98,18 +97,20 @@ impl Leader for MyLeader {
     }
 }
 
-pub async fn run<C, F>(
+async fn inner_run<C, F, P>(
     config: C,
     experiment: Experiment,
+    protocol: P,
     info: LeaderInfo,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
+    P: Protocol,
 {
     let (tx, rx) = watch::channel(None);
-    let state = MyLeader::from_experiment(experiment, rx);
+    let state = MyLeader::from_protocol(protocol, experiment.workers_per_group, rx);
     info!("Leader starting up.");
     let addr = get_addr();
     let server_task = tokio::spawn(
@@ -144,5 +145,27 @@ where
 
     server_task.await??;
     info!("Leader shutting down.");
+    Ok(())
+}
+
+pub async fn run<C, F>(
+    config: C,
+    experiment: Experiment,
+    protocol: ProtocolWrapper2,
+    info: LeaderInfo,
+    shutdown: F,
+) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
+where
+    C: Store,
+    F: Future<Output = ()> + Send + 'static,
+{
+    match protocol {
+        ProtocolWrapper2::Secure(protocol) => {
+            inner_run(config, experiment, protocol, info, shutdown).await?;
+        }
+        ProtocolWrapper2::Insecure(protocol) => {
+            inner_run(config, experiment, protocol, info, shutdown).await?;
+        }
+    }
     Ok(())
 }

@@ -7,9 +7,8 @@ use crate::{
     bytes::Bytes,
     config::store::Store,
     experiment,
-    experiment::Experiment,
     net::get_addr,
-    protocols::accumulator::Accumulator,
+    protocols::{accumulator::Accumulator, wrapper::ProtocolWrapper2, Protocol},
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -31,12 +30,10 @@ pub struct MyPublisher {
 }
 
 impl MyPublisher {
-    fn from_experiment(experiment: Experiment) -> Self {
+    fn from_protocol<P: Protocol>(protocol: P) -> Self {
         MyPublisher {
-            accumulator: Arc::new(Accumulator::new(
-                experiment.get_protocol().new_accumulator(),
-            )),
-            total_groups: experiment.groups as usize,
+            accumulator: Arc::new(Accumulator::new(protocol.new_accumulator())),
+            total_groups: protocol.num_parties(),
         }
     }
 }
@@ -83,17 +80,18 @@ impl Publisher for MyPublisher {
     }
 }
 
-pub async fn run<C, F>(
+async fn inner_run<C, F, P>(
     config: C,
-    experiment: Experiment,
+    protocol: P,
     info: PublisherInfo,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
+    P: Protocol,
 {
-    let state = MyPublisher::from_experiment(experiment);
+    let state = MyPublisher::from_protocol(protocol);
     info!("Publisher starting up.");
     let addr = get_addr();
     let server_task = tokio::spawn(
@@ -121,5 +119,26 @@ where
     server_task.await??;
     info!("Publisher shutting down.");
 
+    Ok(())
+}
+
+pub async fn run<C, F>(
+    config: C,
+    protocol: ProtocolWrapper2,
+    info: PublisherInfo,
+    shutdown: F,
+) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
+where
+    C: Store,
+    F: Future<Output = ()> + Send + 'static,
+{
+    match protocol {
+        ProtocolWrapper2::Secure(protocol) => {
+            inner_run(config, protocol, info, shutdown).await?;
+        }
+        ProtocolWrapper2::Insecure(protocol) => {
+            inner_run(config, protocol, info, shutdown).await?;
+        }
+    }
     Ok(())
 }

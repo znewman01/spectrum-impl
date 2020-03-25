@@ -52,11 +52,16 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
             };
         };
 
+        let protocol = experiment.get_protocol();
         handles.push(match service {
-            Publisher(info) => publisher::run(config.clone(), experiment, info, shutdown).boxed(),
-            Leader(info) => leader::run(config.clone(), experiment, info, shutdown).boxed(),
-            Worker(info) => worker::run(config.clone(), experiment, info, shutdown).boxed(),
-            Client(info) => client::viewer::run(config.clone(), experiment, info, shutdown).boxed(),
+            Publisher(info) => publisher::run(config.clone(), protocol, info, shutdown).boxed(),
+            Leader(info) => {
+                leader::run(config.clone(), experiment, protocol, info, shutdown).boxed()
+            }
+            Worker(info) => {
+                worker::run(config.clone(), experiment, protocol, info, shutdown).boxed()
+            }
+            Client(info) => client::viewer::run(config.clone(), protocol, info, shutdown).boxed(),
         });
     }
 
