@@ -2,6 +2,7 @@
 use futures::prelude::*;
 use log::error;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Barrier;
 
 pub mod client;
@@ -28,8 +29,6 @@ mod proto {
 
 use experiment::Experiment;
 use services::Service::{Client, Leader, Publisher, Worker};
-use std::time::Duration;
-use tokio::time::delay_for;
 
 const TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -37,24 +36,26 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;
     let experiment = Experiment::new(2, 2, 10, 2);
     experiment::write_to_store(&config, experiment).await?;
-    // TODO: "+ 1" is hack! publisher should only shutdown when experiment is over
+    // TODO: +1 for the "done" notification from the publisher
     let barrier = Arc::new(Barrier::new(
         experiment.iter_clients().count() + experiment.iter_services().count() + 1,
     ));
 
     let handles = futures::stream::FuturesUnordered::new();
     for service in experiment.iter_services().chain(experiment.iter_clients()) {
-        let barrier = barrier.clone();
-        let shutdown = async move {
-            futures::select! {
-                _ = barrier.wait().fuse() => (),
-                _ = delay_for(TIMEOUT).fuse() => (),
-            };
+        let shutdown = {
+            let barrier = barrier.clone();
+            async move {
+                barrier.wait().await;
+            }
         };
 
         let protocol = experiment.get_protocol();
         handles.push(match service {
-            Publisher(info) => publisher::run(config.clone(), protocol, info, shutdown).boxed(),
+            Publisher(info) => {
+                let barrier = barrier.clone();
+                publisher::run(config.clone(), protocol, info, Some(barrier), shutdown).boxed()
+            }
             Leader(info) => {
                 leader::run(config.clone(), experiment, protocol, info, shutdown).boxed()
             }
@@ -64,6 +65,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
             Client(info) => client::viewer::run(config.clone(), protocol, info, shutdown).boxed(),
         });
     }
+
+    // TODO: timer task
+    // - wait for start time notification
+    // - wait for done notification
+    // - return the difference
+    // - if takes too long (TIMEOUT), kill everything -- need something in shutdown?
 
     handles
         .for_each(|result| async {

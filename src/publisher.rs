@@ -18,22 +18,24 @@ use crate::{
 };
 
 use chrono::prelude::*;
-use futures::Future;
+use futures::prelude::*;
 use log::{debug, error, info, trace};
 use std::sync::Arc;
-use tokio::spawn;
+use tokio::{spawn, sync::Barrier};
 use tonic::{Request, Response, Status};
 
 pub struct MyPublisher {
     accumulator: Arc<Accumulator<Vec<Bytes>>>,
     total_groups: usize,
+    done: Option<Arc<Barrier>>,
 }
 
 impl MyPublisher {
-    fn from_protocol<P: Protocol>(protocol: P) -> Self {
+    fn from_protocol<P: Protocol>(protocol: P, done: Option<Arc<Barrier>>) -> Self {
         MyPublisher {
             accumulator: Arc::new(Accumulator::new(protocol.new_accumulator())),
             total_groups: protocol.num_parties(),
+            done,
         }
     }
 }
@@ -51,6 +53,7 @@ impl Publisher for MyPublisher {
         let total_groups = self.total_groups;
         let accumulator = self.accumulator.clone();
 
+        let done = self.done.clone();
         // TODO: factor out?
         spawn(async move {
             // TODO: spawn_blocking for heavy computation?
@@ -74,6 +77,9 @@ impl Publisher for MyPublisher {
 
             let share = accumulator.get().await;
             info!("Publisher final shares: {:?}", share);
+            if let Some(done) = done {
+                done.wait().await;
+            }
         });
 
         Ok(Response::new(AggregateGroupResponse {}))
@@ -84,6 +90,7 @@ async fn inner_run<C, F, P>(
     config: C,
     protocol: P,
     info: PublisherInfo,
+    done: Option<Arc<Barrier>>,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
@@ -91,15 +98,16 @@ where
     F: Future<Output = ()> + Send + 'static,
     P: Protocol,
 {
-    let state = MyPublisher::from_protocol(protocol);
+    let state = MyPublisher::from_protocol(protocol, done);
     info!("Publisher starting up.");
     let addr = get_addr();
-    let server_task = tokio::spawn(
+    let server_task = tokio::spawn(async move {
         tonic::transport::server::Server::builder()
             .add_service(HealthServer::new(AllGoodHealthServer::default()))
             .add_service(PublisherServer::new(state))
-            .serve_with_shutdown(addr, shutdown),
-    );
+            .serve_with_shutdown(addr, shutdown)
+            .await
+    });
 
     wait_for_health(format!("http://{}", addr)).await?;
     trace!("Publisher {:?} healthy and serving.", info);
@@ -126,18 +134,20 @@ pub async fn run<C, F>(
     config: C,
     protocol: ProtocolWrapper2,
     info: PublisherInfo,
+    done: Option<Arc<Barrier>>,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
     C: Store,
+
     F: Future<Output = ()> + Send + 'static,
 {
     match protocol {
         ProtocolWrapper2::Secure(protocol) => {
-            inner_run(config, protocol, info, shutdown).await?;
+            inner_run(config, protocol, info, done, shutdown).await?;
         }
         ProtocolWrapper2::Insecure(protocol) => {
-            inner_run(config, protocol, info, shutdown).await?;
+            inner_run(config, protocol, info, done, shutdown).await?;
         }
     }
     Ok(())
