@@ -38,12 +38,19 @@ impl Experiment {
             clients as usize >= channels,
             "Expected at least as many clients as channels."
         );
+        let secure = false;
+        if secure {
+            assert_eq!(
+                channels, 2,
+                "Secure protocol only implemented for 2 channels."
+            );
+        }
         Experiment {
             groups,
             workers_per_group,
             clients,
             channels,
-            secure: false,
+            secure,
         }
     }
 
@@ -81,7 +88,6 @@ impl Experiment {
             Box::new(SecureProtocol::with_aes_prg_dpf(
                 40,
                 self.groups.try_into().unwrap(),
-                self.channels,
                 MSG_SIZE,
             ))
         } else {
@@ -95,12 +101,8 @@ impl Experiment {
 
     pub fn get_keys(&self) -> Vec<ChannelKeyWrapper> {
         if self.secure {
-            let protocol = SecureProtocol::with_aes_prg_dpf(
-                40,
-                self.groups.try_into().unwrap(),
-                self.channels,
-                MSG_SIZE,
-            );
+            let protocol =
+                SecureProtocol::with_aes_prg_dpf(40, self.groups.try_into().unwrap(), MSG_SIZE);
             let field = protocol.vdpf.field;
             (0..self.channels)
                 .map(|idx| {

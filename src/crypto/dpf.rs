@@ -33,18 +33,12 @@ mod trivial_prg {
     #[derive(Clone, PartialEq, Debug)]
     pub struct Construction<P> {
         prg: P,
-        num_keys: usize,
         num_points: usize,
     }
 
     impl<P> Construction<P> {
-        pub fn new(prg: P, num_keys: usize, num_points: usize) -> Construction<P> {
-            assert_eq!(num_keys, 2, "DPF only implemented for s=2.");
-            Construction {
-                prg,
-                num_keys,
-                num_points,
-            }
+        pub fn new(prg: P, num_points: usize) -> Construction<P> {
+            Construction { prg, num_points }
         }
     }
 
@@ -96,7 +90,7 @@ mod trivial_prg {
         }
 
         fn num_keys(&self) -> usize {
-            self.num_keys
+            2 // this construction only works for s = 2
         }
 
         fn null_message(&self) -> Self::Message {
@@ -182,9 +176,8 @@ mod trivial_prg {
             type Strategy = BoxedStrategy<Self>;
 
             fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-                let num_keys = 2; // PRG DPF implementation handles only 2 keys.
                 (any::<P>(), 1..=MAX_NUM_POINTS)
-                    .prop_map(move |(prg, num_points)| Construction::new(prg, num_keys, num_points))
+                    .prop_map(move |(prg, num_points)| Construction::new(prg, num_points))
                     .boxed()
             }
         }

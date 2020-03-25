@@ -178,18 +178,10 @@ impl<V: VDPF> SecureProtocol<V> {
 }
 
 impl SecureProtocol<ConcreteVdpf> {
-    pub fn with_aes_prg_dpf(
-        sec_bytes: u32,
-        parties: usize,
-        channels: usize,
-        msg_size: usize,
-    ) -> Self {
+    pub fn with_aes_prg_dpf(sec_bytes: u32, channels: usize, msg_size: usize) -> Self {
         let prime: Integer = (Integer::from(2) << sec_bytes).next_prime_ref().into();
         let field = Field::from(prime);
-        let vdpf = FieldVDPF::new(
-            PRGDPF::new(AESPRG::new(16, msg_size), parties, channels),
-            field,
-        );
+        let vdpf = FieldVDPF::new(PRGDPF::new(AESPRG::new(16, msg_size), channels), field);
         SecureProtocol::new(vdpf, msg_size)
     }
 }
