@@ -40,10 +40,7 @@ impl Experiment {
         );
         let secure = false;
         if secure {
-            assert_eq!(
-                channels, 2,
-                "Secure protocol only implemented for 2 channels."
-            );
+            assert_eq!(groups, 2, "Secure protocol only implemented for 2 groups.");
         }
         Experiment {
             groups,
