@@ -12,5 +12,5 @@ async fn test_pass() {
         TerminalMode::Stderr,
     )
     .unwrap();
-    spectrum_impl::run().await.unwrap();
+    spectrum_impl::run(2, 2, 10, 3).await.unwrap();
 }

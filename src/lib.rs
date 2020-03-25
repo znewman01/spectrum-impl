@@ -86,9 +86,14 @@ impl publisher::Remote for PublisherRemote {
     }
 }
 
-pub async fn run() -> Result<Duration, Box<dyn std::error::Error + Sync + Send>> {
+pub async fn run(
+    groups: u16,
+    workers_per_group: u16,
+    clients: u16,
+    channels: usize,
+) -> Result<Duration, Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;
-    let experiment = Experiment::new(2, 2, 10, 2);
+    let experiment = Experiment::new(groups, workers_per_group, clients, channels);
     experiment::write_to_store(&config, experiment).await?;
     let started = Arc::new(Notify::new());
     // TODO: +1 for the "done" notification from the publisher, +1 for the timer task
