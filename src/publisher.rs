@@ -12,7 +12,7 @@ use crate::{
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
-        quorum::{set_start_time, wait_for_quorum},
+        quorum::{delay_until, set_start_time, wait_for_quorum},
         PublisherInfo,
     },
 };
@@ -26,6 +26,7 @@ use tonic::{Request, Response, Status};
 
 #[tonic::async_trait]
 pub trait Remote: Sync + Send + Clone {
+    async fn start(&self);
     async fn done(&self);
 }
 
@@ -34,6 +35,7 @@ pub struct NoopRemote;
 
 #[tonic::async_trait]
 impl Remote for NoopRemote {
+    async fn start(&self) {}
     async fn done(&self) {}
 }
 
@@ -110,7 +112,7 @@ where
     F: Future<Output = ()> + Send + 'static,
     P: Protocol,
 {
-    let state = MyPublisher::from_protocol(protocol, remote);
+    let state = MyPublisher::from_protocol(protocol, remote.clone());
     info!("Publisher starting up.");
     let addr = get_addr();
     let server_task = tokio::spawn(async move {
@@ -132,9 +134,11 @@ where
     wait_for_quorum(&config, experiment).await?;
 
     // TODO(zjn): should be more in the future
-    let dt = DateTime::<FixedOffset>::from(Utc::now()) + chrono::Duration::milliseconds(1000);
-    info!("Registering experiment start time: {}", dt);
-    set_start_time(&config, dt).await?;
+    let start = DateTime::<FixedOffset>::from(Utc::now()) + chrono::Duration::milliseconds(1000);
+    info!("Registering experiment start time: {}", start);
+    set_start_time(&config, start).await?;
+    delay_until(start).await;
+    remote.start().await;
 
     server_task.await??;
     info!("Publisher shutting down.");

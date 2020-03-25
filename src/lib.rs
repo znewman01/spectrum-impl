@@ -1,9 +1,13 @@
 //! Spectrum implementation.
+use futures::future::{AbortHandle, Abortable};
 use futures::prelude::*;
-use log::error;
+use std::fmt;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::Barrier;
+use std::time::{Duration, Instant};
+use tokio::{
+    sync::{Barrier, Notify},
+    time::delay_for,
+};
 
 pub mod client;
 pub mod crypto;
@@ -57,35 +61,41 @@ impl std::error::Error for Error {}
 use experiment::Experiment;
 use services::Service::{Client, Leader, Publisher, Worker};
 
-const TIMEOUT: Duration = Duration::from_secs(3);
+const TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 struct PublisherRemote {
+    start: Arc<Notify>,
     done: Arc<Barrier>,
 }
 
 impl PublisherRemote {
-    fn new(done: Arc<Barrier>) -> Self {
-        Self { done }
+    fn new(done: Arc<Barrier>, start: Arc<Notify>) -> Self {
+        Self { done, start }
     }
 }
 
 #[tonic::async_trait]
 impl publisher::Remote for PublisherRemote {
+    async fn start(&self) {
+        self.start.notify()
+    }
+
     async fn done(&self) {
         self.done.wait().await;
     }
 }
 
-pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
+pub async fn run() -> Result<Duration, Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;
     let experiment = Experiment::new(2, 2, 10, 2);
     experiment::write_to_store(&config, experiment).await?;
-    // TODO: +1 for the "done" notification from the publisher
+    let started = Arc::new(Notify::new());
+    // TODO: +1 for the "done" notification from the publisher, +1 for the timer task
     let barrier = Arc::new(Barrier::new(
-        experiment.iter_clients().count() + experiment.iter_services().count() + 1,
+        experiment.iter_clients().count() + experiment.iter_services().count() + 2,
     ));
-    let remote = PublisherRemote::new(barrier.clone());
+    let remote = PublisherRemote::new(barrier.clone(), started.clone());
     let handles = futures::stream::FuturesUnordered::new();
     for service in experiment.iter_services().chain(experiment.iter_clients()) {
         let shutdown = {
@@ -110,17 +120,21 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         });
     }
 
-    // TODO: timer task
-    // - wait for start time notification
-    // - wait for done notification
-    // - return the difference
-    // - if takes too long (TIMEOUT), kill everything -- need something in shutdown?
+    let timer_task = tokio::spawn(async move {
+        started.notified().await;
+        let start_time = Instant::now();
+        barrier.wait().await;
+        start_time.elapsed()
+    });
+    let delay_task = tokio::spawn(delay_for(TIMEOUT));
+    let (work, abort_rx) = AbortHandle::new_pair();
+    tokio::spawn(Abortable::new(handles.try_collect::<Vec<_>>(), abort_rx));
 
-    handles
-        .for_each(|result| async {
-            result.unwrap_or_else(|err| error!("Task resulted in error: {:?}", err));
-        })
-        .await;
-
-    Ok(())
+    futures::select! {
+        elapsed = timer_task.fuse() => Ok(elapsed?),
+        _ = delay_task.fuse() => {
+            work.abort();
+            Err(Box::new(Error::new(format!("Task timed out after {:?}.", TIMEOUT).as_str())))
+        }
+    }
 }

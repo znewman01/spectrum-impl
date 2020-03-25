@@ -19,5 +19,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         ),
     ])
     .unwrap();
-    spectrum_impl::run().await
+    spectrum_impl::run().await.map(|_| ())
 }
