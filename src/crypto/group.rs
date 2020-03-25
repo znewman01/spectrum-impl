@@ -1,5 +1,6 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
+use rug::rand::RandState;
 use rug::Integer;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -7,7 +8,7 @@ use std::ops;
 use std::sync::Arc;
 
 /// mathematical group object
-#[derive(Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Default, Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Group {
     gen: Integer,     // generator for the group
     modulus: Integer, // group modulus
@@ -26,11 +27,27 @@ impl Group {
         Group { gen, modulus }
     }
 
+    pub fn zero(self: &Arc<Group>) -> GroupElement {
+        GroupElement::new(0.into(), self.clone())
+    }
+
     pub fn element_from_bytes(self: &Arc<Group>, bytes: &Bytes) -> GroupElement {
         // TODO: find a less hacky way of doing this?
         let byte_str = hex::encode(bytes);
         let val = Integer::from_str_radix(&byte_str, 16).unwrap();
         GroupElement::new(val, self.clone())
+    }
+
+    // generates a new random field element
+    pub fn rand_generator(self: &Arc<Group>, rng: &mut RandState) -> GroupElement {
+        let rand = self.modulus.random_below_ref(rng).into();
+        GroupElement::new(rand, self.clone())
+    }
+
+    // generates a new random field element
+    pub fn rand_element(self: &Arc<Group>, rng: &mut RandState) -> GroupElement {
+        let rand = self.modulus.random_below_ref(rng).into();
+        GroupElement::new(rand, self.clone())
     }
 }
 
@@ -57,13 +74,35 @@ impl GroupElement {
     }
 }
 
-/// applies the group operation on two elements
-impl ops::Mul<GroupElement> for GroupElement {
+impl ops::BitXor<&GroupElement> for GroupElement {
     type Output = GroupElement;
 
-    fn mul(self, other: GroupElement) -> GroupElement {
-        assert_eq!(self.group, other.group);
-        GroupElement::new(Integer::from(&self.value * &other.value), other.group)
+    fn bitxor(self, rhs: &GroupElement) -> GroupElement {
+        assert_eq!(self.group, rhs.group);
+        GroupElement::new(Integer::from(&self.value * &rhs.value), rhs.group.clone())
+    }
+}
+
+impl ops::BitXor<GroupElement> for GroupElement {
+    type Output = GroupElement;
+
+    fn bitxor(self, rhs: GroupElement) -> GroupElement {
+        assert_eq!(self.group, rhs.group);
+        GroupElement::new(&self.value * rhs.value, rhs.group)
+    }
+}
+
+impl ops::BitXorAssign<&GroupElement> for GroupElement {
+    fn bitxor_assign(&mut self, rhs: &GroupElement) {
+        assert_eq!(self.group, rhs.group);
+        self.value *= &rhs.value;
+    }
+}
+
+impl ops::BitXorAssign<GroupElement> for GroupElement {
+    fn bitxor_assign(&mut self, rhs: GroupElement) {
+        assert_eq!(self.group, rhs.group);
+        self.value *= rhs.value;
     }
 }
 
@@ -83,7 +122,7 @@ mod tests {
         let elem2 = GroupElement::new(val2, group.clone());
 
         let expected = GroupElement::new(Integer::from(&elem1.value * &elem2.value), group);
-        let actual = elem1 * elem2;
+        let actual = elem1 ^ elem2;
 
         assert_eq!(actual, expected);
     }
