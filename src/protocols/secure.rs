@@ -2,7 +2,7 @@ use crate::proto;
 use crate::{
     bytes::Bytes,
     crypto::{
-        dpf::{PRGKey, DPF, PRGDPF},
+        dpf::{DPF, PRGDPF},
         field::Field,
         prg::AESPRG,
         vdpf::{FieldProofShare, FieldToken, FieldVDPF, VDPF},
@@ -81,7 +81,7 @@ impl TryFrom<proto::WriteToken> for WriteToken<ConcreteVdpf> {
     fn try_from(token: proto::WriteToken) -> Result<Self, Self::Error> {
         if let proto::write_token::Inner::Secure(inner) = token.inner.unwrap() {
             let key_proto = inner.key.unwrap();
-            let dpf_key = PRGKey::<AESPRG>::new(
+            let dpf_key = <PRGDPF<AESPRG> as DPF>::Key::new(
                 key_proto.encoded_msg.into(),
                 key_proto.bits,
                 key_proto.seeds.into_iter().map(|s| s.into()).collect(),
