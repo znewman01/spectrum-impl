@@ -27,6 +27,33 @@ mod proto {
     }
 }
 
+#[derive(fmt::Debug)]
+pub struct Error {
+    message: String,
+}
+
+impl Error {
+    pub fn new(message: &str) -> Error {
+        Error {
+            message: message.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl From<String> for Error {
+    fn from(error: String) -> Self {
+        Error::new(&error)
+    }
+}
+
+impl std::error::Error for Error {}
+
 use experiment::Experiment;
 use services::Service::{Client, Leader, Publisher, Worker};
 

@@ -1,36 +1,12 @@
 use async_trait::async_trait;
 use core::fmt;
 
+// TODO(zjn): change all references to this to be direct to crate::Error
+pub use crate::Error;
+
 // TODO(zjn): disallow empty keys/key components? and key components with "/"
 pub type Key = Vec<String>;
 pub type Value = String;
-
-#[derive(fmt::Debug)]
-pub struct Error {
-    message: String,
-}
-
-impl Error {
-    pub fn new(message: &str) -> Error {
-        Error {
-            message: message.to_string(),
-        }
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl From<String> for Error {
-    fn from(error: String) -> Self {
-        Error::new(&error)
-    }
-}
-
-impl std::error::Error for Error {}
 
 #[async_trait]
 pub trait Store: Clone + Sync + Send + fmt::Debug {
