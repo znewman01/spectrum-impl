@@ -1,5 +1,6 @@
 use clap::{arg_enum, crate_authors, crate_version, value_t, App, Arg};
 use simplelog::{CombinedLogger, LevelFilter, TermLogger, TerminalMode, WriteLogger};
+use spectrum_impl::{experiment::Experiment, protocols::wrapper::ProtocolWrapper, run};
 use std::fs::File;
 
 arg_enum! {
@@ -39,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
                 .short("v")
                 .takes_value(true)
                 .possible_values(&LogLevel::variants())
-                .default_value("trace")
+                .default_value("debug")
                 .help("Log level")
                 .case_insensitive(true),
         )
@@ -95,15 +96,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     .unwrap();
 
     let groups = 2; // hard-coded for now
+    let msg_size = 1024; // TODO(zjn): configurable
+    let security: Option<u32> = Some(40); // TODO(zjn): configurable
     let clients = value_t!(matches, "clients", u16).unwrap_or_else(|e| e.exit());
     let group_size = value_t!(matches, "channels", u16).unwrap_or_else(|e| e.exit());
     let channels = value_t!(matches, "channels", usize).unwrap_or_else(|e| e.exit());
-    let elapsed = spectrum_impl::run(2, group_size, clients, channels).await?;
 
-    println!(
-        "Elapsed time (clients = {}, channels = {}, group size = {}, groups = {}): {:?}",
-        clients, channels, group_size, groups, elapsed
-    );
+    let protocol = ProtocolWrapper::new(security, groups, channels, msg_size);
+    let experiment = Experiment::new(protocol, group_size, clients);
 
+    eprintln!("Running: {:?}...", experiment);
+    let elapsed = run(experiment).await?;
+    eprintln!("Elapsed time: {:?}", elapsed);
     Ok(())
 }

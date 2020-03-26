@@ -1,6 +1,8 @@
 use crate::proto;
 use crate::{bytes::Bytes, protocols::Protocol};
 
+use serde::{Deserialize, Serialize};
+
 use std::convert::TryInto;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -84,7 +86,7 @@ impl Into<proto::AuditShare> for AuditShare {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InsecureProtocol {
     parties: usize,
     channels: usize,
@@ -165,8 +167,17 @@ mod tests {
     use crate::protocols::tests::*;
     use proptest::prelude::*;
 
+    impl Arbitrary for InsecureProtocol {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (1..10usize).prop_flat_map(protocols).boxed()
+        }
+    }
+
     fn protocols(channels: usize) -> impl Strategy<Value = InsecureProtocol> {
-        (2usize..100usize).prop_map(move |p| InsecureProtocol::new(p, channels, MSG_LEN))
+        (2..100usize).prop_map(move |p| InsecureProtocol::new(p, channels, MSG_LEN))
     }
 
     fn keys(channels: usize) -> impl Strategy<Value = Vec<ChannelKey>> {

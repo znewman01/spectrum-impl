@@ -61,7 +61,7 @@ pub async fn delay_until(dt: DateTime<FixedOffset>) {
     tokio_delay_until(start_time_local.into()).await;
 }
 
-async fn has_quorum<C: Store>(config: &C, experiment: Experiment) -> Result<(), Error> {
+async fn has_quorum<C: Store>(config: &C, experiment: &Experiment) -> Result<(), Error> {
     let nodes = resolve_all(config).await?;
     let actual: HashSet<Service> =
         HashSet::from_iter(nodes.iter().map(|node| node.service.clone()));
@@ -83,7 +83,7 @@ async fn has_quorum<C: Store>(config: &C, experiment: Experiment) -> Result<(), 
 
 async fn wait_for_quorum_helper<C: Store>(
     config: &C,
-    experiment: Experiment,
+    experiment: &Experiment,
     delay: Duration,
     attempts: usize,
 ) -> Result<(), Error> {
@@ -94,7 +94,7 @@ async fn wait_for_quorum_helper<C: Store>(
     .await
 }
 
-pub async fn wait_for_quorum<C: Store>(config: &C, experiment: Experiment) -> Result<(), Error> {
+pub async fn wait_for_quorum<C: Store>(config: &C, experiment: &Experiment) -> Result<(), Error> {
     wait_for_quorum_helper(config, experiment, RETRY_DELAY, RETRY_ATTEMPTS).await
 }
 
@@ -103,14 +103,13 @@ mod test {
     use super::*;
     use crate::{
         config::{factory::from_string, tests::inmem_stores},
-        experiment::tests::experiments,
+        experiment::Experiment,
         net::tests::addrs,
+        protocols::insecure,
         services::discovery::{register, tests::services, Node},
     };
     use futures::executor::block_on;
-    use prop::bits::bool_vec;
     use proptest::prelude::*;
-    use std::fmt::Debug;
     use std::iter::once;
     use std::net::SocketAddr;
 
@@ -188,8 +187,9 @@ mod test {
     #[tokio::test]
     async fn test_wait_for_quorum_not_ready() {
         let config = from_string("").unwrap();
-        let experiment = Experiment::new(1, 1, 1, 0);
-        wait_for_quorum_helper(&config, experiment, NO_TIME, 10)
+        let protocol = insecure::InsecureProtocol::new(1, 1, 100).into();
+        let experiment = Experiment::new(protocol, 1, 10);
+        wait_for_quorum_helper(&config, &experiment, NO_TIME, 10)
             .await
             .expect_err("Should fail if no quorum.");
     }
@@ -197,13 +197,14 @@ mod test {
     #[tokio::test]
     async fn test_wait_for_quorum_okay() {
         let config = from_string("").unwrap();
-        let experiment = Experiment::new(1, 1, 1, 0);
+        let protocol = insecure::InsecureProtocol::new(1, 1, 100).into();
+        let experiment = Experiment::new(protocol, 1, 10);
         for service in experiment.iter_services() {
             let node = Node::new(service, addr());
             register(&config, node).await.unwrap();
         }
 
-        wait_for_quorum_helper(&config, experiment, NO_TIME, 10)
+        wait_for_quorum_helper(&config, &experiment, NO_TIME, 10)
             .await
             .expect("Should succeed if quorum is ready.");
     }
@@ -216,31 +217,16 @@ mod test {
         for node in nodes {
             register(config, node).await?;
         }
-        has_quorum(config, experiment).await
+        has_quorum(config, &experiment).await
     }
 
     fn experiments_and_nodes() -> impl Strategy<Value = (Experiment, Vec<Node>)> {
-        experiments().prop_flat_map(|experiment| {
+        any::<Experiment>().prop_map(|experiment| {
             let nodes = experiment
                 .iter_services()
                 .map(|service| Node::new(service, addr()))
                 .collect();
-            Just((experiment, nodes))
-        })
-    }
-
-    // TODO(zjn): use proptest::sample::subsequence
-    // Given a vector, return a strategy for generating subsets of that vector.
-    fn subset<T: Debug + Clone>(vec: Vec<T>) -> impl Strategy<Value = Vec<T>> {
-        let count = vec.len();
-        bool_vec::sampled(0..count, 0..count).prop_map(move |bits: Vec<bool>| {
-            bits.iter()
-                .zip(vec.iter().cloned())
-                .filter_map(|(include, item)| match include {
-                    true => Some(item),
-                    false => None,
-                })
-                .collect()
+            (experiment, nodes)
         })
     }
 
@@ -262,9 +248,10 @@ mod test {
         #[test]
         fn test_has_quorum_too_few(
             config in inmem_stores(),
-            (experiment, nodes) in experiments_and_nodes().prop_flat_map(|(experiment, nodes)|
-                (Just(experiment), subset(nodes))
-            ),
+            (experiment, nodes) in experiments_and_nodes().prop_flat_map(|(experiment, nodes)| {
+                let num_nodes = nodes.len();
+                (Just(experiment), prop::sample::subsequence(nodes, 0..num_nodes))
+            }),
         ) {
             block_on(run_quorum_test(&config, experiment, nodes.into_iter()))
                 .expect_err("Expected nodes missing--should error.");

@@ -10,7 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let info = ClientInfo::new(1);
     client::viewer::run(
         config,
-        experiment.get_protocol(),
+        experiment.get_protocol().clone(),
         info,
         ctrl_c().map(|_| ()),
     )

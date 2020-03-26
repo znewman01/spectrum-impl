@@ -1,32 +1,45 @@
 use itertools::iproduct;
+use spectrum_impl::{experiment::Experiment, protocols::wrapper::ProtocolWrapper, run};
+use std::io::{self, Write};
 use std::iter::once;
 use std::time::Duration;
 use tokio::time::delay_for;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
-    let groups = once(2u16);
+    let groups = once(2usize);
     let group_sizes = once(2u16);
-    let clients = (100u16..=200).step_by(10);
+    let clients = (10u16..=100).step_by(10);
     let channels = once(1usize);
-    for (groups, group_size, clients, channels) in iproduct!(groups, group_sizes, clients, channels)
-    {
-        let result = spectrum_impl::run(groups, group_size, clients, channels).await;
-        match result {
+    let security_settings = vec![None, Some(40)].into_iter();
+    let msg_sizes = once(1024);
+
+    for (groups, group_size, clients, channels, security, msg_size) in iproduct!(
+        groups,
+        group_sizes,
+        clients,
+        channels,
+        security_settings,
+        msg_sizes
+    ) {
+        let protocol = ProtocolWrapper::new(security, groups, channels, msg_size);
+        let experiment = Experiment::new(protocol, group_size, clients);
+
+        eprint!("Running: {:?}...", experiment);
+        io::stderr().flush()?;
+
+        match run(experiment).await {
             Ok(elapsed) => {
-                println!(
-                    "elapsed time (groups={}, group_size={}, clients={}, channels={}): {:?}",
-                    groups, group_size, clients, channels, elapsed
-                );
+                // TODO: emit structured output
+                eprintln!("done. elapsed time {:?}", elapsed);
             }
             Err(err) => {
-                println!(
-                    "ERROR! (groups={}, group_size={}, clients={}, channels={}): {:?}",
-                    groups, group_size, clients, channels, err
-                );
+                eprintln!("ERROR! {:?}", err);
             }
         };
-        delay_for(Duration::from_millis(100)).await; // allow time for wrap-up
+
+        // allow time for wrap-up before next experiment
+        delay_for(Duration::from_millis(100)).await;
     }
 
     Ok(())

@@ -11,6 +11,7 @@ use crate::{
 };
 use derivative::Derivative;
 use rug::Integer;
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::fmt;
 use std::iter::repeat;
@@ -155,7 +156,7 @@ impl TryFrom<proto::AuditShare> for AuditShare<ConcreteVdpf> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct SecureProtocol<V> {
     msg_size: usize,
     pub(in crate) vdpf: V,

@@ -10,7 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let info = PublisherInfo::new();
     publisher::run(
         config,
-        experiment.get_protocol(),
+        experiment.get_protocol().clone(),
         info,
         publisher::NoopRemote,
         ctrl_c().map(|_| ()),

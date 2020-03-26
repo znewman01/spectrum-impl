@@ -1,8 +1,11 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
 use crate::crypto::field::{Field, FieldElement};
+
 use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;
+use serde::{Deserialize, Serialize};
+
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -16,7 +19,7 @@ pub trait PRG {
 }
 
 /// PRG uses AES to expand a seed to desired length
-#[derive(Default, Clone, PartialEq, Debug, Copy)]
+#[derive(Default, Clone, PartialEq, Debug, Copy, Serialize, Deserialize)]
 pub struct AESPRG {
     seed_size: usize,
     eval_size: usize,

@@ -1,6 +1,7 @@
 extern crate spectrum_impl;
 
 use simplelog::{LevelFilter, TermLogger, TerminalMode};
+use spectrum_impl::{experiment::Experiment, protocols::wrapper::ProtocolWrapper, run};
 
 #[tokio::test]
 async fn test_pass() {
@@ -12,5 +13,9 @@ async fn test_pass() {
         TerminalMode::Stderr,
     )
     .unwrap();
-    spectrum_impl::run(2, 2, 10, 3).await.unwrap();
+
+    let protocol = ProtocolWrapper::new(Some(40), 2, 3, 1024);
+    let experiment = Experiment::new(protocol, 2, 6);
+
+    run(experiment).await.unwrap();
 }

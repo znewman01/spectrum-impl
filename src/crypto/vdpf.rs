@@ -7,6 +7,7 @@ use crate::crypto::{
 };
 
 use rug::rand::RandState;
+use serde::{Deserialize, Serialize};
 
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
@@ -80,7 +81,7 @@ impl FieldProofShare {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct FieldVDPF<D> {
     dpf: D,
     pub(in crate) field: Field,

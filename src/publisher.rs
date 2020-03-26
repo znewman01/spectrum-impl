@@ -131,7 +131,7 @@ where
     debug!("Registered with config server.");
 
     let experiment = experiment::read_from_store(&config).await?;
-    wait_for_quorum(&config, experiment).await?;
+    wait_for_quorum(&config, &experiment).await?;
 
     // TODO(zjn): should be more in the future
     let start = DateTime::<FixedOffset>::from(Utc::now()) + chrono::Duration::milliseconds(5000);

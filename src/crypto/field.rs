@@ -1,7 +1,10 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
 use crate::proto;
+
 use rug::{integer::IsPrime, rand::RandState, Integer};
+use serde::{Deserialize, Serialize};
+
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops;
@@ -18,7 +21,7 @@ fn emit_integer(value: &Integer) -> String {
 }
 
 /// prime order field
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub struct Field {
     order: Arc<Integer>,
 }

@@ -11,12 +11,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let experiment = experiment::read_from_store(&config).await?;
     // TODO(zjn): construct from environment/args
     let info = LeaderInfo::new(Group::new(1));
-    leader::run(
-        config,
-        experiment,
-        experiment.get_protocol(),
-        info,
-        ctrl_c().map(|_| ()),
-    )
-    .await
+    let protocol = experiment.get_protocol().clone();
+    leader::run(config, experiment, protocol, info, ctrl_c().map(|_| ())).await
 }

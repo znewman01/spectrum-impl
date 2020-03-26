@@ -25,12 +25,15 @@ pub type PRGDPF<P> = trivial_prg::Construction<P>;
 mod trivial_prg {
     use super::*;
     use crate::crypto::prg::PRG;
+
     use derivative::Derivative;
     use rand::{thread_rng, Rng};
+    use serde::{Deserialize, Serialize};
+
     use std::iter::repeat_with;
     use std::ops;
 
-    #[derive(Clone, PartialEq, Debug)]
+    #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
     pub struct Construction<P> {
         prg: P,
         num_points: usize,

@@ -83,11 +83,11 @@ mod tests {
     #![allow(unreachable_code)] // Compiler bug
 
     use super::*;
-    use crate::experiment::{tests::experiments, Experiment};
+    use crate::experiment::Experiment;
     use proptest::prelude::*;
 
     pub fn experiments_with_multiple_workers() -> impl Strategy<Value = Experiment> {
-        experiments().prop_filter(
+        any::<Experiment>().prop_filter(
             "Only want experiments with multiple workers per group",
             |e| e.group_size() > 1,
         )
@@ -95,7 +95,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_pick_worker_shards_subset(experiment in experiments()) {
+        fn test_pick_worker_shards_subset(experiment: Experiment) {
             let services: HashSet<Service> = HashSet::from_iter(experiment.iter_services());
             let nodes: Vec<Node> = services.iter().cloned().map(|service| {
                 Node::new(service, "127.0.0.1:22".parse().unwrap())
@@ -108,7 +108,7 @@ mod tests {
         }
 
         #[test]
-        fn test_pick_worker_shards_distinct_groups(experiment in experiments()) {
+        fn test_pick_worker_shards_distinct_groups(experiment: Experiment) {
             let nodes: Vec<Node> = experiment.iter_services().map(|service| {
                 Node::new(service, "127.0.0.1:22".parse().unwrap())
             }).collect();
@@ -128,7 +128,7 @@ mod tests {
         }
 
         #[test]
-        fn test_pick_worker_shards_all_groups(experiment in experiments()) {
+        fn test_pick_worker_shards_all_groups(experiment: Experiment) {
             let services: Vec<Service> = experiment.iter_services().collect();
             let nodes: Vec<Node> = services.iter().cloned().map(|service| {
                 Node::new(service, "127.0.0.1:22".parse().unwrap())

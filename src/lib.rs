@@ -88,16 +88,12 @@ impl publisher::Remote for PublisherRemote {
 }
 
 pub async fn run(
-    groups: u16,
-    workers_per_group: u16,
-    clients: u16,
-    channels: usize,
+    experiment: Experiment,
 ) -> Result<Duration, Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env()?;
-    let experiment = Experiment::new(groups, workers_per_group, clients, channels);
-    experiment::write_to_store(&config, experiment).await?;
+    experiment::write_to_store(&config, &experiment).await?;
     let started = Arc::new(Notify::new());
-    // TODO: +1 for the "done" notification from the publisher, +1 for the timer task
+    // +2: +1 for the "done" notification from the publisher, +1 for the timer task
     let barrier = Arc::new(Barrier::new(
         experiment.iter_clients().count() + experiment.iter_services().count() + 2,
     ));
@@ -111,16 +107,16 @@ pub async fn run(
             }
         };
 
-        let protocol = experiment.get_protocol();
+        let protocol = experiment.get_protocol().clone();
         handles.push(match service {
             Publisher(info) => {
                 publisher::run(config.clone(), protocol, info, remote.clone(), shutdown).boxed()
             }
             Leader(info) => {
-                leader::run(config.clone(), experiment, protocol, info, shutdown).boxed()
+                leader::run(config.clone(), experiment.clone(), protocol, info, shutdown).boxed()
             }
             Worker(info) => {
-                worker::run(config.clone(), experiment, protocol, info, shutdown).boxed()
+                worker::run(config.clone(), experiment.clone(), protocol, info, shutdown).boxed()
             }
             Client(info) => client::viewer::run(config.clone(), protocol, info, shutdown).boxed(),
         });

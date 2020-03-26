@@ -3,8 +3,11 @@ use crate::{
     protocols::{
         insecure,
         secure::{self, ConcreteVdpf},
+        Protocol,
     },
 };
+
+use serde::{Deserialize, Serialize};
 
 use std::convert::TryFrom;
 use std::fmt::Debug;
@@ -51,9 +54,55 @@ impl Into<ChannelKeyWrapper> for insecure::ChannelKey {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ProtocolWrapper {
     Secure(secure::SecureProtocol<ConcreteVdpf>),
     Insecure(insecure::InsecureProtocol),
+}
+
+impl From<insecure::InsecureProtocol> for ProtocolWrapper {
+    fn from(protocol: insecure::InsecureProtocol) -> Self {
+        Self::Insecure(protocol)
+    }
+}
+
+impl From<secure::SecureProtocol<ConcreteVdpf>> for ProtocolWrapper {
+    fn from(protocol: secure::SecureProtocol<ConcreteVdpf>) -> Self {
+        Self::Secure(protocol)
+    }
+}
+
+impl ProtocolWrapper {
+    pub fn new(security: Option<u32>, groups: usize, channels: usize, msg_size: usize) -> Self {
+        match security {
+            Some(security_bytes) => {
+                assert_eq!(groups, 2);
+                secure::SecureProtocol::with_aes_prg_dpf(security_bytes, channels, msg_size).into()
+            }
+            None => insecure::InsecureProtocol::new(groups, channels, msg_size).into(),
+        }
+    }
+
+    pub fn num_parties(&self) -> usize {
+        match self {
+            Self::Secure(protocol) => protocol.num_parties(),
+            Self::Insecure(protocol) => protocol.num_parties(),
+        }
+    }
+
+    pub fn num_channels(&self) -> usize {
+        match self {
+            Self::Secure(protocol) => protocol.num_channels(),
+            Self::Insecure(protocol) => protocol.num_channels(),
+        }
+    }
+
+    pub fn message_len(&self) -> usize {
+        match self {
+            Self::Secure(protocol) => protocol.message_len(),
+            Self::Insecure(protocol) => protocol.message_len(),
+        }
+    }
 }
 
 #[cfg(test)]
