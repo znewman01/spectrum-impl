@@ -5,6 +5,7 @@ use itertools::iproduct;
 use serde::{Deserialize, Serialize};
 use tokio::time::delay_for;
 
+use std::fs::File;
 use std::io::{self, Write};
 use std::iter::once;
 use std::time::Duration;
@@ -78,35 +79,6 @@ impl OutputRecord {
     }
 }
 
-async fn run_experiments<W: Write>(
-    mut wtr: csv::Writer<W>,
-    records: Box<dyn Iterator<Item = csv::Result<InputRecord>>>,
-) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
-    for record in records {
-        let record: InputRecord = record?;
-        eprint!("Running: {:?}...", record);
-        io::stderr().flush()?;
-
-        let experiment = Experiment::from(record);
-        match run(experiment).await {
-            Ok(elapsed) => {
-                let output = OutputRecord::from_input_record(record, elapsed);
-                wtr.serialize(output)?;
-                wtr.flush()?;
-                eprintln!("done. elapsed time {:?}", elapsed);
-            }
-            Err(err) => {
-                eprintln!("ERROR! {:?}", err);
-            }
-        };
-
-        // allow time for wrap-up before next experiment
-        delay_for(Duration::from_millis(100)).await;
-    }
-
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     // TODO(zjn): big hack. Write a dummy record to a string buffer, then remove the record.
@@ -114,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let mut wtr = csv::Writer::from_writer(vec![]);
     wtr.serialize(InputRecord::default())?;
     let headers = String::from_utf8((wtr).into_inner().unwrap()).unwrap();
-    let headers = headers.split("\n").next().unwrap();
+    let headers = headers.split('\n').next().unwrap();
     let matches = App::new("Spectrum -- run local protocol experiments")
         .version(crate_version!())
         .about("Collect data about local experiments.")
@@ -149,6 +121,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
 
     let records: Box<dyn Iterator<Item = csv::Result<InputRecord>>> =
         match matches.value_of("input") {
+            Some(path) => {
+                let iordr: Box<dyn io::Read> = if path == "-" {
+                    Box::new(io::stdin())
+                } else {
+                    Box::new(File::create(path)?)
+                };
+                let rdr = csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_reader(iordr);
+                Box::new(rdr.into_deserialize())
+            }
             None => {
                 let groups = once(2usize);
                 let group_sizes = once(2u16);
@@ -175,22 +158,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
                     ),
                 )
             }
-            Some("-") => {
-                let rdr = csv::ReaderBuilder::new()
-                    .has_headers(false)
-                    .from_reader(io::stdin());
-                Box::new(rdr.into_deserialize())
+        };
+
+    let iowtr: Box<dyn io::Write> = match matches.value_of("output").expect("has default") {
+        "-" => Box::new(io::stdout()),
+        path => Box::new(File::create(path)?),
+    };
+    let mut wtr = csv::Writer::from_writer(iowtr);
+
+    for record in records {
+        let record: InputRecord = record?;
+        eprint!("Running: {:?}...", record);
+        io::stderr().flush()?;
+
+        let experiment = Experiment::from(record);
+        match run(experiment).await {
+            Ok(elapsed) => {
+                let output = OutputRecord::from_input_record(record, elapsed);
+                wtr.serialize(output)?;
+                wtr.flush()?;
+                eprintln!("done. elapsed time {:?}", elapsed);
             }
-            Some(path) => {
-                let rdr = csv::ReaderBuilder::new()
-                    .has_headers(false)
-                    .from_path(path)?;
-                Box::new(rdr.into_deserialize())
+            Err(err) => {
+                eprintln!("ERROR! {:?}", err);
             }
         };
 
-    match matches.value_of("output").expect("has default") {
-        "-" => run_experiments(csv::Writer::from_writer(io::stdout()), records).await,
-        path => run_experiments(csv::Writer::from_path(path)?, records).await,
+        // allow time for wrap-up before next experiment
+        delay_for(Duration::from_millis(100)).await;
     }
+
+    Ok(())
 }
