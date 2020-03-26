@@ -37,11 +37,16 @@ where
     let mut clients = connections::connect_and_register(&config, info.clone()).await?;
     let client_id = info.to_proto(); // before we move info
     let write_tokens = match info.broadcast {
-        Some((msg, key)) => protocol.broadcast(msg, key.try_into().unwrap()),
+        Some((msg, key)) => {
+            info!("Broadcaster about to send write token.");
+            debug!("Write token: msg.len()={}, key={:?}", msg.len(), key);
+            protocol.broadcast(msg, key.try_into().unwrap())
+        }
         None => protocol.null_broadcast(),
     };
 
     delay_until(start_time).await;
+    debug!("Client detected start time ready.");
 
     for (client, write_token) in clients.iter_mut().zip(write_tokens) {
         let req = tonic::Request::new(UploadRequest {

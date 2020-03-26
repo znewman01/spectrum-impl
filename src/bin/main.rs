@@ -85,8 +85,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         )
         .unwrap(),
         WriteLogger::new(
-            log_level,
-            simplelog::Config::default(),
+            LevelFilter::Trace,
+            simplelog::ConfigBuilder::new()
+                .add_filter_allow_str("spectrum_impl")
+                .build(),
             File::create("spectrum.log").unwrap(),
         ),
     ])

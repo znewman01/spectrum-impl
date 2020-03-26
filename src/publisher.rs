@@ -62,7 +62,6 @@ impl<R: Remote + 'static> Publisher for MyPublisher<R> {
         request: Request<AggregateGroupRequest>,
     ) -> Result<Response<AggregateGroupResponse>, Status> {
         let request = request.into_inner();
-        trace!("Request! {:?}", request);
 
         let data = expect_field(request.share, "Share")?.data;
         let total_groups = self.total_groups;
@@ -91,7 +90,8 @@ impl<R: Remote + 'static> Publisher for MyPublisher<R> {
             }
 
             let share = accumulator.get().await;
-            info!("Publisher final shares: {:?}", share);
+            info!("Publisher finished!");
+            trace!("Recovered value len: {:?}", share.len());
             remote.done().await;
         });
 
@@ -134,7 +134,7 @@ where
     wait_for_quorum(&config, experiment).await?;
 
     // TODO(zjn): should be more in the future
-    let start = DateTime::<FixedOffset>::from(Utc::now()) + chrono::Duration::milliseconds(1000);
+    let start = DateTime::<FixedOffset>::from(Utc::now()) + chrono::Duration::milliseconds(5000);
     info!("Registering experiment start time: {}", start);
     set_start_time(&config, start).await?;
     delay_until(start).await;

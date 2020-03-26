@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::iter::{once, IntoIterator};
 
-const MSG_SIZE: usize = 100;
+const MSG_SIZE: usize = 125_000; // 1 megabit in bytes
 
 // TODO: properly serialize protocol details
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq)]
@@ -38,7 +38,7 @@ impl Experiment {
             clients as usize >= channels,
             "Expected at least as many clients as channels."
         );
-        let secure = false;
+        let secure = true;
         if secure {
             assert_eq!(groups, 2, "Secure protocol only implemented for 2 groups.");
         }
@@ -67,7 +67,8 @@ impl Experiment {
         let viewers = (0..(self.channels as u16))
             .zip(self.get_keys().into_iter())
             .map(|(idx, key)| {
-                let msg = (1u8..MSG_SIZE.try_into().unwrap())
+                let msg = (1usize..MSG_SIZE)
+                    .map(|x| (x % 256).try_into().unwrap())
                     .chain(once((idx as u8) + 100))
                     .collect::<Vec<_>>()
                     .into();

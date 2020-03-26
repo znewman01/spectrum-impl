@@ -56,7 +56,6 @@ impl Leader for MyLeader {
         request: Request<AggregateWorkerRequest>,
     ) -> Result<Response<AggregateWorkerResponse>, Status> {
         let request = request.into_inner();
-        trace!("Request! {:?}", request);
 
         let data = expect_field(request.share, "Share")?.data;
         let accumulator = self.accumulator.clone();
@@ -86,7 +85,7 @@ impl Leader for MyLeader {
 
             let share = accumulator.get().await;
             let share: Vec<Vec<u8>> = share.into_iter().map(Into::into).collect();
-            debug!("Leader final shares: {:?}", share);
+            // trace!("Leader final shares: {:?}", share);
             let req = Request::new(AggregateGroupRequest {
                 share: Some(Share { data: share }),
             });

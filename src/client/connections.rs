@@ -7,6 +7,7 @@ use crate::{
     },
 };
 use config::store::Store;
+use log::trace;
 use rand::{seq::IteratorRandom, thread_rng};
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -69,7 +70,9 @@ where
     for shard in shards {
         let mut client = WorkerClient::connect(format!("http://{}", shard.addr)).await?;
         let req = tonic::Request::new(req.clone());
+        trace!("Registering with shard {}...", shard.addr);
         client.register_client(req).await?;
+        trace!("Registered with shard {}!", shard.addr);
         clients.push(client);
     }
     Ok(clients)

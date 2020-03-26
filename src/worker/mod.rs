@@ -23,7 +23,7 @@ use crate::{
 };
 
 use futures::prelude::*;
-use log::{info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::sync::Arc;
@@ -63,7 +63,7 @@ impl<P: Protocol> WorkerState<P> {
 impl<P> WorkerState<P>
 where
     P: Protocol + 'static + Sync + Send + Clone,
-    P::WriteToken: Clone + Send,
+    P::WriteToken: Clone + Send + fmt::Debug,
     P::AuditShare: Send,
     P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
@@ -86,9 +86,16 @@ where
 
     async fn verify(&self, client: &ClientInfo, share: P::AuditShare) -> Option<Vec<Bytes>> {
         let check_count = self.audit_registry.add(client, share).await;
+        trace!(
+            "{}/{} shares received for {:?}",
+            check_count,
+            self.protocol.num_parties(),
+            client.clone()
+        );
         if check_count < self.protocol.num_parties() {
             return None;
         }
+        trace!("Running verification.");
 
         let (token, shares) = self.audit_registry.drain(client).await;
         let protocol = self.protocol.clone();
@@ -101,12 +108,32 @@ where
         }
 
         let protocol = self.protocol.clone();
-        let data = spawn_blocking(move || protocol.to_accumulator(token))
+        // TODO(zjn): remove clone
+        let token2 = token.clone();
+        let data = spawn_blocking(move || protocol.to_accumulator(token2))
             .await
             .expect("Accepting write token should never fail.");
 
+        if data.len() != self.protocol.num_channels() {
+            error!(
+                "Invalid data len! {} != {}",
+                data.len(),
+                self.protocol.message_len()
+            );
+            debug!("Bad write token: {:?}", token);
+        } else if data[0].len() != self.protocol.message_len() {
+            error!(
+                "Invalid data chunk len! {} != {}",
+                data.len(),
+                self.protocol.message_len()
+            );
+            debug!("Bad write token: {:?}", token);
+            debug!("Bad data: {:?}", data[0]);
+        }
+
         let accumulated_clients = self.accumulator.accumulate(data).await;
         let total_clients = self.client_registry.num_clients().await;
+        trace!("{}/{} clients", accumulated_clients, total_clients);
         if accumulated_clients == total_clients {
             return Some(self.accumulator.get().await);
         }
@@ -165,7 +192,7 @@ impl<P: Protocol> MyWorker<P> {
 impl<P> Worker for MyWorker<P>
 where
     P: Protocol + 'static + Sync + Send + Clone,
-    P::WriteToken: Clone + TryFrom<proto::WriteToken> + Sync + Send,
+    P::WriteToken: Clone + TryFrom<proto::WriteToken> + Sync + Send + fmt::Debug,
     <P::WriteToken as TryFrom<proto::WriteToken>>::Error: fmt::Debug + Send,
     P::AuditShare: TryFrom<proto::AuditShare> + Into<proto::AuditShare> + Sync + Send,
     <P::AuditShare as TryFrom<proto::AuditShare>>::Error: fmt::Debug,
@@ -177,7 +204,6 @@ where
         request: Request<UploadRequest>,
     ) -> Result<Response<UploadResponse>, Status> {
         let request = request.into_inner();
-        trace!("Request! {:?}", request);
 
         let client_id = expect_field(request.client_id, "Client ID")?;
         let client_info = ClientInfo::from(&client_id);
@@ -210,7 +236,6 @@ where
         request: Request<VerifyRequest>,
     ) -> Result<Response<VerifyResponse>, Status> {
         let request = request.into_inner();
-        trace!("Request: {:?}", request);
 
         // TODO(zjn): check which worker this comes from, don't double-insert
         let client_info = ClientInfo::from(&expect_field(request.client_id, "Client ID")?);
@@ -222,7 +247,8 @@ where
         spawn(async move {
             if let Some(share) = state.verify(&client_info, share).await {
                 let share: Vec<Vec<u8>> = share.into_iter().map(Into::into).collect();
-                info!("Forwarding to leader: {:?}", share);
+                info!("Forwarding to leader.");
+                // trace!("Share: {:?}", share);
                 let req = Request::new(AggregateWorkerRequest {
                     share: Some(Share { data: share }),
                 });
@@ -260,7 +286,7 @@ where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
     P: Protocol + 'static + Sync + Send + Clone,
-    P::WriteToken: Clone + TryFrom<proto::WriteToken> + Sync + Send,
+    P::WriteToken: Clone + TryFrom<proto::WriteToken> + Sync + Send + fmt::Debug,
     <P::WriteToken as TryFrom<proto::WriteToken>>::Error: fmt::Debug + Send,
     P::AuditShare: TryFrom<proto::AuditShare> + Into<proto::AuditShare> + Sync + Send,
     <P::AuditShare as TryFrom<proto::AuditShare>>::Error: fmt::Debug,

@@ -1,6 +1,7 @@
 //! Spectrum implementation.
 use futures::future::{AbortHandle, Abortable};
 use futures::prelude::*;
+use log::error;
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -133,7 +134,16 @@ pub async fn run(
     });
     let delay_task = tokio::spawn(delay_for(TIMEOUT));
     let (work, abort_rx) = AbortHandle::new_pair();
-    tokio::spawn(Abortable::new(handles.try_collect::<Vec<_>>(), abort_rx));
+    tokio::spawn(Abortable::new(
+        async move {
+            handles
+                .for_each(|result| async {
+                    result.unwrap_or_else(|err| error!("Task resulted in error: {:?}", err));
+                })
+                .await
+        },
+        abort_rx,
+    ));
 
     futures::select! {
         elapsed = timer_task.fuse() => Ok(elapsed?),
