@@ -79,6 +79,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
                 .default_value("1024")
                 .help("Size (in bytes) of each message."),
         )
+        .arg(
+            Arg::with_name("security")
+                .long("security")
+                .takes_value(true)
+                .number_of_values(1)
+                .default_value("40")
+                .help("Size (in bits) to use for the secure protocol.")
+                .long_help(
+                    "Size (in bits) to use for the secure protocol. \
+                            At most one of {--security, --no-security} may be set.",
+                ),
+        )
+        .arg(
+            Arg::with_name("no-security")
+                .long("no-security")
+                .conflicts_with("security")
+                .help("Use the insecure protocol.")
+                .long_help(
+                    "Use the insecure protocol. \
+                            At most one of {--security, --no-security} may be set.",
+                ),
+        )
         .get_matches();
 
     let log_level: LevelFilter = value_t!(matches, "log-level", LogLevel)
@@ -105,7 +127,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
 
     let groups = 2; // hard-coded for now
     let msg_size = value_t!(matches, "message-size", usize).unwrap_or_else(|e| e.exit());
-    let security: Option<u32> = Some(40); // TODO(zjn): configurable
+    let security: Option<u32> = if matches.is_present("no-security") {
+        None
+    } else {
+        Some(value_t!(matches, "security", u32).unwrap_or_else(|e| e.exit()))
+    };
     let clients = value_t!(matches, "clients", u16).unwrap_or_else(|e| e.exit());
     let group_size = value_t!(matches, "group-size", u16).unwrap_or_else(|e| e.exit());
     let channels = value_t!(matches, "channels", usize).unwrap_or_else(|e| e.exit());
