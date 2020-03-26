@@ -78,6 +78,35 @@ impl OutputRecord {
     }
 }
 
+async fn run_experiments<W: Write>(
+    mut wtr: csv::Writer<W>,
+    records: Box<dyn Iterator<Item = csv::Result<InputRecord>>>,
+) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
+    for record in records {
+        let record: InputRecord = record?;
+        eprint!("Running: {:?}...", record);
+        io::stderr().flush()?;
+
+        let experiment = Experiment::from(record);
+        match run(experiment).await {
+            Ok(elapsed) => {
+                let output = OutputRecord::from_input_record(record, elapsed);
+                wtr.serialize(output)?;
+                wtr.flush()?;
+                eprintln!("done. elapsed time {:?}", elapsed);
+            }
+            Err(err) => {
+                eprintln!("ERROR! {:?}", err);
+            }
+        };
+
+        // allow time for wrap-up before next experiment
+        delay_for(Duration::from_millis(100)).await;
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     // TODO(zjn): big hack. Write a dummy record to a string buffer, then remove the record.
@@ -99,14 +128,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
                 .long_help(
                     format!(
                         "File (`-` for STDIN) in .csv format. \
-                            Columns are: \n\
-                            \t{}\n\
-                            where security_bytes can be empty for the insecure protocol.
+                         Columns are: \n\
+                         \t{}\n\
+                         where security_bytes can be empty for the insecure protocol.
                             ",
                         headers
                     )
                     .as_str(),
                 ),
+        )
+        .arg(
+            Arg::with_name("output")
+                .long("output")
+                .short("o")
+                .takes_value(true)
+                .default_value("-")
+                .help("File (`-` for STDOUT) to write output CSV to."),
         )
         .get_matches();
 
@@ -152,28 +189,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
             }
         };
 
-    let mut wtr = csv::Writer::from_writer(io::stdout());
-    for record in records {
-        let record: InputRecord = record?;
-        eprint!("Running: {:?}...", record);
-        io::stderr().flush()?;
-
-        let experiment = Experiment::from(record);
-        match run(experiment).await {
-            Ok(elapsed) => {
-                let output = OutputRecord::from_input_record(record, elapsed);
-                wtr.serialize(output)?;
-                wtr.flush()?;
-                eprintln!("done. elapsed time {:?}", elapsed);
-            }
-            Err(err) => {
-                eprintln!("ERROR! {:?}", err);
-            }
-        };
-
-        // allow time for wrap-up before next experiment
-        delay_for(Duration::from_millis(100)).await;
+    match matches.value_of("output").expect("has default") {
+        "-" => run_experiments(csv::Writer::from_writer(io::stdout()), records).await,
+        path => run_experiments(csv::Writer::from_path(path)?, records).await,
     }
-
-    Ok(())
 }
