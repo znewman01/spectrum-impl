@@ -10,7 +10,7 @@ use std::iter::once;
 use std::time::Duration;
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
-struct Record {
+struct InputRecord {
     groups: usize,
     group_size: u16,
     clients: u16,
@@ -19,7 +19,7 @@ struct Record {
     msg_size: usize,
 }
 
-impl Record {
+impl InputRecord {
     fn new(
         groups: usize,
         group_size: u16,
@@ -27,8 +27,8 @@ impl Record {
         channels: usize,
         security_bytes: Option<u32>,
         msg_size: usize,
-    ) -> Record {
-        Record {
+    ) -> InputRecord {
+        InputRecord {
             groups,
             group_size,
             clients,
@@ -39,8 +39,8 @@ impl Record {
     }
 }
 
-impl From<Record> for Experiment {
-    fn from(record: Record) -> Experiment {
+impl From<InputRecord> for Experiment {
+    fn from(record: InputRecord) -> Experiment {
         let protocol = ProtocolWrapper::new(
             record.security_bytes,
             record.groups,
@@ -51,12 +51,39 @@ impl From<Record> for Experiment {
     }
 }
 
+// TODO(zjn): use serde(flatten)
+// https://github.com/BurntSushi/rust-csv/issues/98
+#[derive(Serialize, Deserialize)]
+struct OutputRecord {
+    groups: usize,
+    group_size: u16,
+    clients: u16,
+    channels: usize,
+    security_bytes: Option<u32>,
+    msg_size: usize,
+    elapsed_millis: u128,
+}
+
+impl OutputRecord {
+    fn from_input_record(input: InputRecord, elapsed: Duration) -> Self {
+        Self {
+            groups: input.groups,
+            group_size: input.group_size,
+            clients: input.clients,
+            channels: input.channels,
+            security_bytes: input.security_bytes,
+            msg_size: input.msg_size,
+            elapsed_millis: elapsed.as_millis(),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     // TODO(zjn): big hack. Write a dummy record to a string buffer, then remove the record.
     // When https://github.com/BurntSushi/rust-csv/issues/161 fixed, use that instead.
     let mut wtr = csv::Writer::from_writer(vec![]);
-    wtr.serialize(Record::default())?;
+    wtr.serialize(InputRecord::default())?;
     let headers = String::from_utf8((wtr).into_inner().unwrap()).unwrap();
     let headers = headers.split("\n").next().unwrap();
     let matches = App::new("Spectrum -- run local protocol experiments")
@@ -83,58 +110,59 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         )
         .get_matches();
 
-    let records: Box<dyn Iterator<Item = csv::Result<Record>>> = match matches.value_of("input") {
-        None => {
-            let groups = once(2usize);
-            let group_sizes = once(2u16);
-            let clients = (10u16..=50).step_by(10);
-            let channels = once(1usize);
-            let security_settings = vec![None, Some(40)].into_iter();
-            let msg_sizes = once(1024);
+    let records: Box<dyn Iterator<Item = csv::Result<InputRecord>>> =
+        match matches.value_of("input") {
+            None => {
+                let groups = once(2usize);
+                let group_sizes = once(2u16);
+                let clients = (10u16..=50).step_by(10);
+                let channels = once(1usize);
+                let security_settings = vec![None, Some(40)].into_iter();
+                let msg_sizes = once(1024);
 
-            Box::new(
-                iproduct!(
-                    groups,
-                    group_sizes,
-                    clients,
-                    channels,
-                    security_settings,
-                    msg_sizes
+                Box::new(
+                    iproduct!(
+                        groups,
+                        group_sizes,
+                        clients,
+                        channels,
+                        security_settings,
+                        msg_sizes
+                    )
+                    .map(
+                        |(groups, group_size, clients, channels, security, msg_size)| {
+                            Ok::<_, _>(InputRecord::new(
+                                groups, group_size, clients, channels, security, msg_size,
+                            ))
+                        },
+                    ),
                 )
-                .map(
-                    |(groups, group_size, clients, channels, security, msg_size)| {
-                        Ok::<_, _>(Record::new(
-                            groups, group_size, clients, channels, security, msg_size,
-                        ))
-                    },
-                ),
-            )
-        }
-        Some("-") => {
-            let rdr = csv::ReaderBuilder::new()
-                .has_headers(false)
-                .from_reader(io::stdin());
-            Box::new(rdr.into_deserialize())
-        }
-        Some(path) => {
-            let rdr = csv::ReaderBuilder::new()
-                .has_headers(false)
-                .from_path(path)?;
-            Box::new(rdr.into_deserialize())
-        }
-    };
+            }
+            Some("-") => {
+                let rdr = csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_reader(io::stdin());
+                Box::new(rdr.into_deserialize())
+            }
+            Some(path) => {
+                let rdr = csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_path(path)?;
+                Box::new(rdr.into_deserialize())
+            }
+        };
 
     let mut wtr = csv::Writer::from_writer(io::stdout());
     for record in records {
-        let record: Record = record?;
+        let record: InputRecord = record?;
         eprint!("Running: {:?}...", record);
         io::stderr().flush()?;
 
         let experiment = Experiment::from(record);
         match run(experiment).await {
             Ok(elapsed) => {
-                // TODO: should include elapsed time!
-                wtr.serialize(record)?;
+                let output = OutputRecord::from_input_record(record, elapsed);
+                wtr.serialize(output)?;
                 wtr.flush()?;
                 eprintln!("done. elapsed time {:?}", elapsed);
             }
