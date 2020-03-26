@@ -15,7 +15,7 @@ struct InputRecord {
     group_size: u16,
     clients: u16,
     channels: usize,
-    security_bytes: Option<u32>,
+    security_bits: Option<u32>,
     msg_size: usize,
 }
 
@@ -25,7 +25,7 @@ impl InputRecord {
         group_size: u16,
         clients: u16,
         channels: usize,
-        security_bytes: Option<u32>,
+        security_bits: Option<u32>,
         msg_size: usize,
     ) -> InputRecord {
         InputRecord {
@@ -33,7 +33,7 @@ impl InputRecord {
             group_size,
             clients,
             channels,
-            security_bytes,
+            security_bits,
             msg_size,
         }
     }
@@ -42,7 +42,7 @@ impl InputRecord {
 impl From<InputRecord> for Experiment {
     fn from(record: InputRecord) -> Experiment {
         let protocol = ProtocolWrapper::new(
-            record.security_bytes,
+            record.security_bits,
             record.groups,
             record.channels,
             record.msg_size,
@@ -59,7 +59,7 @@ struct OutputRecord {
     group_size: u16,
     clients: u16,
     channels: usize,
-    security_bytes: Option<u32>,
+    security_bits: Option<u32>,
     msg_size: usize,
     elapsed_millis: u128,
 }
@@ -71,7 +71,7 @@ impl OutputRecord {
             group_size: input.group_size,
             clients: input.clients,
             channels: input.channels,
-            security_bytes: input.security_bytes,
+            security_bits: input.security_bits,
             msg_size: input.msg_size,
             elapsed_millis: elapsed.as_millis(),
         }
@@ -130,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
                         "File (`-` for STDIN) in .csv format. \
                          Columns are: \n\
                          \t{}\n\
-                         where security_bytes can be empty for the insecure protocol.\n\n\
+                         where security_bits can be empty for the insecure protocol.\n\n\
                          If omitted, runs a quick hard-coded set of parameters.",
                         headers
                     )

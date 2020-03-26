@@ -75,9 +75,9 @@ impl From<secure::SecureProtocol<ConcreteVdpf>> for ProtocolWrapper {
 impl ProtocolWrapper {
     pub fn new(security: Option<u32>, groups: usize, channels: usize, msg_size: usize) -> Self {
         match security {
-            Some(security_bytes) => {
+            Some(security_bits) => {
                 assert_eq!(groups, 2);
-                secure::SecureProtocol::with_aes_prg_dpf(security_bytes, channels, msg_size).into()
+                secure::SecureProtocol::with_aes_prg_dpf(security_bits, channels, msg_size).into()
             }
             None => insecure::InsecureProtocol::new(groups, channels, msg_size).into(),
         }
