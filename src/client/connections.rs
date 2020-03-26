@@ -87,9 +87,10 @@ mod tests {
     use proptest::prelude::*;
 
     pub fn experiments_with_multiple_workers() -> impl Strategy<Value = Experiment> {
-        experiments().prop_filter("Only want experiments with multiple workers", |e| {
-            e.workers_per_group > 1
-        })
+        experiments().prop_filter(
+            "Only want experiments with multiple workers per group",
+            |e| e.group_size() > 1,
+        )
     }
 
     proptest! {

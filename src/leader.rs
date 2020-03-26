@@ -109,7 +109,7 @@ where
     P: Protocol,
 {
     let (tx, rx) = watch::channel(None);
-    let state = MyLeader::from_protocol(protocol, experiment.workers_per_group, rx);
+    let state = MyLeader::from_protocol(protocol, experiment.group_size(), rx);
     info!("Leader starting up.");
     let addr = get_addr();
     let server_task = tokio::spawn(

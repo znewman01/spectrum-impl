@@ -51,7 +51,7 @@ struct WorkerState<P: Protocol> {
 impl<P: Protocol> WorkerState<P> {
     fn from_experiment(experiment: Experiment, protocol: P) -> Self {
         WorkerState {
-            audit_registry: AuditRegistry::new(experiment.clients),
+            audit_registry: AuditRegistry::new(experiment.clients()),
             accumulator: Accumulator::new(protocol.new_accumulator()),
             experiment,
             client_registry: ClientRegistry::new(),
