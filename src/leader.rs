@@ -9,7 +9,7 @@ use crate::{
     config::store::Store,
     experiment::Experiment,
     net::get_addr,
-    protocols::{accumulator::Accumulator, wrapper::ProtocolWrapper2, Protocol},
+    protocols::{accumulator::Accumulator, wrapper::ProtocolWrapper, Protocol},
     services::{
         discovery::{register, resolve_all, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -150,7 +150,7 @@ where
 pub async fn run<C, F>(
     config: C,
     experiment: Experiment,
-    protocol: ProtocolWrapper2,
+    protocol: ProtocolWrapper,
     info: LeaderInfo,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
@@ -159,10 +159,10 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     match protocol {
-        ProtocolWrapper2::Secure(protocol) => {
+        ProtocolWrapper::Secure(protocol) => {
             inner_run(config, experiment, protocol, info, shutdown).await?;
         }
-        ProtocolWrapper2::Insecure(protocol) => {
+        ProtocolWrapper::Insecure(protocol) => {
             inner_run(config, experiment, protocol, info, shutdown).await?;
         }
     }

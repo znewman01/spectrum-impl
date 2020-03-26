@@ -11,7 +11,7 @@ use crate::{
     net::get_addr,
     protocols::{
         accumulator::Accumulator,
-        wrapper::{ChannelKeyWrapper, ProtocolWrapper2},
+        wrapper::{ChannelKeyWrapper, ProtocolWrapper},
         Protocol,
     },
     services::{
@@ -323,7 +323,7 @@ where
 pub async fn run<C, F>(
     config: C,
     experiment: Experiment,
-    protocol: ProtocolWrapper2,
+    protocol: ProtocolWrapper,
     info: WorkerInfo,
     shutdown: F,
 ) -> Result<(), Error>
@@ -332,10 +332,10 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     match protocol {
-        ProtocolWrapper2::Secure(protocol) => {
+        ProtocolWrapper::Secure(protocol) => {
             inner_run(config, experiment, protocol, info, shutdown).await?;
         }
-        ProtocolWrapper2::Insecure(protocol) => {
+        ProtocolWrapper::Insecure(protocol) => {
             inner_run(config, experiment, protocol, info, shutdown).await?;
         }
     }

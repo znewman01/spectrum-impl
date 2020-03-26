@@ -2,7 +2,7 @@ use crate::config::store::{Error, Store};
 use crate::protocols::{
     insecure::{self, InsecureProtocol},
     secure::{self, SecureProtocol},
-    wrapper::{ChannelKeyWrapper, ProtocolWrapper2},
+    wrapper::{ChannelKeyWrapper, ProtocolWrapper},
 };
 use crate::services::{
     discovery::Node, ClientInfo, Group, LeaderInfo, PublisherInfo, Service, WorkerInfo,
@@ -81,14 +81,14 @@ impl Experiment {
         viewers.chain(broadcasters)
     }
 
-    pub fn get_protocol(&self) -> ProtocolWrapper2 {
+    pub fn get_protocol(&self) -> ProtocolWrapper {
         let groups = self.groups.try_into().unwrap();
         if self.secure {
             let protocol = SecureProtocol::with_aes_prg_dpf(40, groups, MSG_SIZE);
-            ProtocolWrapper2::Secure(protocol)
+            ProtocolWrapper::Secure(protocol)
         } else {
             let protocol = InsecureProtocol::new(groups, self.channels, MSG_SIZE);
-            ProtocolWrapper2::Insecure(protocol)
+            ProtocolWrapper::Insecure(protocol)
         }
     }
 

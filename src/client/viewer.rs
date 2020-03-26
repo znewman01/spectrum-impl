@@ -2,7 +2,7 @@ use crate::proto::{self, UploadRequest};
 use crate::{
     client::connections,
     config,
-    protocols::{wrapper::ChannelKeyWrapper, wrapper::ProtocolWrapper2, Protocol},
+    protocols::{wrapper::ChannelKeyWrapper, wrapper::ProtocolWrapper, Protocol},
     services::{
         quorum::{delay_until, wait_for_start_time_set},
         ClientInfo,
@@ -65,7 +65,7 @@ where
 
 pub async fn run<C, F>(
     config: C,
-    protocol: ProtocolWrapper2,
+    protocol: ProtocolWrapper,
     info: ClientInfo,
     shutdown: F,
 ) -> Result<(), TokioError>
@@ -74,10 +74,10 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     match protocol {
-        ProtocolWrapper2::Secure(protocol) => {
+        ProtocolWrapper::Secure(protocol) => {
             inner_run(config, protocol, info, shutdown).await?;
         }
-        ProtocolWrapper2::Insecure(protocol) => {
+        ProtocolWrapper::Insecure(protocol) => {
             inner_run(config, protocol, info, shutdown).await?;
         }
     }
