@@ -71,6 +71,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
                 .default_value("3")
                 .help("Number of channels to simulate"),
         )
+        .arg(
+            Arg::with_name("message-size")
+                .long("message-size")
+                .takes_value(true)
+                .number_of_values(1)
+                .default_value("1024")
+                .help("Size (in bytes) of each message."),
+        )
         .get_matches();
 
     let log_level: LevelFilter = value_t!(matches, "log-level", LogLevel)
@@ -96,10 +104,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     .unwrap();
 
     let groups = 2; // hard-coded for now
-    let msg_size = 1024; // TODO(zjn): configurable
+    let msg_size = value_t!(matches, "message-size", usize).unwrap_or_else(|e| e.exit());
     let security: Option<u32> = Some(40); // TODO(zjn): configurable
     let clients = value_t!(matches, "clients", u16).unwrap_or_else(|e| e.exit());
-    let group_size = value_t!(matches, "channels", u16).unwrap_or_else(|e| e.exit());
+    let group_size = value_t!(matches, "group-size", u16).unwrap_or_else(|e| e.exit());
     let channels = value_t!(matches, "channels", usize).unwrap_or_else(|e| e.exit());
 
     let protocol = ProtocolWrapper::new(security, groups, channels, msg_size);

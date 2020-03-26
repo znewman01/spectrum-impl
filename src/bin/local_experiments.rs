@@ -130,8 +130,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
                         "File (`-` for STDIN) in .csv format. \
                          Columns are: \n\
                          \t{}\n\
-                         where security_bytes can be empty for the insecure protocol.
-                            ",
+                         where security_bytes can be empty for the insecure protocol.\n\n\
+                         If omitted, runs a quick hard-coded set of parameters.",
                         headers
                     )
                     .as_str(),
@@ -155,7 +155,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
                 let clients = (10u16..=50).step_by(10);
                 let channels = once(1usize);
                 let security_settings = vec![None, Some(40)].into_iter();
-                let msg_sizes = once(1024);
+                let msg_sizes = once(2 << 19); // 1 MB
 
                 Box::new(
                     iproduct!(
