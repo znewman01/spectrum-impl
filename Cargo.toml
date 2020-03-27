@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 hex = "0.4"
+blake2 = "0.8"
 futures = "0.3"
 openssl = "0.10.28"
 prost = "0.6"
