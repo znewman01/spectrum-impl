@@ -12,6 +12,8 @@ use spectrum_impl::{
         vdpf::{FieldVDPF, VDPF},
     },
 };
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 const EVAL_SIZE: usize = 1 << 20; // approx 1MB
 
@@ -20,6 +22,15 @@ fn criterion_benchmark(c: &mut Criterion) {
         let prg = AESPRG::new(16, EVAL_SIZE);
         let seed = prg.new_seed();
         b.iter(|| prg.eval(&seed))
+    });
+
+    c.bench_function("PRG output hashing", |b| {
+        let bytes = Bytes::empty(EVAL_SIZE);
+        let mut hasher = DefaultHasher::new();
+        b.iter(|| {
+            bytes.hash(&mut hasher);
+            hasher.finish();
+        })
     });
 
     let num_points = 1;
