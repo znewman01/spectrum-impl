@@ -41,7 +41,7 @@ impl Store for Wrapper {
     }
 }
 
-pub fn from_string(s: &str) -> Result<Wrapper, String> {
+pub async fn from_string(s: &str) -> Result<Wrapper, String> {
     let mut scheme = "mem";
     let remainder = if !s.is_empty() {
         let mut chunks = s.splitn(2, "://");
@@ -77,7 +77,7 @@ pub fn from_string(s: &str) -> Result<Wrapper, String> {
     }
 }
 
-pub fn from_env() -> Result<Wrapper, String> {
+pub async fn from_env() -> Result<Wrapper, String> {
     let env_str = std::env::var_os(CONFIG_SERVER_ENV_VAR)
         .and_then(|s| s.into_string().ok())
         .unwrap_or_default();
@@ -86,13 +86,14 @@ pub fn from_env() -> Result<Wrapper, String> {
         env_str,
         CONFIG_SERVER_ENV_VAR
     );
-    from_string(&env_str)
+    from_string(&env_str).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    use tokio::runtime::Runtime;
 
     proptest! {
         #[test]
@@ -102,20 +103,24 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_from_string_empty() {
-        #![allow(irrefutable_let_patterns)]
-        let store = from_string("").expect("Should be Ok() for empty string.");
+    #[tokio::test]
+    #[allow(irrefutable_let_patterns)]
+    async fn test_from_string_empty() {
+        let store = from_string("")
+            .await
+            .expect("Should be Ok() for empty string.");
         if let Wrapper::InMem(_) = store {
         } else {
             panic!("Expected in-memory store");
         }
     }
 
-    #[test]
-    fn test_from_string_mem() {
-        #![allow(irrefutable_let_patterns)]
-        let store = from_string("mem://").expect("Should be Ok() for string [mem://].");
+    #[tokio::test]
+    #[allow(irrefutable_let_patterns)]
+    async fn test_from_string_mem() {
+        let store = from_string("mem://")
+            .await
+            .expect("Should be Ok() for string [mem://].");
         if let Wrapper::InMem(_) = store {
         } else {
             panic!("Expected in-memory store");
@@ -123,22 +128,30 @@ mod tests {
     }
 
     #[allow(dead_code)] // TODO(zjn): implement as #[test]
-    fn test_from_string_etcd() {
-        from_string("etcd://").expect("etcd:// should work");
+    async fn test_from_string_etcd() {
+        from_string("etcd://").await.expect("etcd:// should work");
     }
 
     proptest! {
         #[test]
         fn test_from_string_mem_nonempty(string in "\\PC+") {
-            from_string(&("mem://".to_owned() + &string))
-                .expect_err("Non-empty mem:// should error.");
+            let test = async {
+                from_string(&("mem://".to_owned() + &string))
+                    .await
+                    .expect_err("Non-empty mem:// should error.");
+            };
+            Runtime::new().unwrap().block_on(test);
         }
 
-        // strictly speaking *could* give mem:// but unlikely
         #[test]
         fn test_from_string_other(string in "\\PC+(://)?\\PC*") {
-            from_string(&string)
-                .expect_err("Should only accept mem:// or etcd:// URLs if non-empty.");
+            prop_assume!(string != "mem://");
+            let test = async {
+                from_string(&string)
+                    .await
+                    .expect_err("Should only accept mem:// or etcd:// URLs if non-empty.");
+            };
+            Runtime::new().unwrap().block_on(test);
         }
     }
 }

@@ -140,7 +140,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let experiment = Experiment::new(protocol, group_size, clients);
 
     eprintln!("Running: {:?}...", experiment);
-    let config = config::from_env()?;
+    let config = config::from_env().await?;
     let elapsed = run(experiment, config).await?;
     eprintln!("Elapsed time: {:?}", elapsed);
     Ok(())

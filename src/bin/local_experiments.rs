@@ -172,7 +172,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         io::stderr().flush()?;
 
         let experiment = Experiment::from(record);
-        let config = config::from_env()?;
+        let config = config::from_env().await?;
         match run(experiment, config).await {
             Ok(elapsed) => {
                 let output = OutputRecord::from_input_record(record, elapsed);

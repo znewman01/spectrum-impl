@@ -149,7 +149,7 @@ mod test {
 
     #[tokio::test]
     async fn test_get_start_time_missing_entry() {
-        let config = from_string("").unwrap();
+        let config = from_string("").await.unwrap();
         get_start_time(&config)
             .await
             .expect_err("Empty config should result in error.");
@@ -157,7 +157,7 @@ mod test {
 
     #[tokio::test]
     async fn test_get_start_time_malformed_entry() {
-        let config = from_string("").unwrap();
+        let config = from_string("").await.unwrap();
         let key = vec!["experiment".to_string(), "start-time".to_string()];
         config
             .put(key, "not a valid RFC 3339 date".to_string())
@@ -170,7 +170,7 @@ mod test {
 
     #[tokio::test]
     async fn test_wait_for_start_time_set_unset() {
-        let config = from_string("").unwrap();
+        let config = from_string("").await.unwrap();
         wait_for_start_time_set_helper(&config, NO_TIME, 10)
             .await
             .expect_err("Should fail if start time is never set.");
@@ -178,7 +178,7 @@ mod test {
 
     #[tokio::test]
     async fn test_wait_for_start_time_set_okay() {
-        let config = from_string("").unwrap();
+        let config = from_string("").await.unwrap();
         set_start_time(&config, DateTime::<FixedOffset>::from(Utc::now()))
             .await
             .unwrap();
@@ -189,7 +189,7 @@ mod test {
 
     #[tokio::test]
     async fn test_wait_for_quorum_not_ready() {
-        let config = from_string("").unwrap();
+        let config = from_string("").await.unwrap();
         let protocol = insecure::InsecureProtocol::new(1, 1, 100).into();
         let experiment = Experiment::new(protocol, 1, 10);
         wait_for_quorum_helper(&config, &experiment, NO_TIME, 10)
@@ -199,7 +199,7 @@ mod test {
 
     #[tokio::test]
     async fn test_wait_for_quorum_okay() {
-        let config = from_string("").unwrap();
+        let config = from_string("").await.unwrap();
         let protocol = insecure::InsecureProtocol::new(1, 1, 100).into();
         let experiment = Experiment::new(protocol, 1, 10);
         for service in experiment.iter_services() {
