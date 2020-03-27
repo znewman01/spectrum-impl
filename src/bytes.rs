@@ -1,11 +1,13 @@
 //! Spectrum implementation.
+use blake2::{Blake2b, Digest};
 use bytes::Bytes as OtherBytes;
 use rand::Rng;
 use std::convert::AsRef;
+use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::ops;
 
-#[derive(Default, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Debug, Eq)]
 pub struct Bytes(Vec<u8>);
 
 impl Bytes {
@@ -133,6 +135,22 @@ impl ops::BitXorAssign<Bytes> for Bytes {
             .iter_mut()
             .zip(rhs.0.iter())
             .for_each(|(x, y)| *x ^= y);
+    }
+}
+impl Hash for Bytes {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        let hash = Blake2b::digest(&self.0);
+        state.write(hash.as_slice());
+        state.finish();
+    }
+}
+
+impl PartialEq for Bytes {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
     }
 }
 
