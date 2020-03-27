@@ -22,6 +22,7 @@ pub mod config;
 pub mod experiment;
 mod net;
 pub mod services;
+
 mod proto {
     use tonic::Status;
 
@@ -59,6 +60,7 @@ impl From<String> for Error {
 
 impl std::error::Error for Error {}
 
+use config::store::Store;
 use experiment::Experiment;
 use services::Service::{Client, Leader, Publisher, Worker};
 
@@ -87,10 +89,13 @@ impl publisher::Remote for PublisherRemote {
     }
 }
 
-pub async fn run(
+pub async fn run<C>(
     experiment: Experiment,
-) -> Result<Duration, Box<dyn std::error::Error + Sync + Send>> {
-    let config = config::from_env()?;
+    config: C,
+) -> Result<Duration, Box<dyn std::error::Error + Sync + Send>>
+where
+    C: 'static + Store + Clone + Sync + Send,
+{
     experiment::write_to_store(&config, &experiment).await?;
     let started = Arc::new(Notify::new());
     // +2: +1 for the "done" notification from the publisher, +1 for the timer task

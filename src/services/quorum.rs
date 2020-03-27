@@ -81,7 +81,7 @@ async fn has_quorum<C: Store>(config: &C, experiment: &Experiment) -> Result<(),
     }
 }
 
-async fn wait_for_quorum_helper<C: Store>(
+async fn wait_for_quorum_helper<C: Store + Sync + Send>(
     config: &C,
     experiment: &Experiment,
     delay: Duration,
@@ -94,7 +94,10 @@ async fn wait_for_quorum_helper<C: Store>(
     .await
 }
 
-pub async fn wait_for_quorum<C: Store>(config: &C, experiment: &Experiment) -> Result<(), Error> {
+pub async fn wait_for_quorum<C: Store + Sync + Send>(
+    config: &C,
+    experiment: &Experiment,
+) -> Result<(), Error> {
     wait_for_quorum_helper(config, experiment, RETRY_DELAY, RETRY_ATTEMPTS).await
 }
 
@@ -209,7 +212,7 @@ mod test {
             .expect("Should succeed if quorum is ready.");
     }
 
-    async fn run_quorum_test<C: Store, I: Iterator<Item = Node>>(
+    async fn run_quorum_test<C: Store + Sync + Send, I: Iterator<Item = Node>>(
         config: &C,
         experiment: Experiment,
         nodes: I,

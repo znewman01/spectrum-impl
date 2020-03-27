@@ -107,7 +107,7 @@ async fn inner_run<C, F, R, P>(
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
-    C: Store,
+    C: Store + Sync + Send,
     R: Remote + 'static,
     F: Future<Output = ()> + Send + 'static,
     P: Protocol,
@@ -154,7 +154,7 @@ pub async fn run<C, R, F>(
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
-    C: Store,
+    C: Store + Sync + Send,
     R: Remote + 'static,
     F: Future<Output = ()> + Send + 'static,
 {

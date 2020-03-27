@@ -1,6 +1,6 @@
 use clap::{arg_enum, crate_authors, crate_version, value_t, App, Arg};
 use simplelog::{CombinedLogger, LevelFilter, TermLogger, TerminalMode, WriteLogger};
-use spectrum_impl::{experiment::Experiment, protocols::wrapper::ProtocolWrapper, run};
+use spectrum_impl::{config, experiment::Experiment, protocols::wrapper::ProtocolWrapper, run};
 use std::fs::File;
 
 arg_enum! {
@@ -140,7 +140,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let experiment = Experiment::new(protocol, group_size, clients);
 
     eprintln!("Running: {:?}...", experiment);
-    let elapsed = run(experiment).await?;
+    let config = config::from_env()?;
+    let elapsed = run(experiment, config).await?;
     eprintln!("Elapsed time: {:?}", elapsed);
     Ok(())
 }

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 #[derive(Default, Clone, Debug)]
-pub(in crate::config) struct InMemoryStore {
+pub struct InMemoryStore {
     map: Arc<Mutex<HashMap<Key, Value>>>,
 }
 
@@ -42,13 +42,51 @@ impl Store for InMemoryStore {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::store_tests;
+    use crate::config::store::tests::*;
+
+    use futures::executor::block_on;
+    use proptest::collection::hash_set;
     use proptest::prelude::*;
     use proptest::strategy::LazyJust;
 
-    pub fn stores() -> BoxedStrategy<impl Store> {
-        LazyJust::new(InMemoryStore::new).boxed()
+    pub fn stores() -> impl Strategy<Value = InMemoryStore> {
+        LazyJust::new(InMemoryStore::new)
     }
 
-    store_tests! {}
+    proptest! {
+        #[test]
+        fn test_put_and_get(store in stores(), key in keys(), value in values()) {
+            let test = run_test_put_and_get(store, key, value);
+            block_on(test).unwrap()
+        }
+
+        #[test]
+        fn test_get_empty(store in stores(), key in keys()) {
+            let test = run_test_get_empty(store, key);
+            block_on(test).unwrap()
+        }
+
+        #[test]
+        fn test_put_and_get_keep_latter(
+            store in stores(),
+            key in keys(),
+            value1 in values(),
+            value2 in values()
+        ) {
+            let test = run_test_put_and_get_keep_latter(store, key, value1, value2) ;
+            block_on(test).unwrap()
+        }
+
+        #[test]
+        fn test_list(
+            store in stores(),
+            prefix in keys(),
+            suffixes in hash_set(keys(), 0..10usize),
+            other_keys in hash_set(keys(), 0..10usize),
+            value in values()
+        ) {
+            let test = run_test_list(store, prefix, suffixes, other_keys, value);
+            block_on(test).unwrap()
+        }
+    }
 }

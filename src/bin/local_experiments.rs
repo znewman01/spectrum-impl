@@ -1,4 +1,4 @@
-use spectrum_impl::{experiment::Experiment, protocols::wrapper::ProtocolWrapper, run};
+use spectrum_impl::{config, experiment::Experiment, protocols::wrapper::ProtocolWrapper, run};
 
 use clap::{crate_authors, crate_version, App, Arg};
 use itertools::iproduct;
@@ -172,7 +172,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         io::stderr().flush()?;
 
         let experiment = Experiment::from(record);
-        match run(experiment).await {
+        let config = config::from_env()?;
+        match run(experiment, config).await {
             Ok(elapsed) => {
                 let output = OutputRecord::from_input_record(record, elapsed);
                 wtr.serialize(output)?;
