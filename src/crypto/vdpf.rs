@@ -206,7 +206,6 @@ impl VDPF for ConcreteVdpf {
             }
         }
 
-        // TODO(sss): actually crypto hash the message?
         let mut hasher = DefaultHasher::new();
         dpf_key.encoded_msg.hash(&mut hasher);
         let data = hasher.finish();
