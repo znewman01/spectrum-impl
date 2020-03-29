@@ -2,8 +2,8 @@
 use crate::bytes::Bytes;
 use crate::proto;
 use rug::{integer::IsPrime, integer::Order, rand::RandState, Integer};
-use rug::{integer::IsPrime, rand::RandState, Integer};
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops;
 use std::sync::Arc;
