@@ -1,11 +1,9 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
 use crate::proto;
-
+use rug::{integer::IsPrime, integer::Order, rand::RandState, Integer};
 use rug::{integer::IsPrime, rand::RandState, Integer};
 use serde::{Deserialize, Serialize};
-
-use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops;
 use std::sync::Arc;
@@ -92,9 +90,7 @@ impl Field {
     }
 
     pub fn element_from_bytes(&self, bytes: &Bytes) -> FieldElement {
-        // TODO(sss): find a less hacky way of doing this?
-        let byte_str = hex::encode(bytes);
-        let val = Integer::from_str_radix(&byte_str, 16).unwrap();
+        let val = Integer::from_digits(bytes.as_ref(), Order::LsfLe);
         self.new_element(val)
     }
 }
