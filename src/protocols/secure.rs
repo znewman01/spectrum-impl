@@ -1,3 +1,5 @@
+#![allow(clippy::unknown_clippy_lints)] // below issue triggers only on clippy beta/nightly
+#![allow(clippy::match_single_binding)] // https://github.com/mcarton/rust-derivative/issues/58
 use crate::proto;
 use crate::{
     bytes::Bytes,
@@ -235,7 +237,6 @@ where
     fn gen_audit(&self, keys: &[ChannelKey<V>], token: &WriteToken<V>) -> Vec<AuditShare<V>> {
         let auth_keys: Vec<_> = keys.iter().map(|key| key.secret.clone()).collect();
         let token = AuditShare::new(self.vdpf.gen_audit(&auth_keys, &token.0, &token.1));
-        let _ = token.clone();
         repeat(token).take(self.num_parties()).collect()
     }
 
