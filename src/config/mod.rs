@@ -1,4 +1,4 @@
-// mod etcd;
+mod etcd;
 pub mod factory;
 mod inmem;
 pub mod store;

@@ -13,6 +13,7 @@ before_script:
   - rustup component add clippy || cargo install --git https://github.com/rust-lang/rust-clippy/ --force clippy
 script:
   - cargo build --verbose
-  - cargo test --verbose
+  # --no-default-features to skip etcd integration tests
+  - cargo test --no-default-features --verbose
   - cargo clippy --all-targets --all-features -- -D warnings
   - cargo fmt --all -- --check

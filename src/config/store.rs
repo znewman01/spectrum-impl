@@ -20,10 +20,11 @@ pub trait Store: std::fmt::Debug {
 pub(in crate::config) mod tests {
     use super::*;
     use proptest::collection::{vec, VecStrategy};
+    use proptest::prelude::*;
     use proptest::string::{string_regex, RegexGeneratorStrategy};
     use std::collections::HashSet;
 
-    type TestResult = Result<(), Box<dyn std::error::Error + Sync + Send>>;
+    type TestResult = Result<(), proptest::test_runner::TestCaseError>;
 
     pub const KEY: &str = "[[[:word:]]-]+";
 
@@ -37,12 +38,12 @@ pub(in crate::config) mod tests {
 
     pub async fn run_test_put_and_get<C: Store>(store: C, key: Key, value: Value) -> TestResult {
         store.put(key.clone(), value.clone()).await?;
-        assert_eq!(store.get(key).await?, Some(value));
+        prop_assert_eq!(store.get(key).await?, Some(value));
         Ok(())
     }
 
     pub async fn run_test_get_empty<C: Store>(store: C, key: Key) -> TestResult {
-        assert!(store.get(key).await?.is_none());
+        prop_assert!(store.get(key).await?.is_none());
         Ok(())
     }
 
@@ -54,7 +55,7 @@ pub(in crate::config) mod tests {
     ) -> TestResult {
         store.put(key.clone(), value1).await?;
         store.put(key.clone(), value2.clone()).await?;
-        assert_eq!(store.get(key).await?, Some(value2));
+        prop_assert_eq!(store.get(key).await?, Some(value2));
         Ok(())
     }
 
@@ -87,10 +88,10 @@ pub(in crate::config) mod tests {
             .iter()
             .map(|s| prefix.iter().cloned().chain(s.iter().cloned()).collect())
             .collect();
-        assert_eq!(actual_keys, expected_keys);
+        prop_assert_eq!(actual_keys, expected_keys);
 
         for (_k, v) in result {
-            assert_eq!(&v, &value);
+            prop_assert_eq!(&v, &value);
         }
 
         Ok(())
