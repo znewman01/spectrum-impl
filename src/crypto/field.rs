@@ -112,6 +112,10 @@ impl FieldElement {
     pub fn get_value(&self) -> Integer {
         self.value.clone()
     }
+
+    pub fn to_bytes(&self) -> Bytes {
+        Bytes::from(self.value.to_digits(Order::LsfLe))
+    }
 }
 
 impl Into<proto::Integer> for FieldElement {
@@ -263,6 +267,11 @@ pub mod tests {
         }
     }
 
+    // A field elements *in the same field*
+    pub fn field_element() -> impl Strategy<Value = FieldElement> {
+        any::<Field>().prop_flat_map(|field| any_with::<FieldElement>(Some(field)))
+    }
+
     // Pair of field elements *in the same field*
     pub fn field_element_pairs() -> impl Strategy<Value = (FieldElement, FieldElement)> {
         any::<Field>().prop_flat_map(|field| {
@@ -311,6 +320,18 @@ pub mod tests {
     }
 
     proptest! {
+
+    #[test]
+    fn test_field_element_bytes_rt(element in field_element()) {
+        prop_assert_eq!(
+            element.field.element_from_bytes(&element.to_bytes()),
+            element
+        );
+      }
+    }
+
+    proptest! {
+
         #[test]
         fn test_add_commutative((x, y) in field_element_pairs()) {
             assert_eq!(x.clone() + y.clone(), y + x);
