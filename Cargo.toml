@@ -6,6 +6,11 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["etcd-tests"]
+etcd-tests = []  # run etcd integration tests
+
+
 [dependencies]
 hex = "0.4"
 futures = "0.3"
@@ -16,7 +21,7 @@ bytes = "0.4"
 tonic = "0.1.1"
 log = "0.4"
 simplelog = "^0.7.4"
-tokio = { version = "0.2.13", features = [ "macros", "signal", "sync", "rt-threaded" ] }
+tokio = { version = "0.2.13", features = [ "macros", "signal", "sync", "rt-threaded", "process" ] }
 rug = { version = "1.7", features = [ "serde" ] }
 async-trait = "0.1.22"
 chrono = "0.4"
@@ -24,10 +29,11 @@ futures-retry = "0.4"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 port_check = "0.1.5"
-derivative="2.0.2"  # https://github.com/rust-lang/rust/issues/26925
+derivative = "2.0.2"  # https://github.com/rust-lang/rust/issues/26925
 itertools = "0.9.0"
 clap = "2.33"
 csv = "1.1"
+etcd-rs = "0.2"
 
 [build-dependencies]
 tonic-build = "0.1.1"
@@ -36,6 +42,7 @@ tonic-build = "0.1.1"
 proptest = "0.9.4"
 proptest-derive = "0.1.2"
 criterion = "0.3.0"
+tempfile = "3"
 
 [[bench]]
 name = "crypto_benchmarks"
