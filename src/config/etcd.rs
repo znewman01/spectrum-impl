@@ -5,7 +5,7 @@ use tonic::async_trait;
 
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
-pub(in crate::config) struct EtcdStore {
+pub struct EtcdStore {
     #[allow(dead_code)] // specifically for Debug
     endpoints: Vec<String>,
     #[derivative(Debug = "ignore")]

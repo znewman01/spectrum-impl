@@ -1,5 +1,6 @@
 use crate::{
     config::{
+        etcd::EtcdStore,
         inmem::InMemoryStore,
         store::{Key, Store, Value},
     },
@@ -12,6 +13,7 @@ static CONFIG_SERVER_ENV_VAR: &str = "SPECTRUM_CONFIG_SERVER";
 #[derive(Clone, Debug)]
 pub enum Wrapper {
     InMem(InMemoryStore),
+    Etcd(EtcdStore),
 }
 
 impl From<InMemoryStore> for Wrapper {
@@ -20,23 +22,32 @@ impl From<InMemoryStore> for Wrapper {
     }
 }
 
+impl From<EtcdStore> for Wrapper {
+    fn from(store: EtcdStore) -> Self {
+        Self::Etcd(store)
+    }
+}
+
 #[tonic::async_trait]
 impl Store for Wrapper {
     async fn get(&self, key: Key) -> Result<Option<Value>, Error> {
         match self {
             Wrapper::InMem(store) => store.get(key).await,
+            Wrapper::Etcd(store) => store.get(key).await,
         }
     }
 
     async fn put(&self, key: Key, value: Value) -> Result<(), Error> {
         match self {
             Wrapper::InMem(store) => store.put(key, value).await,
+            Wrapper::Etcd(store) => store.put(key, value).await,
         }
     }
 
     async fn list(&self, prefix: Key) -> Result<Vec<(Key, Value)>, Error> {
         match self {
             Wrapper::InMem(store) => store.list(prefix).await,
+            Wrapper::Etcd(store) => store.list(prefix).await,
         }
     }
 }
@@ -68,7 +79,13 @@ pub async fn from_string(s: &str) -> Result<Wrapper, String> {
                 ))
             }
         }
-        "etcd" => Err("etcd scheme currently unimplemented".to_string()),
+        "etcd" => {
+            let endpoint = format!("http://{}", remainder);
+            EtcdStore::connect(endpoint)
+                .await
+                .map(Wrapper::from)
+                .map_err(|e| e.to_string())
+        }
         _ => Err(format!(
             "Unrecognized config server specification [{}]. \
              Expected [mem://] or [etcd://].",
@@ -104,7 +121,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(irrefutable_let_patterns)]
     async fn test_from_string_empty() {
         let store = from_string("")
             .await
@@ -116,7 +132,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(irrefutable_let_patterns)]
     async fn test_from_string_mem() {
         let store = from_string("mem://")
             .await
@@ -127,9 +142,11 @@ mod tests {
         }
     }
 
-    #[allow(dead_code)] // TODO(zjn): implement as #[test]
+    #[tokio::test]
     async fn test_from_string_etcd() {
-        from_string("etcd://").await.expect("etcd:// should work");
+        from_string("etcd://127.0.0.1:2379")
+            .await
+            .expect("etcd:// should work");
     }
 
     proptest! {
