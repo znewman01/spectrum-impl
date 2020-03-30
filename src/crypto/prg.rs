@@ -4,7 +4,7 @@ use crate::crypto::field::{Field, FieldElement};
 use crate::crypto::group::{Group, GroupElement};
 use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;
-use rug::Integer;
+use rug::{integer::Order, Integer};
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::iter::repeat;
@@ -145,7 +145,7 @@ impl PRG for GroupPRG {
     fn new_seed(&self) -> Integer {
         let mut rand_bytes = vec![0; 32];
         thread_rng().fill_bytes(&mut rand_bytes);
-        Bytes::from(rand_bytes).to_integer()
+        Integer::from_digits(&rand_bytes.as_ref(), Order::LsfLe)
     }
 
     /// evaluates the PRG on the given seed

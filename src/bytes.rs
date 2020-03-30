@@ -1,7 +1,6 @@
 //! Spectrum implementation.
 use bytes::Bytes as OtherBytes;
 use rand::Rng;
-use rug::{integer::Order, Integer};
 use std::convert::AsRef;
 use std::iter::FromIterator;
 use std::ops;
@@ -29,9 +28,6 @@ impl Bytes {
         Bytes(buf)
     }
 
-    pub fn to_integer(&self) -> Integer {
-        Integer::from_digits(self.as_ref(), Order::LsfLe)
-    }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
