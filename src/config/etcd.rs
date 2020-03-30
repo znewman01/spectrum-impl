@@ -1,6 +1,15 @@
 use crate::config::store::{Error, Key, Store, Value};
 use derivative::Derivative;
 use etcd_rs::{Client, ClientConfig, KeyRange, PutRequest, RangeRequest};
+use port_check::free_local_port;
+use std::ffi::OsStr;
+use std::process::Stdio;
+use std::time::Duration;
+use tempfile::TempDir;
+use tokio::{
+    process::{Child, Command},
+    time::delay_for,
+};
 use tonic::async_trait;
 
 #[derive(Derivative, Clone)]
@@ -22,6 +31,61 @@ impl EtcdStore {
         })
         .await?;
         Ok(EtcdStore { endpoints, client })
+    }
+}
+
+/// Run `etcd` process with a temporary directory on random free ports.
+#[derive(Debug)]
+pub struct Runner {
+    client_addr: String,
+    temp_dir: TempDir,
+    process: Child,
+}
+
+fn get_addr() -> String {
+    // Note: replace with net::get_addr()?
+    let port = free_local_port().expect("No ports free.");
+    format!("http://127.0.0.1:{}", port)
+}
+
+impl Runner {
+    pub async fn create() -> Result<Self, Error> {
+        let temp_dir = tempfile::tempdir().expect("Couldn't create temp dir");
+        let data_dir = temp_dir.path().join("test.etcd");
+        let data_dir: &OsStr = data_dir.as_ref();
+
+        let client_addr = get_addr();
+        let peer_addr = get_addr();
+
+        let process = Command::new("etcd")
+            .arg("--data-dir")
+            .arg(data_dir)
+            .arg("--listen-client-urls")
+            .arg(client_addr.clone())
+            .arg("--advertise-client-urls")
+            .arg(client_addr.clone())
+            .arg("--listen-peer-urls")
+            .arg(peer_addr.clone())
+            .kill_on_drop(true)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("`etcd` failed to spawn. Is it installed?");
+
+        // wait for etcd to start up
+        delay_for(Duration::from_millis(100)).await;
+
+        Ok(Runner {
+            client_addr,
+            temp_dir,
+            process,
+        })
+    }
+
+    pub async fn get_store(&self) -> Result<EtcdStore, Error> {
+        Ok(EtcdStore::connect(self.client_addr.clone())
+            .await
+            .map_err(|e| Error::from(e.to_string()))?)
     }
 }
 
@@ -85,17 +149,8 @@ mod tests {
     use crate::config::store::tests::*;
 
     use etcd_rs::DeleteRequest;
-    use port_check::free_local_port;
     use proptest::collection::hash_set;
     use proptest::test_runner::TestRunner;
-    use std::ffi::OsStr;
-    use std::process::Stdio;
-    use std::time::Duration;
-    use tempfile::TempDir;
-    use tokio::{
-        process::{Child, Command},
-        time::delay_for,
-    };
 
     /// Clear the etcd store between test runs.
     async fn clear(client: Client) -> Result<(), Error> {
@@ -108,57 +163,6 @@ mod tests {
         Ok(())
     }
 
-    #[derive(Debug)]
-    struct TestEtcdStore {
-        client_addr: String,
-        temp_dir: TempDir,
-        process: Child,
-    }
-
-    fn get_addr() -> String {
-        let port = free_local_port().expect("No ports free.");
-        format!("http://127.0.0.1:{}", port)
-    }
-
-    impl TestEtcdStore {
-        async fn create() -> Result<Self, Box<dyn std::error::Error>> {
-            let temp_dir = tempfile::tempdir().expect("Couldn't create temp dir");
-            let data_dir = temp_dir.path().join("test.etcd");
-            let data_dir: &OsStr = data_dir.as_ref();
-
-            let client_addr = get_addr();
-            let peer_addr = get_addr();
-
-            let process = Command::new("etcd")
-                .arg("--data-dir")
-                .arg(data_dir)
-                .arg("--listen-client-urls")
-                .arg(client_addr.clone())
-                .arg("--advertise-client-urls")
-                .arg(client_addr.clone())
-                .arg("--listen-peer-urls")
-                .arg(peer_addr.clone())
-                .kill_on_drop(true)
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .expect("etcd failed to spawn");
-
-            // wait for etcd to start up
-            delay_for(Duration::from_millis(50)).await;
-
-            Ok(TestEtcdStore {
-                client_addr,
-                temp_dir,
-                process,
-            })
-        }
-
-        async fn store(&self) -> Result<EtcdStore, Box<dyn std::error::Error>> {
-            Ok(EtcdStore::connect(self.client_addr.clone()).await?)
-        }
-    }
-
     // The below is a little bit of a hack.
     // Two problems:
     // 1) The usual proptest-tokio::test incompatibility
@@ -167,8 +171,8 @@ mod tests {
 
     #[tokio::test(threaded_scheduler)]
     async fn test_put_and_get() {
-        let wrapper = TestEtcdStore::create().await.unwrap();
-        let store = wrapper.store().await.unwrap();
+        let wrapper = Runner::create().await.unwrap();
+        let store = wrapper.get_store().await.unwrap();
 
         TestRunner::default()
             .run(&(keys(), values()), |(key, value)| {
@@ -182,8 +186,8 @@ mod tests {
 
     #[tokio::test(threaded_scheduler)]
     async fn test_get_empty() {
-        let wrapper = TestEtcdStore::create().await.unwrap();
-        let store = wrapper.store().await.unwrap();
+        let wrapper = Runner::create().await.unwrap();
+        let store = wrapper.get_store().await.unwrap();
 
         TestRunner::default()
             .run(&keys(), |key| {
@@ -197,8 +201,8 @@ mod tests {
 
     #[tokio::test(threaded_scheduler)]
     async fn test_put_and_get_keep_latter() {
-        let wrapper = TestEtcdStore::create().await.unwrap();
-        let store = wrapper.store().await.unwrap();
+        let wrapper = Runner::create().await.unwrap();
+        let store = wrapper.get_store().await.unwrap();
 
         TestRunner::default()
             .run(&(keys(), values(), values()), |(key, value1, value2)| {
@@ -212,8 +216,8 @@ mod tests {
 
     #[tokio::test(threaded_scheduler)]
     async fn test_list() {
-        let wrapper = TestEtcdStore::create().await.unwrap();
-        let store = wrapper.store().await.unwrap();
+        let wrapper = Runner::create().await.unwrap();
+        let store = wrapper.get_store().await.unwrap();
 
         TestRunner::default()
             .run(
