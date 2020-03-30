@@ -40,7 +40,7 @@ impl Group {
     }
 
     /// new element from little endian bytes
-    pub fn new_element_from_bytes(bytes: [u8; 64]) -> GroupElement {
+    pub fn element_from_bytes(bytes: [u8; 64]) -> GroupElement {
         GroupElement(ECFieldElement::from_bytes_wide(&bytes))
     }
 
@@ -50,13 +50,13 @@ impl Group {
         // size of group is obtained via modulus.significant_digits
         let mut rand_bytes: [u8; 64] = [0; 64];
         thread_rng().fill_bytes(&mut rand_bytes);
-        Self::new_element_from_bytes(rand_bytes)
+        Self::element_from_bytes(rand_bytes)
     }
 
     /// generates a set of field elements in the elliptic curve field
     /// which are generators for the group (given that the group is of prime order)
     /// takes as input a random seed which deterministically generates [num] field elements
-    pub fn deterministic_generators(num: usize, seed: &[u8; 16]) -> Vec<GroupElement> {
+    pub fn generators(num: usize, seed: &[u8; 16]) -> Vec<GroupElement> {
         // nonce set to zero: PRG eval should be deterministic
         let iv: [u8; 16] = [0; 16];
         let data = vec![0; 64 * num];
@@ -73,7 +73,7 @@ impl Group {
             .map(|i| {
                 let mut bytes_arr: [u8; 64] = [0; 64];
                 bytes_arr.copy_from_slice(&ciphertext[i * 64..(i + 1) * 64]);
-                Group::new_element_from_bytes(bytes_arr)
+                Group::element_from_bytes(bytes_arr)
             })
             .collect()
     }
@@ -233,19 +233,19 @@ mod tests {
         }
 
         #[test]
-        fn test_deterministic_generators(num in NUM_GROUP_GENERATORS) {
+        fn test_generators(num in NUM_GROUP_GENERATORS) {
             let mut rand_seed: [u8; 16] = [0; 16];
             thread_rng().fill_bytes(&mut rand_seed);
-            assert_eq!(Group::deterministic_generators(num, &rand_seed), Group::deterministic_generators(num, &rand_seed));
+            assert_eq!(Group::generators(num, &rand_seed), Group::generators(num, &rand_seed));
         }
 
         #[test]
-        fn test_deterministic_generators_different_seeds(num in NUM_GROUP_GENERATORS) {
+        fn test_generators_different_seeds(num in NUM_GROUP_GENERATORS) {
             let mut rand_seed_1: [u8; 16] = [0; 16];
             let mut rand_seed_2: [u8; 16] = [0; 16];
             thread_rng().fill_bytes(&mut rand_seed_1);
             thread_rng().fill_bytes(&mut rand_seed_2);
-            assert_ne!(Group::deterministic_generators(num, &rand_seed_1), Group::deterministic_generators(num, &rand_seed_2));
+            assert_ne!(Group::generators(num, &rand_seed_1), Group::generators(num, &rand_seed_2));
         }
     }
 }

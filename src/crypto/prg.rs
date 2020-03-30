@@ -132,7 +132,7 @@ pub struct GroupPRG {
 
 impl GroupPRG {
     pub fn new(eval_factor: usize, generator_seed: [u8; 16]) -> Self {
-        let generators = Group::deterministic_generators(eval_factor, &generator_seed);
+        let generators = Group::generators(eval_factor, &generator_seed);
         GroupPRG { generators }
     }
 }
