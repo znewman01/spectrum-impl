@@ -1,5 +1,5 @@
 //! Spectrum implementation.
-use jubjub::Fr;
+use jubjub::Fr as ECFieldElement; // elliptic curve field
 use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;
 use rug::{integer::Order, Integer};
@@ -9,33 +9,42 @@ use std::hash::Hasher;
 use std::ops;
 
 const BYTE_ORDER: Order = Order::LsfLe;
+const JUBJUB_MODULUS: [u64; 4] = [
+    0xd097_0e5e_d6f7_2cb7_u64,
+    0xa668_2093_ccc8_1082_u64,
+    0x0667_3b01_0134_3b00_u64,
+    0x0e7d_b4ea_6533_afa9_u64,
+];
 
 /// mathematical group object
 #[derive(Default, Clone, Eq, PartialEq, Debug)]
-pub struct Group(Fr); // generator for the multipliocative group
+pub struct Group(ECFieldElement); // generator for the multipliocative group
 
 // TODO(sss): implement hash for GroupElement
 /// element within a group
 #[derive(Clone, Eq, Debug)]
-pub struct GroupElement(Fr);
+pub struct GroupElement(ECFieldElement);
 
 impl Group {
+    /// additive identity in the elliptic curve field
     pub fn identity() -> GroupElement {
-        GroupElement(Fr::zero())
+        GroupElement(ECFieldElement::zero())
     }
 
+    /// creates a new group element from an integer
     pub fn new_element(value: Integer) -> GroupElement {
         let val_mod = value % &Group::order();
         let mut digits: [u8; 32] = [0x0u8; 32];
         val_mod.write_digits(&mut digits, BYTE_ORDER);
-        GroupElement(Fr::from_bytes(&digits).unwrap())
+        GroupElement(ECFieldElement::from_bytes(&digits).unwrap())
     }
 
+    /// new element from little endian bytes
     pub fn new_element_from_bytes(bytes: [u8; 64]) -> GroupElement {
-        GroupElement(Fr::from_bytes_wide(&bytes))
+        GroupElement(ECFieldElement::from_bytes_wide(&bytes))
     }
 
-    // generates a new random field element
+    /// generates a new random group element
     pub fn rand_element() -> GroupElement {
         // generate enough random bytes to create a random element in the group
         // size of group is obtained via modulus.significant_digits
@@ -44,10 +53,10 @@ impl Group {
         Self::new_element_from_bytes(rand_bytes)
     }
 
-    // generates a new random field element
+    /// generates a set of field elements in the elliptic curve field
+    /// which are generators for the group (given that the group is of prime order)
+    /// takes as input a random seed which deterministically generates [num] field elements
     pub fn deterministic_generators(num: usize, seed: &[u8; 16]) -> Vec<GroupElement> {
-        // generate determinisitc random bytes and convert to [num] generators
-
         // nonce set to zero: PRG eval should be deterministic
         let iv: [u8; 16] = [0; 16];
         let data = vec![0; 64 * num];
@@ -70,15 +79,8 @@ impl Group {
     }
 
     pub fn order() -> Integer {
-        // see JubJub eliptic curve modulus
-        let bytes = [
-            0xd097_0e5e_d6f7_2cb7_u64,
-            0xa668_2093_ccc8_1082_u64,
-            0x0667_3b01_0134_3b00_u64,
-            0x0e7d_b4ea_6533_afa9_u64,
-        ];
-
-        Integer::from_digits(&bytes, BYTE_ORDER)
+        // see JubJub elliptic curve modulus
+        Integer::from_digits(&JUBJUB_MODULUS, BYTE_ORDER)
     }
 }
 
