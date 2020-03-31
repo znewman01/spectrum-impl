@@ -8,15 +8,15 @@ use spectrum_impl::{cli, config, experiment::Experiment, run_in_process};
 #[clap(version = crate_version!(), author = crate_authors!())]
 struct Args {
     #[clap(flatten)]
-    common: cli::Args,
+    inner: cli::Args,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
-    let args = Args::parse();
-    args.common.init_logs();
+    let args = Args::parse().inner;
+    args.init_logs();
 
-    let experiment = Experiment::from(args.common);
+    let experiment = Experiment::from(args);
     eprintln!("Running: {:?}...", experiment);
     let config = config::from_env().await?;
     let elapsed = run_in_process(experiment, config).await?;
