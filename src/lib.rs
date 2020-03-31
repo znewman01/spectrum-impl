@@ -18,10 +18,12 @@ pub mod publisher;
 pub mod worker;
 
 pub mod bytes;
+pub mod cli;
 pub mod config;
 pub mod experiment;
-mod net;
 pub mod services;
+
+mod net;
 
 mod proto {
     use tonic::Status;
