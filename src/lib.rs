@@ -172,14 +172,23 @@ where
     experiment::write_to_store(&config, &experiment).await?;
 
     let mut publisher_handle = None;
+    let mut handles = vec![];
     for service in experiment.iter_services().chain(experiment.iter_clients()) {
-        // TODO: etcd environment variable
         match service {
             Publisher(_) => {
                 // TODO: publisher stdout should be the time we care about
                 publisher_handle.replace(
                     Command::new("cargo")
                         .args(&["run", "--bin", "publisher"])
+                        .env(&etcd_env.0, &etcd_env.1)
+                        .spawn()?,
+                );
+            }
+            Leader(info) => {
+                handles.push(
+                    Command::new("cargo")
+                        .args(&["run", "--bin", "leader", "--"])
+                        .args(&["--group", &info.group.idx.to_string()])
                         .env(&etcd_env.0, &etcd_env.1)
                         .spawn()?,
                 );
