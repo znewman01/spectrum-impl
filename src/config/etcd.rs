@@ -1,4 +1,7 @@
-use crate::config::store::{Error, Key, Store, Value};
+use crate::config::{
+    factory::CONFIG_SERVER_ENV_VAR,
+    store::{Error, Key, Store, Value},
+};
 use derivative::Derivative;
 use etcd_rs::{Client, ClientConfig, KeyRange, PutRequest, RangeRequest};
 use port_check::free_local_port;
@@ -37,15 +40,20 @@ impl EtcdStore {
 /// Run `etcd` process with a temporary directory on random free ports.
 #[derive(Debug)]
 pub struct Runner {
-    client_addr: String,
-    temp_dir: TempDir,
+    /// The address on which etcd listens for clients (as "host:port" string).
+    addr: String,
+    /// Temporary directory for etcd data.
+    data_dir: TempDir,
+    /// The etcd process.
+    ///
+    /// When dropped, will kill this process.
     process: Child,
 }
 
 fn get_addr() -> String {
     // Note: replace with net::get_addr()?
     let port = free_local_port().expect("No ports free.");
-    format!("http://127.0.0.1:{}", port)
+    format!("127.0.0.1:{}", port)
 }
 
 impl Runner {
@@ -55,17 +63,18 @@ impl Runner {
         let data_dir: &OsStr = data_dir.as_ref();
 
         let client_addr = get_addr();
-        let peer_addr = get_addr();
+        let client_url = format!("http://{}", client_addr);
+        let peer_url = format!("http://{}", get_addr());
 
         let process = Command::new("etcd")
             .arg("--data-dir")
             .arg(data_dir)
             .arg("--listen-client-urls")
-            .arg(client_addr.clone())
+            .arg(client_url.clone())
             .arg("--advertise-client-urls")
-            .arg(client_addr.clone())
+            .arg(client_url)
             .arg("--listen-peer-urls")
-            .arg(peer_addr.clone())
+            .arg(peer_url)
             .kill_on_drop(true)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -76,16 +85,24 @@ impl Runner {
         delay_for(Duration::from_millis(100)).await;
 
         Ok(Runner {
-            client_addr,
-            temp_dir,
+            addr: client_addr,
+            data_dir: temp_dir,
             process,
         })
     }
 
     pub async fn get_store(&self) -> Result<EtcdStore, Error> {
-        Ok(EtcdStore::connect(self.client_addr.clone())
+        Ok(EtcdStore::connect(format!("http://{}", self.addr))
             .await
             .map_err(|e| Error::from(e.to_string()))?)
+    }
+
+    // Returns
+    pub fn get_env(&self) -> (String, String) {
+        (
+            CONFIG_SERVER_ENV_VAR.to_string(),
+            format!("etcd://{}", self.addr),
+        )
     }
 }
 

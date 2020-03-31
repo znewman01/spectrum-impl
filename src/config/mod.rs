@@ -3,6 +3,7 @@ pub mod factory;
 mod inmem;
 pub mod store;
 
+pub use etcd::Runner as EtcdRunner;
 pub use factory::{from_env, from_string};
 pub use store::{Key, Store, Value};
 

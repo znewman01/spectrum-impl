@@ -8,7 +8,7 @@ use crate::{
 };
 use log::{debug, trace};
 
-static CONFIG_SERVER_ENV_VAR: &str = "SPECTRUM_CONFIG_SERVER";
+pub static CONFIG_SERVER_ENV_VAR: &str = "SPECTRUM_CONFIG_SERVER";
 
 #[derive(Clone, Debug)]
 pub enum Wrapper {
