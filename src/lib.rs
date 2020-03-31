@@ -203,9 +203,18 @@ where
                         .spawn()?,
                 );
             }
-            _ => {
-                eprintln!("not implemented yet");
-            }
+            Client(info) => match info.broadcast {
+                Some((msg, key)) => unimplemented!(),
+                None => {
+                    handles.push(
+                        Command::new("cargo")
+                            .args(&["run", "--bin", "viewer", "--"])
+                            .args(&["--index", &info.idx.to_string()])
+                            .env(&etcd_env.0, &etcd_env.1)
+                            .spawn()?,
+                    );
+                }
+            },
         }
     }
 
