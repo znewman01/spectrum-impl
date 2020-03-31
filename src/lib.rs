@@ -91,7 +91,7 @@ impl publisher::Remote for PublisherRemote {
     }
 }
 
-pub async fn run<C>(
+pub async fn run_in_process<C>(
     experiment: Experiment,
     config: C,
 ) -> Result<Duration, Box<dyn std::error::Error + Sync + Send>>
