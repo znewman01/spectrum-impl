@@ -128,12 +128,21 @@ impl PRG for AESPRG {
 #[derive(Clone, PartialEq, Debug)]
 pub struct GroupPRG {
     generators: Vec<GroupElement>,
+    eval_size: usize,
 }
 
 impl GroupPRG {
-    pub fn new(eval_factor: usize, generator_seed: [u8; 16]) -> Self {
-        let generators = Group::generators(eval_factor, &generator_seed);
-        GroupPRG { generators }
+    pub fn new(eval_size: usize, generator_seed: [u8; 16]) -> Self {
+        let generators = GroupPRG::get_generators(eval_size, &generator_seed);
+        GroupPRG {
+            generators,
+            eval_size,
+        }
+    }
+
+    fn get_generators(eval_size: usize, seed: &[u8; 16]) -> Vec<GroupElement> {
+        let eval_factor: usize = eval_size / Group::order_byte_size(); // expansion factor (# group elements)
+        Group::generators(eval_factor, seed)
     }
 }
 
@@ -150,11 +159,11 @@ impl PRG for GroupPRG {
 
     /// evaluates the PRG on the given seed
     fn eval(&self, seed: &Integer) -> Self::Output {
-        self.generators.iter().map(|g| g.exp(seed)).collect()
+        self.generators.iter().map(|g| g.pow(seed)).collect()
     }
 
     fn null_output(&self) -> Self::Output {
-        repeat(Group::identity())
+        repeat(Group::additive_identity())
             .take(self.generators.len())
             .collect()
     }
@@ -186,15 +195,9 @@ mod tests {
     use std::fmt::Debug;
     use std::ops::Range;
 
-    // deterministic seed for computing generators in the group
-    const GENERATOR_SEED_BYTES: [u8; 16] = [
-        0x97, 0x32, 0x9c, 0x90, 0x21, 0xe6, 0x95, 0xfc, 0x1e, 0xdc, 0xa1, 0x32, 0x9c, 0x93, 0x2e,
-        0xb7,
-    ];
-
     const SIZES: Range<usize> = 16..1000; // in bytes
     const SEED_SIZE: usize = 16; // in bytes
-    const GROUP_PRG_EVAL_FACTOR: usize = 2; // multiple of group order
+    const GROUP_PRG_EVAL_SIZES: Range<usize> = 64..1000; // in bytes
 
     impl Arbitrary for AESPRG {
         type Parameters = ();
@@ -219,11 +222,11 @@ mod tests {
     }
 
     impl Arbitrary for GroupPRG {
-        type Parameters = ();
+        type Parameters = (usize, [u8; 16]);
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            Just(GroupPRG::new(GROUP_PRG_EVAL_FACTOR, GENERATOR_SEED_BYTES)).boxed()
+        fn arbitrary_with(params: Self::Parameters) -> Self::Strategy {
+            Just(GroupPRG::new(params.0, params.1)).boxed()
         }
     }
 
@@ -232,7 +235,12 @@ mod tests {
     }
     // group prg and vector of seeds
     pub fn group_prg_and_seed_vec(num: usize) -> impl Strategy<Value = (GroupPRG, Vec<Integer>)> {
-        let prg = any::<GroupPRG>();
+        let prg = (GROUP_PRG_EVAL_SIZES, any::<[u8; 16]>()).prop_flat_map(
+            move |(output_size, generator_seed)| {
+                any_with::<GroupPRG>((output_size, generator_seed))
+            },
+        );
+
         // TODO: (fixme) this is too hacky
         let seeds = prg.clone().prop_flat_map(move |prg| {
             prop::collection::vec(integers().prop_map(move |_| prg.new_seed()), num)

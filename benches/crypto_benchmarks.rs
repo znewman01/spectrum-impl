@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate criterion;
-
 use criterion::Criterion;
+use rand::prelude::*;
 use rug::Integer;
 use spectrum_impl::{
     bytes::Bytes,
@@ -15,9 +15,7 @@ use spectrum_impl::{
 };
 
 const EVAL_SIZE: usize = 1 << 20; // (in bytes) approx 1MB
-const GENERATOR_SEED_BYTES: [u8; 16] = [
-    0x97, 0x32, 0x9c, 0x90, 0x21, 0xe6, 0x95, 0xfc, 0x1e, 0xdc, 0xa1, 0x32, 0x9c, 0x93, 0x2e, 0xb7,
-];
+
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("PRG eval", |b| {
         let prg = AESPRG::new(16, EVAL_SIZE);
@@ -26,15 +24,16 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     c.bench_function("group PRG eval", |b| {
-        let factor: usize = EVAL_SIZE * 8 / 256; // expansion factor (# group elements each of 256 bits)
-        let prg = GroupPRG::new(factor, GENERATOR_SEED_BYTES);
+        let mut rand_seed_bytes: [u8; 16] = [0; 16];
+        thread_rng().fill_bytes(&mut rand_seed_bytes);
+        let prg = GroupPRG::new(EVAL_SIZE, rand_seed_bytes);
         let seed = prg.new_seed();
         b.iter(|| prg.eval(&seed))
     });
 
     c.bench_function("group operation", |b| {
-        let el1 = Group::new_element(5.into());
-        let el2 = Group::new_element(5.into());
+        let el1 = Group::rand_element();
+        let el2 = Group::rand_element();
         b.iter(|| el1.clone() ^ &el2)
     });
 
