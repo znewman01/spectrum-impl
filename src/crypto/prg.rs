@@ -295,19 +295,16 @@ mod tests {
         P::Seed: Eq + Clone + Debug,
         P::Output: Eq + Clone + Debug + Hash,
     {
-        // evaluate the prg on all the seeds
+        // tests for seed-homomorphism: G(s1) ^ G(s2) = G(s1 * s2)
         let outputs: Vec<P::Output> = seeds.iter().map(|seed| prg.eval(seed)).collect();
 
-        // combine the outputs together
-        let comb_prg_output = prg.combine_outputs(outputs);
-
-        // get output of combined seeds
-        let comb_seeds_output = prg.eval(&prg.combine_seeds(seeds));
-
-        // test seed homomorphism property of group prg
-        assert_eq!(comb_prg_output, comb_seeds_output);
+        assert_eq!(
+            prg.combine_outputs(outputs),
+            prg.eval(&prg.combine_seeds(seeds))
+        );
     }
 
+    // aes prg testing
     proptest! {
         #[test]
         fn test_aes_prg_seed_random(prg in any::<AESPRG>()) {
@@ -334,7 +331,10 @@ mod tests {
         fn test_aes_prg_null_combine(prg in any::<AESPRG>()) {
             run_test_prg_null_combine(prg);
         }
+    }
 
+    // group prg testing
+    proptest! {
 
         #[test]
         fn test_group_prg_null_combine(prg in any::<GroupPRG>()) {
