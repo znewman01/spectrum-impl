@@ -193,6 +193,16 @@ where
                         .spawn()?,
                 );
             }
+            Worker(info) => {
+                handles.push(
+                    Command::new("cargo")
+                        .args(&["run", "--bin", "worker", "--"])
+                        .args(&["--group", &info.group.idx.to_string()])
+                        .args(&["--index", &info.idx.to_string()])
+                        .env(&etcd_env.0, &etcd_env.1)
+                        .spawn()?,
+                );
+            }
             _ => {
                 eprintln!("not implemented yet");
             }
