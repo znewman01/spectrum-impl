@@ -16,12 +16,12 @@ pub trait PRG {
     fn new_seed(&self) -> Self::Seed;
     fn eval(&self, seed: &Self::Seed) -> Self::Output;
     fn null_output(&self) -> Self::Output;
-    fn combine_outputs(&self, outputs: Vec<Self::Output>) -> Self::Output;
 }
 
 /// Seed homomorphic PRG
 pub trait SeedHomomorphicPRG: PRG {
     fn combine_seeds(&self, seeds: Vec<Self::Seed>) -> Self::Seed;
+    fn combine_outputs(&self, outputs: Vec<Self::Output>) -> Self::Output;
 }
 
 /// PRG uses AES to expand a seed to desired length
@@ -114,14 +114,6 @@ impl PRG for AESPRG {
     fn null_output(&self) -> Bytes {
         Bytes::empty(self.eval_size)
     }
-
-    fn combine_outputs(&self, outputs: Vec<Bytes>) -> Bytes {
-        let mut comb = self.null_output();
-        for val in outputs.iter() {
-            comb ^= val;
-        }
-        comb
-    }
 }
 
 // Implementation of a group-based PRG
@@ -167,21 +159,21 @@ impl PRG for GroupPRG {
             .take(self.generators.len())
             .collect()
     }
-
-    fn combine_outputs(&self, outputs: Vec<Vec<GroupElement>>) -> Vec<GroupElement> {
-        let mut comb = self.null_output();
-        for output in outputs.iter() {
-            for (i, val) in output.iter().enumerate() {
-                comb[i] ^= val;
-            }
-        }
-        comb
-    }
 }
 
 impl SeedHomomorphicPRG for GroupPRG {
     fn combine_seeds(&self, seeds: Vec<Integer>) -> Integer {
         Integer::from(Integer::sum(seeds.iter()))
+    }
+
+    fn combine_outputs(&self, outputs: Vec<Vec<GroupElement>>) -> Vec<GroupElement> {
+        let mut combined = self.null_output();
+        for output in outputs {
+            for (i, val) in output.iter().enumerate() {
+                combined[i] ^= val;
+            }
+        }
+        combined
     }
 }
 
@@ -251,7 +243,7 @@ mod tests {
 
     fn run_test_prg_null_combine<P>(prg: P)
     where
-        P: PRG,
+        P: SeedHomomorphicPRG,
         P::Seed: Eq + Debug,
         P::Output: Eq + Debug,
     {
@@ -326,21 +318,10 @@ mod tests {
         ) {
             run_test_prg_eval_random(prg, &seeds);
         }
-
-        #[test]
-        fn test_aes_prg_null_combine(prg in any::<AESPRG>()) {
-            run_test_prg_null_combine(prg);
-        }
     }
 
     // group prg testing
     proptest! {
-
-        #[test]
-        fn test_group_prg_null_combine(prg in any::<GroupPRG>()) {
-            run_test_prg_null_combine(prg);
-        }
-
         #[test]
         fn test_group_prg_seed_random(prg in any::<GroupPRG>()) {
             run_test_prg_seed_random(prg);
@@ -354,17 +335,28 @@ mod tests {
         }
 
         #[test]
+        fn test_group_prg_eval_random(
+            (prg, seeds) in group_prg_and_seed_vec(10)
+        ) {
+            run_test_prg_eval_random(prg, &seeds[..seeds.len()]);
+        }
+    }
+
+    // seed homomorphic prg tests
+    proptest! {
+        #[test]
         fn test_group_prg_eval_homomorphism(
             (prg, seeds) in group_prg_and_seed_vec(10)
         ) {
             run_test_prg_eval_homomorphism(prg, seeds);
         }
 
+
         #[test]
-        fn test_group_prg_eval_random(
-            (prg, seeds) in group_prg_and_seed_vec(10)
-        ) {
-            run_test_prg_eval_random(prg, &seeds[..seeds.len()]);
+        fn test_group_prg_null_combine(prg in any::<GroupPRG>()) {
+            run_test_prg_null_combine(prg);
         }
+
+
     }
 }
