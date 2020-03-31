@@ -1,11 +1,15 @@
 //! Spectrum implementation.
-use futures::future::{AbortHandle, Abortable};
-use futures::prelude::*;
+use futures::{
+    future::{AbortHandle, Abortable},
+    prelude::*,
+    stream::FuturesUnordered,
+};
 use log::error;
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::{
+    process::Command,
     sync::{Barrier, Notify},
     time::delay_for,
 };
@@ -105,7 +109,7 @@ where
         experiment.iter_clients().count() + experiment.iter_services().count() + 2,
     ));
     let remote = PublisherRemote::new(barrier.clone(), started.clone());
-    let handles = futures::stream::FuturesUnordered::new();
+    let handles = FuturesUnordered::new();
     for service in experiment.iter_services().chain(experiment.iter_clients()) {
         let shutdown = {
             let barrier = barrier.clone();
@@ -155,4 +159,47 @@ where
             Err(Box::new(Error::new(format!("Task timed out after {:?}.", TIMEOUT).as_str())))
         }
     }
+}
+
+pub async fn run_new_processes<C>(
+    experiment: Experiment,
+    config: C,
+    etcd_env: (String, String),
+) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
+where
+    C: 'static + Store + Clone + Sync + Send,
+{
+    experiment::write_to_store(&config, &experiment).await?;
+
+    let mut publisher_handle = None;
+    for service in experiment.iter_services().chain(experiment.iter_clients()) {
+        // TODO: etcd environment variable
+        match service {
+            Publisher(_) => {
+                // TODO: publisher stdout should be the time we care about
+                publisher_handle.replace(
+                    Command::new("cargo")
+                        .args(&["run", "--bin", "publisher"])
+                        .env(&etcd_env.0, &etcd_env.1)
+                        .spawn()?,
+                );
+            }
+            _ => {
+                eprintln!("not implemented yet");
+            }
+        }
+    }
+
+    // TODO: kill everybody on ^C
+    publisher_handle
+        .expect("Must have at least one publisher in the experiment.")
+        .await?;
+    // TODO: should:
+    // - kill (probably just killing at first is okay too)
+    // TOOD:
+    // - send ^C to non-publisher processes first?
+    //   https://stackoverflow.com/questions/49210815/how-do-i-send-a-signal-to-a-child-subprocess
+    // - then wait a little while
+
+    Ok(())
 }
