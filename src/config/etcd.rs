@@ -28,11 +28,13 @@ impl EtcdStore {
     #[allow(dead_code)]
     pub async fn connect(endpoint: String) -> Result<EtcdStore, Box<dyn std::error::Error>> {
         let endpoints = vec![endpoint];
-        let client = Client::connect(ClientConfig {
+        let client_config = ClientConfig {
             endpoints: endpoints.clone(),
             auth: None,
-        })
-        .await?;
+        };
+        let client = Client::connect(client_config)
+            .await
+            .map_err(|e| format!("Error connecting to etcd: {}", e))?;
         Ok(EtcdStore { endpoints, client })
     }
 }

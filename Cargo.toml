@@ -24,7 +24,7 @@ simplelog = "^0.7.4"
 lazy_static = "1.4.0"
 tokio = { version = "0.2.13", features = [ "macros", "signal", "sync", "rt-threaded", "process" ] }
 rug = { version = "1.7", features = [ "serde" ] }
-async-trait = "0.1.22"
+async-trait = "0.1.26"
 chrono = "0.4"
 futures-retry = "0.4"
 serde = { version = "1.0", features = ["derive", "rc"] }
@@ -34,7 +34,7 @@ derivative = "2.0.2"  # https://github.com/rust-lang/rust/issues/26925
 itertools = "0.9.0"
 clap = { git = "http://github.com/clap-rs/clap/", rev = "37889c661134e8286102f7d2ab3267965d010403" }
 csv = "1.1"
-etcd-rs = "0.2"
+etcd-rs = { git = "http://github.com/znewman01/etcd-rs/", branch = "lazy_tunnels" }
 tempfile = "3"
 
 [build-dependencies]
