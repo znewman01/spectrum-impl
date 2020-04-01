@@ -1,3 +1,6 @@
+#![allow(clippy::unknown_clippy_lints)] // below issue triggers only on clippy beta/nightly
+#![allow(clippy::match_single_binding)] // https://github.com/mcarton/rust-derivative/issues/58
+
 use crate::config::{
     factory::CONFIG_SERVER_ENV_VAR,
     store::{Error, Key, Store, Value},

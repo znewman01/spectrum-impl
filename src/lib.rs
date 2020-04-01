@@ -213,7 +213,7 @@ where
                     serde_json::to_writer(File::create(&key_file)?, &key)?;
 
                     let msg_file = data_dir.path().join(format!("msg-{}.json", info.idx));
-                    File::create(&msg_file)?.write(msg.as_ref())?;
+                    File::create(&msg_file)?.write_all(msg.as_ref())?;
                     handles.push(
                         Command::new(bin_dir.join("broadcaster"))
                             .args(&["--index", &info.idx.to_string()])
