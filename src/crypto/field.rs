@@ -47,7 +47,7 @@ impl Into<proto::Integer> for Field {
 }
 
 /// element in a prime order field
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub struct FieldElement {
     value: Integer,
     field: Field,
