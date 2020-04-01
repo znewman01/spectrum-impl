@@ -108,9 +108,7 @@ where
         }
 
         let protocol = self.protocol.clone();
-        // TODO(zjn): remove clone
-        let token2 = token.clone();
-        let data = spawn_blocking(move || protocol.to_accumulator(token2))
+        let data = spawn_blocking(move || protocol.to_accumulator(token))
             .await
             .expect("Accepting write token should never fail.");
 
@@ -120,14 +118,12 @@ where
                 data.len(),
                 self.protocol.message_len()
             );
-            debug!("Bad write token: {:?}", token);
         } else if data[0].len() != self.protocol.message_len() {
             error!(
                 "Invalid data chunk len! {} != {}",
                 data.len(),
                 self.protocol.message_len()
             );
-            debug!("Bad write token: {:?}", token);
             debug!("Bad data: {:?}", data[0]);
         }
 
