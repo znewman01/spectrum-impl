@@ -10,6 +10,9 @@ edition = "2018"
 default = ["etcd-tests"]
 etcd-tests = []  # run etcd integration tests
 
+[profile.release]
+lto = "thin"
+codegen-units = 1  # makes it take a very long time
 
 [dependencies]
 hex = "0.4"
