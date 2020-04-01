@@ -7,6 +7,8 @@ use futures::{
 use log::error;
 use std::env;
 use std::fmt;
+use std::fs::File;
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -206,7 +208,21 @@ where
                 );
             }
             Client(info) => match info.broadcast {
-                Some((msg, key)) => unimplemented!(),
+                Some((msg, key)) => {
+                    let key_file = data_dir.path().join(format!("key-{}.json", info.idx));
+                    serde_json::to_writer(File::create(&key_file)?, &key)?;
+
+                    let msg_file = data_dir.path().join(format!("msg-{}.json", info.idx));
+                    File::create(&msg_file)?.write(msg.as_ref())?;
+                    handles.push(
+                        Command::new(bin_dir.join("broadcaster"))
+                            .args(&["--index", &info.idx.to_string()])
+                            .args(&["--key-file", &key_file.to_string_lossy()])
+                            .args(&["--message-file", &msg_file.to_string_lossy()])
+                            .env(&etcd_env.0, &etcd_env.1)
+                            .spawn()?,
+                    );
+                }
                 None => {
                     handles.push(
                         Command::new(bin_dir.join("viewer"))
