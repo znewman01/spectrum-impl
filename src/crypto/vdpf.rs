@@ -9,9 +9,7 @@ use crate::crypto::{
 use rug::rand::RandState;
 use serde::{Deserialize, Serialize};
 
-use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
-use std::hash::{Hash, Hasher};
 use std::iter::repeat_with;
 
 // check_audit(gen_audit(gen_proof(...))) = TRUE
@@ -46,11 +44,11 @@ pub trait VDPF: DPF {
 pub struct FieldToken {
     pub(in crate) bit: SecretShare,
     pub(in crate) seed: SecretShare,
-    pub(in crate) data: u64,
+    pub(in crate) data: Vec<u8>,
 }
 
 impl FieldToken {
-    pub fn new(bit: SecretShare, seed: SecretShare, data: u64) -> Self {
+    pub fn new(bit: SecretShare, seed: SecretShare, data: Vec<u8>) -> Self {
         Self { bit, seed, data }
     }
 }
@@ -206,15 +204,15 @@ impl VDPF for ConcreteVdpf {
             }
         }
 
-        // TODO(sss): actually crypto hash the message?
-        let mut hasher = DefaultHasher::new();
-        dpf_key.encoded_msg.hash(&mut hasher);
-        let data = hasher.finish();
+        // TODO: switch to blake3 in parallel when input is ~1 Mbit or greater
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(dpf_key.encoded_msg.as_ref());
+        let data: [u8; 32] = hasher.finalize().into();
 
         FieldToken {
             bit: bit_check,
             seed: seed_check,
-            data,
+            data: data.to_vec(),
         }
     }
 
@@ -256,12 +254,16 @@ pub mod tests {
         }
     }
 
+    fn hashes() -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(any::<u8>(), 32)
+    }
+
     impl Arbitrary for FieldToken {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (any::<Field>(), 0..1000u64)
+            (any::<Field>(), hashes())
                 .prop_flat_map(|(field, data)| {
                     (
                         any_with::<FieldElement>(Some(field.clone())),
@@ -270,7 +272,7 @@ pub mod tests {
                         .prop_map(move |(bit, seed)| FieldToken {
                             bit: SecretShare::new(bit),
                             seed: SecretShare::new(seed),
-                            data,
+                            data: data.clone(),
                         })
                 })
                 .boxed()
