@@ -186,6 +186,7 @@ where
                 // TODO: publisher stdout should be the time we care about
                 publisher_handle.replace(
                     Command::new(bin_dir.join("publisher"))
+                        .args(&["--log-level", "info"])
                         .env(&etcd_env.0, &etcd_env.1)
                         .spawn()?,
                 );
@@ -193,6 +194,7 @@ where
             Leader(info) => {
                 handles.push(
                     Command::new(bin_dir.join("leader"))
+                        .args(&["--log-level", "info"])
                         .args(&["--group", &info.group.idx.to_string()])
                         .env(&etcd_env.0, &etcd_env.1)
                         .spawn()?,
@@ -201,6 +203,7 @@ where
             Worker(info) => {
                 handles.push(
                     Command::new(bin_dir.join("worker"))
+                        .args(&["--log-level", "info"])
                         .args(&["--group", &info.group.idx.to_string()])
                         .args(&["--index", &info.idx.to_string()])
                         .env(&etcd_env.0, &etcd_env.1)
@@ -216,6 +219,7 @@ where
                     File::create(&msg_file)?.write_all(msg.as_ref())?;
                     handles.push(
                         Command::new(bin_dir.join("broadcaster"))
+                            .args(&["--log-level", "info"])
                             .args(&["--index", &info.idx.to_string()])
                             .args(&["--key-file", &key_file.to_string_lossy()])
                             .args(&["--message-file", &msg_file.to_string_lossy()])
@@ -226,6 +230,7 @@ where
                 None => {
                     handles.push(
                         Command::new(bin_dir.join("viewer"))
+                            .args(&["--log-level", "warn"])
                             .args(&["--index", &info.idx.to_string()])
                             .env(&etcd_env.0, &etcd_env.1)
                             .spawn()?,
