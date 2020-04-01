@@ -1,7 +1,6 @@
 use crate::{experiment::Experiment, protocols::wrapper::ProtocolWrapper};
 use clap::Clap;
-use simplelog::{CombinedLogger, LevelFilter, TermLogger, TerminalMode, WriteLogger};
-use std::fs::File;
+use simplelog::{LevelFilter, TermLogger, TerminalMode};
 
 #[derive(Clap)]
 pub struct Args {
@@ -33,23 +32,13 @@ pub struct LogArgs {
 
 impl LogArgs {
     pub fn init(&self) {
-        CombinedLogger::init(vec![
-            TermLogger::new(
-                self.log_level,
-                simplelog::ConfigBuilder::new()
-                    .add_filter_allow_str("spectrum_impl")
-                    .build(),
-                TerminalMode::Stderr,
-            )
-            .unwrap(),
-            WriteLogger::new(
-                LevelFilter::Trace,
-                simplelog::ConfigBuilder::new()
-                    .add_filter_allow_str("spectrum_impl")
-                    .build(),
-                File::create("spectrum.log").unwrap(),
-            ),
-        ])
+        TermLogger::init(
+            self.log_level,
+            simplelog::ConfigBuilder::new()
+                .add_filter_allow_str("spectrum_impl")
+                .build(),
+            TerminalMode::Stderr,
+        )
         .unwrap();
     }
 }
