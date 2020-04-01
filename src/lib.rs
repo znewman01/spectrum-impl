@@ -5,7 +5,9 @@ use futures::{
     stream::FuturesUnordered,
 };
 use log::error;
+use std::env;
 use std::fmt;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::{
@@ -171,6 +173,9 @@ where
 {
     experiment::write_to_store(&config, &experiment).await?;
 
+    let data_dir = tempfile::tempdir()?;
+    let bin_dir = env::var_os("SPECTRUM_BIN_DIR").ok_or("Must set SPECTRUM_BIN_DIR")?;
+    let bin_dir = Path::new(&bin_dir);
     let mut publisher_handle = None;
     let mut handles = vec![];
     for service in experiment.iter_services().chain(experiment.iter_clients()) {
@@ -178,16 +183,14 @@ where
             Publisher(_) => {
                 // TODO: publisher stdout should be the time we care about
                 publisher_handle.replace(
-                    Command::new("cargo")
-                        .args(&["run", "--bin", "publisher"])
+                    Command::new(bin_dir.join("publisher"))
                         .env(&etcd_env.0, &etcd_env.1)
                         .spawn()?,
                 );
             }
             Leader(info) => {
                 handles.push(
-                    Command::new("cargo")
-                        .args(&["run", "--bin", "leader", "--"])
+                    Command::new(bin_dir.join("leader"))
                         .args(&["--group", &info.group.idx.to_string()])
                         .env(&etcd_env.0, &etcd_env.1)
                         .spawn()?,
@@ -195,8 +198,7 @@ where
             }
             Worker(info) => {
                 handles.push(
-                    Command::new("cargo")
-                        .args(&["run", "--bin", "worker", "--"])
+                    Command::new(bin_dir.join("worker"))
                         .args(&["--group", &info.group.idx.to_string()])
                         .args(&["--index", &info.idx.to_string()])
                         .env(&etcd_env.0, &etcd_env.1)
@@ -207,8 +209,7 @@ where
                 Some((msg, key)) => unimplemented!(),
                 None => {
                     handles.push(
-                        Command::new("cargo")
-                            .args(&["run", "--bin", "viewer", "--"])
+                        Command::new(bin_dir.join("viewer"))
                             .args(&["--index", &info.idx.to_string()])
                             .env(&etcd_env.0, &etcd_env.1)
                             .spawn()?,

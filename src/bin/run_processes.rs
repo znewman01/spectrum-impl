@@ -5,7 +5,11 @@ use spectrum_impl::{cli, config::EtcdRunner, experiment::Experiment, run_new_pro
 ///
 /// Run the Spectrum protocol locally, with each party in a separate process.
 ///
-/// This utility starts a local etcd instance for service discovery/registration.
+/// Set `$SPECTRUM_BIN_DIR` to a directory containing binaries for `worker`,
+/// `leader`, `viewer`, `broadcaster`, and `publisher`.
+///
+/// This utility starts a local etcd instance for service discovery/registration
+/// (so `etcd` must be on the `$PATH`).
 #[derive(Clap)]
 #[clap(version = crate_version!(), author = crate_authors!())]
 struct Args {
