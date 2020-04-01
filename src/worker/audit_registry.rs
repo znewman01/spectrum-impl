@@ -18,10 +18,13 @@ type ClientAuditState<S, T> = Option<(Option<T>, Vec<S>)>;
 pub struct AuditRegistry<S, T>(Vec<Mutex<ClientAuditState<S, T>>>);
 
 impl<S, T> AuditRegistry<S, T> {
-    pub fn new(num_clients: u16) -> AuditRegistry<S, T> {
-        let mut vec = vec![];
+    pub fn new(num_clients: u16, num_parties: u16) -> AuditRegistry<S, T> {
+        let mut vec = Vec::with_capacity(num_clients as usize);
         for _ in 0..num_clients {
-            vec.push(Mutex::new(Some((None, vec![]))));
+            vec.push(Mutex::new(Some((
+                None,
+                Vec::with_capacity(num_parties as usize),
+            ))));
         }
         AuditRegistry(vec)
     }
@@ -63,7 +66,7 @@ mod tests {
     #[tokio::test]
     async fn test_audit_registry_bad_client_idx() {
         let client = ClientInfo::new(0);
-        let reg = AuditRegistry::<(), u16>::new(0);
+        let reg = AuditRegistry::<(), u16>::new(0, NUM_SHARES);
         reg.drain(&client).await;
     }
 
@@ -71,7 +74,7 @@ mod tests {
     #[tokio::test]
     async fn test_audit_registry_drain_before_init() {
         let clients: Vec<ClientInfo> = (0..NUM_CLIENTS).map(ClientInfo::new).collect();
-        let reg = AuditRegistry::<(), u16>::new(NUM_CLIENTS);
+        let reg = AuditRegistry::<(), u16>::new(NUM_CLIENTS, NUM_SHARES);
 
         reg.drain(&clients[0]).await;
     }
@@ -79,7 +82,7 @@ mod tests {
     #[tokio::test]
     async fn test_audit_registry_empty() {
         let clients: Vec<ClientInfo> = (0..NUM_CLIENTS).map(ClientInfo::new).collect();
-        let reg = AuditRegistry::<(), u16>::new(NUM_CLIENTS);
+        let reg = AuditRegistry::<(), u16>::new(NUM_CLIENTS, NUM_SHARES);
 
         for client in &clients {
             let expected_value = client.idx;
@@ -93,7 +96,7 @@ mod tests {
     #[tokio::test]
     async fn test_audit_registry_put_shares() {
         let clients: Vec<ClientInfo> = (0..NUM_CLIENTS).map(ClientInfo::new).collect();
-        let reg = AuditRegistry::<(), u16>::new(NUM_CLIENTS);
+        let reg = AuditRegistry::<(), u16>::new(NUM_CLIENTS, NUM_SHARES);
         let expected_shares = vec![(); NUM_SHARES as usize];
 
         for client in &clients {
@@ -115,7 +118,7 @@ mod tests {
     #[tokio::test]
     async fn test_audit_registry_drain_twice_panics() {
         let mut clients: Vec<ClientInfo> = (0..NUM_CLIENTS).map(ClientInfo::new).collect();
-        let reg = AuditRegistry::<(), u16>::new(NUM_CLIENTS);
+        let reg = AuditRegistry::<(), u16>::new(NUM_CLIENTS, NUM_SHARES);
 
         for client in &clients {
             let expected_value = client.idx;
