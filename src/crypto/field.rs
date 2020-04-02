@@ -267,11 +267,6 @@ pub mod tests {
         }
     }
 
-    // A field elements *in the same field*
-    pub fn field_element() -> impl Strategy<Value = FieldElement> {
-        any::<Field>().prop_flat_map(|field| any_with::<FieldElement>(Some(field)))
-    }
-
     // Pair of field elements *in the same field*
     pub fn field_element_pairs() -> impl Strategy<Value = (FieldElement, FieldElement)> {
         any::<Field>().prop_flat_map(|field| {
@@ -322,7 +317,7 @@ pub mod tests {
     proptest! {
 
     #[test]
-    fn test_field_element_bytes_rt(element in field_element()) {
+    fn test_field_element_bytes_rt(element: FieldElement) {
         prop_assert_eq!(
             element.field.element_from_bytes(&element.to_bytes()),
             element
