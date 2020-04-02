@@ -129,7 +129,7 @@ impl Into<proto::AuditShare> for AuditShare<ConcreteVdpf> {
         let inner = proto::audit_share::Inner::Secure(proto::SecureAuditShare {
             bit: Some(bit.into()),
             seed: Some(self.token.seed.value().into()),
-            data: self.token.data,
+            data: self.token.data.into(),
             modulus: Some(modulus),
         });
         proto::AuditShare { inner: Some(inner) }
@@ -150,7 +150,7 @@ impl TryFrom<proto::AuditShare> for AuditShare<ConcreteVdpf> {
             Ok(Self::new(FieldToken::new(
                 bit.into(),
                 seed.into(),
-                inner.data,
+                inner.data.into(),
             )))
         } else {
             Err("Invalid proto::AuditShare.")

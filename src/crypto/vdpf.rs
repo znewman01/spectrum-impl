@@ -1,9 +1,12 @@
 //! Spectrum implementation.
-use crate::crypto::{
-    dpf::{DPF, PRGDPF},
-    field::{Field, FieldElement},
-    lss::{SecretShare, LSS},
-    prg::AESPRG,
+use crate::{
+    bytes::Bytes,
+    crypto::{
+        dpf::{DPF, PRGDPF},
+        field::{Field, FieldElement},
+        lss::{SecretShare, LSS},
+        prg::AESPRG,
+    },
 };
 
 use rug::rand::RandState;
@@ -44,11 +47,11 @@ pub trait VDPF: DPF {
 pub struct FieldToken {
     pub(in crate) bit: SecretShare,
     pub(in crate) seed: SecretShare,
-    pub(in crate) data: Vec<u8>,
+    pub(in crate) data: Bytes,
 }
 
 impl FieldToken {
-    pub fn new(bit: SecretShare, seed: SecretShare, data: Vec<u8>) -> Self {
+    pub fn new(bit: SecretShare, seed: SecretShare, data: Bytes) -> Self {
         Self { bit, seed, data }
     }
 }
@@ -212,7 +215,7 @@ impl VDPF for ConcreteVdpf {
         FieldToken {
             bit: bit_check,
             seed: seed_check,
-            data: data.to_vec(),
+            data: Bytes::from(data.to_vec()),
         }
     }
 
@@ -272,7 +275,7 @@ pub mod tests {
                         .prop_map(move |(bit, seed)| FieldToken {
                             bit: SecretShare::new(bit),
                             seed: SecretShare::new(seed),
-                            data: data.clone(),
+                            data: data.clone().into(),
                         })
                 })
                 .boxed()
