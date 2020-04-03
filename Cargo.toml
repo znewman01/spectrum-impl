@@ -43,6 +43,7 @@ clap = { git = "http://github.com/clap-rs/clap/", rev = "37889c661134e8286102f7d
 csv = "1.1"
 etcd-rs = { git = "http://github.com/znewman01/etcd-rs/", branch = "lazy_tunnels" }
 tempfile = "3"
+blake3 = "0.3.0"
 
 [build-dependencies]
 tonic-build = "0.1.1"
