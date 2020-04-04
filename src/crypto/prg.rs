@@ -93,6 +93,12 @@ pub mod aes {
         pub fn to_field_element(&self, field: Field) -> FieldElement {
             field.element_from_bytes(&self.bytes)
         }
+
+        pub fn random(size: usize) -> Self {
+            let mut rand_seed_bytes = vec![0; size];
+            thread_rng().fill_bytes(&mut rand_seed_bytes);
+            AESSeed::from(rand_seed_bytes)
+        }
     }
 
     impl Into<Vec<u8>> for AESSeed {
@@ -130,12 +136,7 @@ pub mod aes {
 
         /// generates a new (random) seed for the given PRG
         fn new_seed(&self) -> AESSeed {
-            let mut seed_bytes = vec![0; self.seed_size];
-            thread_rng().fill_bytes(&mut seed_bytes);
-
-            AESSeed {
-                bytes: Bytes::from(seed_bytes),
-            }
+            AESSeed::random(self.seed_size)
         }
 
         /// evaluates the PRG on the given seed

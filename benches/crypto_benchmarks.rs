@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate criterion;
 use criterion::Criterion;
-use rand::prelude::*;
 use rug::Integer;
 use spectrum_impl::{
     bytes::Bytes,
@@ -9,7 +8,7 @@ use spectrum_impl::{
         dpf::{DPF, PRGDPF},
         field::Field,
         group::Group,
-        prg::{aes::AESPRG, aes::AESSeed, group::GroupPRG, PRG},
+        prg::{aes::AESSeed, aes::AESPRG, group::GroupPRG, PRG},
         vdpf::{FieldVDPF, VDPF},
     },
 };
@@ -24,9 +23,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     c.bench_function("group PRG eval", |b| {
-        let mut rand_seed_bytes = vec![0; 16];
-        thread_rng().fill_bytes(&mut rand_seed_bytes);
-        let prg = GroupPRG::new(EVAL_SIZE, AESSeed::from(rand_seed_bytes));
+        let prg = GroupPRG::new(EVAL_SIZE, AESSeed::random(16));
         let seed = prg.new_seed();
         b.iter(|| prg.eval(&seed))
     });
