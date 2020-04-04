@@ -144,7 +144,7 @@ impl PRG for GroupPRG {
 
     /// generates a new (random) seed for the given PRG
     fn new_seed(&self) -> Integer {
-        let mut rand_bytes = vec![0; 32];
+        let mut rand_bytes = vec![0; Group::order_size_in_bytes()];
         thread_rng().fill_bytes(&mut rand_bytes);
         Integer::from_digits(&rand_bytes.as_ref(), Order::LsfLe)
     }
@@ -168,9 +168,10 @@ impl SeedHomomorphicPRG for GroupPRG {
 
     fn combine_outputs(&self, outputs: Vec<Vec<GroupElement>>) -> Vec<GroupElement> {
         let mut combined = self.null_output();
+
         for output in outputs {
-            for (i, val) in output.iter().enumerate() {
-                combined[i] ^= val;
+            for (acc, val) in combined.iter_mut().zip(output.iter()) {
+                *acc ^= val
             }
         }
         combined
