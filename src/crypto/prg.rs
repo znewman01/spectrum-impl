@@ -32,7 +32,7 @@ pub struct AESPRG {
 }
 
 /// seed for AES-based PRG
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Default, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct AESSeed {
     bytes: Bytes,
 }
@@ -124,17 +124,17 @@ pub struct GroupPRG {
 }
 
 impl GroupPRG {
-    pub fn new(eval_size: usize, generator_seed: [u8; 16]) -> Self {
-        let generators = GroupPRG::get_generators(eval_size, &generator_seed);
+    pub fn new(eval_size: usize, generator_seed: AESSeed) -> Self {
+        let generators = GroupPRG::compute_generators(eval_size, &generator_seed);
         GroupPRG {
             generators,
             eval_size,
         }
     }
 
-    fn get_generators(eval_size: usize, seed: &[u8; 16]) -> Vec<GroupElement> {
-        let eval_factor: usize = eval_size / Group::order_byte_size(); // expansion factor (# group elements)
-        Group::generators(eval_factor, seed)
+    fn compute_generators(eval_size: usize, seed: &AESSeed) -> Vec<GroupElement> {
+        let num_elements: usize = eval_size / Group::order_size_in_bytes(); // prg eval size (# group elements needed)
+        Group::generators(num_elements, seed)
     }
 }
 
@@ -155,7 +155,7 @@ impl PRG for GroupPRG {
     }
 
     fn null_output(&self) -> Self::Output {
-        repeat(Group::additive_identity())
+        repeat(Group::identity())
             .take(self.generators.len())
             .collect()
     }
@@ -214,11 +214,18 @@ mod tests {
     }
 
     impl Arbitrary for GroupPRG {
-        type Parameters = (usize, [u8; 16]);
+        type Parameters = Option<(usize, AESSeed)>;
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(params: Self::Parameters) -> Self::Strategy {
-            Just(GroupPRG::new(params.0, params.1)).boxed()
+            match params {
+                Some(params) => Just(GroupPRG::new(params.0, params.1)).boxed(),
+                None => (GROUP_PRG_EVAL_SIZES, any::<AESSeed>())
+                    .prop_flat_map(move |(output_size, generator_seed)| {
+                        Just(GroupPRG::new(output_size, generator_seed))
+                    })
+                    .boxed(),
+            }
         }
     }
 
@@ -227,11 +234,7 @@ mod tests {
     }
     // group prg and vector of seeds
     pub fn group_prg_and_seed_vec(num: usize) -> impl Strategy<Value = (GroupPRG, Vec<Integer>)> {
-        let prg = (GROUP_PRG_EVAL_SIZES, any::<[u8; 16]>()).prop_flat_map(
-            move |(output_size, generator_seed)| {
-                any_with::<GroupPRG>((output_size, generator_seed))
-            },
-        );
+        let prg = any::<GroupPRG>();
 
         // TODO: (fixme) this is too hacky
         let seeds = prg.clone().prop_flat_map(move |prg| {
@@ -323,7 +326,7 @@ mod tests {
     // group prg testing
     proptest! {
         #[test]
-        fn test_group_prg_seed_random(prg in any::<GroupPRG>()) {
+        fn test_group_prg_seed_random(prg: GroupPRG) {
             run_test_prg_seed_random(prg);
         }
 
