@@ -299,7 +299,7 @@ pub mod group {
 
             for output in outputs {
                 for (acc, val) in combined.iter_mut().zip(output.iter()) {
-                    *acc ^= val
+                    *acc *= val
                 }
             }
             combined

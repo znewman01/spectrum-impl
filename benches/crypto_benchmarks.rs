@@ -31,7 +31,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("group operation", |b| {
         let el1 = Group::rand_element();
         let el2 = Group::rand_element();
-        b.iter(|| el1.clone() ^ &el2)
+        b.iter(|| el1.clone() * &el2)
     });
 
     let num_points = 1;

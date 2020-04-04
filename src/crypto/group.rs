@@ -99,30 +99,30 @@ impl GroupElement {
     }
 }
 
-impl ops::BitXor<GroupElement> for GroupElement {
+impl ops::Mul<GroupElement> for GroupElement {
     type Output = GroupElement;
 
-    fn bitxor(self, rhs: GroupElement) -> GroupElement {
+    fn mul(self, rhs: GroupElement) -> GroupElement {
         GroupElement(self.0.add(&rhs.0))
     }
 }
 
-impl ops::BitXor<&GroupElement> for GroupElement {
+impl ops::Mul<&GroupElement> for GroupElement {
     type Output = GroupElement;
 
-    fn bitxor(self, rhs: &GroupElement) -> GroupElement {
+    fn mul(self, rhs: &GroupElement) -> GroupElement {
         GroupElement(self.0.add(&rhs.0))
     }
 }
 
-impl ops::BitXorAssign<&GroupElement> for GroupElement {
-    fn bitxor_assign(&mut self, rhs: &GroupElement) {
+impl ops::MulAssign<&GroupElement> for GroupElement {
+    fn mul_assign(&mut self, rhs: &GroupElement) {
         self.0 = self.0.add(&rhs.0);
     }
 }
 
-impl ops::BitXorAssign<GroupElement> for GroupElement {
-    fn bitxor_assign(&mut self, rhs: GroupElement) {
+impl ops::MulAssign<GroupElement> for GroupElement {
+    fn mul_assign(&mut self, rhs: GroupElement) {
         self.0 = self.0.add(&rhs.0);
     }
 }
@@ -150,11 +150,12 @@ mod tests {
     use proptest::prelude::*;
     use rug::integer::IsPrime;
     use std::ops::Range;
+
     const NUM_GROUP_GENERATORS: Range<usize> = 1..500;
 
     // need to generate 512-bit integers to ensure all operations
     // "wrap around" the group order during testing
-    pub fn integer_512_bits() -> impl Strategy<Value = Integer> {
+    fn integer_512_bits() -> impl Strategy<Value = Integer> {
         any_with::<Bytes>(63.into())
             .prop_map(|bytes| Integer::from_digits(&bytes.as_ref(), BYTE_ORDER))
     }
@@ -179,12 +180,12 @@ mod tests {
 
         #[test]
         fn test_associative(x: GroupElement, y: GroupElement, z: GroupElement) {
-            assert_eq!((x.clone() ^ y.clone()) ^ z.clone(), x ^ (y ^ z));
+            assert_eq!((x.clone() * y.clone()) * z.clone(), x * (y * z));
         }
 
         #[test]
         fn test_add_identity(element: GroupElement) {
-            assert_eq!(element.clone() ^ Group::identity(), Group::identity() ^ element);
+            assert_eq!(element.clone() * Group::identity(), Group::identity() * element);
         }
 
 
@@ -198,7 +199,7 @@ mod tests {
         #[test]
         fn test_sums_in_exponent(element: GroupElement, a in integer_512_bits(), b in integer_512_bits()) {
             let sum = a.clone() + b.clone();
-            assert_eq!(element.pow(&a)^element.pow(&b), element.pow(&sum))
+            assert_eq!(element.pow(&a) * element.pow(&b), element.pow(&sum))
         }
 
         #[test]
