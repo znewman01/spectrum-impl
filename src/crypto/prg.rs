@@ -31,15 +31,28 @@ mod tests {
     use std::collections::HashSet;
     use std::fmt::Debug;
 
-    pub fn run_test_prg_null_combine<P>(prg: P)
+    pub fn run_test_prg_null_combine<P>(prg: P, seed: P::Seed)
     where
         P: SeedHomomorphicPRG,
         P::Seed: Eq + Debug,
         P::Output: Eq + Debug,
     {
+        // ensure combine(null, null) = null
         assert_eq!(
             prg.null_output(),
             prg.combine_outputs(vec![prg.null_output(), prg.null_output()])
+        );
+
+        // ensure combine(null, eval) = eval
+        assert_eq!(
+            prg.eval(&seed),
+            prg.combine_outputs(vec![prg.eval(&seed), prg.null_output()])
+        );
+
+        // ensure combine(eval, null) = eval
+        assert_eq!(
+            prg.eval(&seed),
+            prg.combine_outputs(vec![prg.null_output(), prg.eval(&seed)])
         );
     }
 
@@ -301,6 +314,7 @@ pub mod group {
         use super::*;
         use proptest::prelude::*;
         use rug::Integer;
+        use std::collections::HashSet;
         use std::fmt::Debug;
         use std::ops::Range;
 
@@ -322,30 +336,21 @@ pub mod group {
             }
         }
 
-        pub fn integers() -> impl Strategy<Value = Integer> {
-            (0..10).prop_map(Integer::from)
-        }
-        // group prg and vector of seeds
-        pub fn group_prg_and_seed_vec(
-            num: usize,
-        ) -> impl Strategy<Value = (GroupPRG, Vec<Integer>)> {
-            let prg = any::<GroupPRG>();
-
-            // TODO: (fixme) this is too hacky
-            let seeds = prg.clone().prop_flat_map(move |prg| {
-                prop::collection::vec(integers().prop_map(move |_| prg.new_seed()), num)
-            });
-
-            (prg, seeds)
+        fn seed() -> impl Strategy<Value = Integer> {
+            (0..1000).prop_map(Integer::from)
         }
 
+        pub fn seeds() -> impl Strategy<Value = Vec<Integer>> {
+            prop::collection::vec(seed(), 1..100)
+        }
+
+        /// tests for seed-homomorphism: G(s1) ^ G(s2) = G(s1 * s2)
         fn run_test_prg_eval_homomorphism<P>(prg: P, seeds: Vec<P::Seed>)
         where
             P: SeedHomomorphicPRG,
             P::Seed: Eq + Clone + Debug,
             P::Output: Eq + Clone + Debug + Hash,
         {
-            // tests for seed-homomorphism: G(s1) ^ G(s2) = G(s1 * s2)
             let outputs: Vec<P::Output> = seeds.iter().map(|seed| prg.eval(seed)).collect();
 
             assert_eq!(
@@ -362,16 +367,16 @@ pub mod group {
             }
 
             #[test]
-            fn test_group_prg_eval_deterministic(
-                (prg, seeds) in group_prg_and_seed_vec(1)
-            ) {
-                prg_tests::run_test_prg_eval_deterministic(prg, seeds[0].clone());
+            fn test_group_prg_eval_deterministic(prg: GroupPRG, seed in seed())
+             {
+                prg_tests::run_test_prg_eval_deterministic(prg, seed);
             }
 
             #[test]
-            fn test_group_prg_eval_random(
-                (prg, seeds) in group_prg_and_seed_vec(10)
-            ) {
+            fn test_group_prg_eval_random(prg: GroupPRG, seeds in seeds())
+             {
+                let unique: HashSet<_> = seeds.iter().cloned().collect();
+                prop_assume!(unique.len() == seeds.len(), "eval must be different for different seeds");
                 prg_tests::run_test_prg_eval_random(prg, &seeds);
             }
         }
@@ -380,15 +385,15 @@ pub mod group {
         proptest! {
             #[test]
             fn test_group_prg_eval_homomorphism(
-                (prg, seeds) in group_prg_and_seed_vec(10)
+                prg: GroupPRG, seeds in seeds(),
             ) {
                 run_test_prg_eval_homomorphism(prg, seeds);
             }
 
 
             #[test]
-            fn test_group_prg_null_combine(prg in any::<GroupPRG>()) {
-                prg_tests::run_test_prg_null_combine(prg);
+            fn test_group_prg_null_combine(prg: GroupPRG, seed in seed()) {
+                prg_tests::run_test_prg_null_combine(prg, seed);
             }
         }
     }
