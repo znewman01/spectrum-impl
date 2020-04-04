@@ -24,228 +24,14 @@ pub trait SeedHomomorphicPRG: PRG {
     fn combine_outputs(&self, outputs: Vec<Self::Output>) -> Self::Output;
 }
 
-/// PRG uses AES to expand a seed to desired length
-#[derive(Default, Clone, PartialEq, Debug, Copy, Serialize, Deserialize)]
-pub struct AESPRG {
-    seed_size: usize,
-    eval_size: usize,
-}
-
-/// seed for AES-based PRG
-#[derive(Default, Clone, PartialEq, Eq, Debug, Hash)]
-pub struct AESSeed {
-    bytes: Bytes,
-}
-
-/// evaluation type for AES-based PRG
-impl AESSeed {
-    pub fn to_field_element(&self, field: Field) -> FieldElement {
-        field.element_from_bytes(&self.bytes)
-    }
-}
-
-impl Into<Vec<u8>> for AESSeed {
-    fn into(self) -> Vec<u8> {
-        self.bytes.into()
-    }
-}
-
-impl From<Vec<u8>> for AESSeed {
-    fn from(other: Vec<u8>) -> Self {
-        Self {
-            bytes: other.into(),
-        }
-    }
-}
-
-impl AESPRG {
-    pub fn new(seed_size: usize, eval_size: usize) -> Self {
-        assert!(
-            seed_size <= eval_size,
-            "eval size must be at least the seed size"
-        );
-
-        AESPRG {
-            seed_size,
-            eval_size,
-        }
-    }
-}
-
-// Implementation of an AES-based PRG
-impl PRG for AESPRG {
-    type Seed = AESSeed;
-    type Output = Bytes;
-
-    /// generates a new (random) seed for the given PRG
-    fn new_seed(&self) -> AESSeed {
-        let mut seed_bytes = vec![0; self.seed_size];
-        thread_rng().fill_bytes(&mut seed_bytes);
-
-        AESSeed {
-            bytes: Bytes::from(seed_bytes),
-        }
-    }
-
-    /// evaluates the PRG on the given seed
-    fn eval(&self, seed: &AESSeed) -> Self::Output {
-        // nonce set to zero: PRG eval should be deterministic
-        let iv: [u8; 16] = [0; 16];
-
-        // data is what AES will be "encrypting"
-        // must be of size self.eval_size since we want the PRG
-        // to expand to that size
-        let data = vec![0; self.eval_size];
-
-        // crt mode is fastest and ok for PRG
-        let cipher = Cipher::aes_128_ctr();
-        let mut ciphertext = encrypt(
-            cipher,
-            seed.bytes.as_ref(), // use seed bytes as the AES "key"
-            Some(&iv),
-            &data,
-        )
-        .unwrap();
-
-        ciphertext.truncate(self.eval_size);
-        ciphertext.into()
-    }
-
-    fn null_output(&self) -> Bytes {
-        Bytes::empty(self.eval_size)
-    }
-}
-
-// Implementation of a group-based PRG
-#[derive(Clone, PartialEq, Debug)]
-pub struct GroupPRG {
-    generators: Vec<GroupElement>,
-    eval_size: usize,
-}
-
-impl GroupPRG {
-    pub fn new(eval_size: usize, generator_seed: AESSeed) -> Self {
-        let generators = GroupPRG::compute_generators(eval_size, &generator_seed);
-        GroupPRG {
-            generators,
-            eval_size,
-        }
-    }
-
-    fn compute_generators(eval_size: usize, seed: &AESSeed) -> Vec<GroupElement> {
-        let num_elements: usize = eval_size / Group::order_size_in_bytes(); // prg eval size (# group elements needed)
-        Group::generators(num_elements, seed)
-    }
-}
-
-impl PRG for GroupPRG {
-    type Seed = Integer;
-    type Output = Vec<GroupElement>;
-
-    /// generates a new (random) seed for the given PRG
-    fn new_seed(&self) -> Integer {
-        let mut rand_bytes = vec![0; Group::order_size_in_bytes()];
-        thread_rng().fill_bytes(&mut rand_bytes);
-        Integer::from_digits(&rand_bytes.as_ref(), Order::LsfLe)
-    }
-
-    /// evaluates the PRG on the given seed
-    fn eval(&self, seed: &Integer) -> Self::Output {
-        self.generators.iter().map(|g| g.pow(seed)).collect()
-    }
-
-    fn null_output(&self) -> Self::Output {
-        repeat(Group::identity())
-            .take(self.generators.len())
-            .collect()
-    }
-}
-
-impl SeedHomomorphicPRG for GroupPRG {
-    fn combine_seeds(&self, seeds: Vec<Integer>) -> Integer {
-        Integer::from(Integer::sum(seeds.iter()))
-    }
-
-    fn combine_outputs(&self, outputs: Vec<Vec<GroupElement>>) -> Vec<GroupElement> {
-        let mut combined = self.null_output();
-
-        for output in outputs {
-            for (acc, val) in combined.iter_mut().zip(output.iter()) {
-                *acc ^= val
-            }
-        }
-        combined
-    }
-}
-
 #[cfg(test)]
 mod tests {
     extern crate rand;
     use super::*;
-    use proptest::prelude::*;
-    use rug::Integer;
     use std::collections::HashSet;
     use std::fmt::Debug;
-    use std::ops::Range;
 
-    const SIZES: Range<usize> = 16..1000; // in bytes
-    const SEED_SIZE: usize = 16; // in bytes
-    const GROUP_PRG_EVAL_SIZES: Range<usize> = 64..1000; // in bytes
-
-    impl Arbitrary for AESPRG {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            SIZES
-                .prop_map(|output_size| AESPRG::new(SEED_SIZE, output_size))
-                .boxed()
-        }
-    }
-
-    impl Arbitrary for AESSeed {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            prop::collection::vec(any::<u8>(), SEED_SIZE)
-                .prop_map(|data| AESSeed { bytes: data.into() })
-                .boxed()
-        }
-    }
-
-    impl Arbitrary for GroupPRG {
-        type Parameters = Option<(usize, AESSeed)>;
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(params: Self::Parameters) -> Self::Strategy {
-            match params {
-                Some(params) => Just(GroupPRG::new(params.0, params.1)).boxed(),
-                None => (GROUP_PRG_EVAL_SIZES, any::<AESSeed>())
-                    .prop_flat_map(move |(output_size, generator_seed)| {
-                        Just(GroupPRG::new(output_size, generator_seed))
-                    })
-                    .boxed(),
-            }
-        }
-    }
-
-    pub fn integers() -> impl Strategy<Value = Integer> {
-        (0..10).prop_map(Integer::from)
-    }
-    // group prg and vector of seeds
-    pub fn group_prg_and_seed_vec(num: usize) -> impl Strategy<Value = (GroupPRG, Vec<Integer>)> {
-        let prg = any::<GroupPRG>();
-
-        // TODO: (fixme) this is too hacky
-        let seeds = prg.clone().prop_flat_map(move |prg| {
-            prop::collection::vec(integers().prop_map(move |_| prg.new_seed()), num)
-        });
-
-        (prg, seeds)
-    }
-
-    fn run_test_prg_null_combine<P>(prg: P)
+    pub fn run_test_prg_null_combine<P>(prg: P)
     where
         P: SeedHomomorphicPRG,
         P::Seed: Eq + Debug,
@@ -257,7 +43,7 @@ mod tests {
         );
     }
 
-    fn run_test_prg_seed_random<P>(prg: P)
+    pub fn run_test_prg_seed_random<P>(prg: P)
     where
         P: PRG,
         P::Seed: Eq + Debug,
@@ -266,7 +52,7 @@ mod tests {
         assert_ne!(prg.new_seed(), prg.new_seed());
     }
 
-    fn run_test_prg_eval_deterministic<P>(prg: P, seed: P::Seed)
+    pub fn run_test_prg_eval_deterministic<P>(prg: P, seed: P::Seed)
     where
         P: PRG,
         P::Seed: Eq + Debug,
@@ -275,7 +61,7 @@ mod tests {
         assert_eq!(prg.eval(&seed), prg.eval(&seed));
     }
 
-    fn run_test_prg_eval_random<P>(prg: P, seeds: &[P::Seed])
+    pub fn run_test_prg_eval_random<P>(prg: P, seeds: &[P::Seed])
     where
         P: PRG,
         P::Seed: Eq + Debug,
@@ -284,83 +70,325 @@ mod tests {
         let results: HashSet<_> = seeds.iter().map(|s| prg.eval(s)).collect();
         assert_eq!(results.len(), seeds.len());
     }
+}
 
-    fn run_test_prg_eval_homomorphism<P>(prg: P, seeds: Vec<P::Seed>)
-    where
-        P: SeedHomomorphicPRG,
-        P::Seed: Eq + Clone + Debug,
-        P::Output: Eq + Clone + Debug + Hash,
-    {
-        // tests for seed-homomorphism: G(s1) ^ G(s2) = G(s1 * s2)
-        let outputs: Vec<P::Output> = seeds.iter().map(|seed| prg.eval(seed)).collect();
+pub mod aes {
+    use super::*;
 
-        assert_eq!(
-            prg.combine_outputs(outputs),
-            prg.eval(&prg.combine_seeds(seeds))
-        );
+    /// PRG uses AES to expand a seed to desired length
+    #[derive(Default, Clone, PartialEq, Debug, Copy, Serialize, Deserialize)]
+    pub struct AESPRG {
+        seed_size: usize,
+        eval_size: usize,
     }
 
-    // aes prg testing
-    proptest! {
-        #[test]
-        fn test_aes_prg_seed_random(prg in any::<AESPRG>()) {
-            run_test_prg_seed_random(prg);
-        }
+    /// seed for AES-based PRG
+    #[derive(Default, Clone, PartialEq, Eq, Debug, Hash)]
+    pub struct AESSeed {
+        bytes: Bytes,
+    }
 
-        #[test]
-        fn test_aes_prg_eval_deterministic(
-            prg in any::<AESPRG>(),
-            seed in any::<AESSeed>()
-        ) {
-            run_test_prg_eval_deterministic(prg, seed);
-        }
-
-        #[test]
-        fn test_aes_prg_eval_random(
-            prg in any::<AESPRG>(),
-            seeds in prop::collection::vec(any::<AESSeed>(), 10),
-        ) {
-            run_test_prg_eval_random(prg, &seeds);
+    /// evaluation type for AES-based PRG
+    impl AESSeed {
+        pub fn to_field_element(&self, field: Field) -> FieldElement {
+            field.element_from_bytes(&self.bytes)
         }
     }
 
-    // group prg testing
-    proptest! {
-        #[test]
-        fn test_group_prg_seed_random(prg: GroupPRG) {
-            run_test_prg_seed_random(prg);
-        }
-
-        #[test]
-        fn test_group_prg_eval_deterministic(
-            (prg, seeds) in group_prg_and_seed_vec(1)
-        ) {
-            run_test_prg_eval_deterministic(prg, seeds[0].clone());
-        }
-
-        #[test]
-        fn test_group_prg_eval_random(
-            (prg, seeds) in group_prg_and_seed_vec(10)
-        ) {
-            run_test_prg_eval_random(prg, &seeds[..seeds.len()]);
+    impl Into<Vec<u8>> for AESSeed {
+        fn into(self) -> Vec<u8> {
+            self.bytes.into()
         }
     }
 
-    // seed homomorphic prg tests
-    proptest! {
-        #[test]
-        fn test_group_prg_eval_homomorphism(
-            (prg, seeds) in group_prg_and_seed_vec(10)
-        ) {
-            run_test_prg_eval_homomorphism(prg, seeds);
+    impl From<Vec<u8>> for AESSeed {
+        fn from(other: Vec<u8>) -> Self {
+            Self {
+                bytes: other.into(),
+            }
+        }
+    }
+
+    impl AESPRG {
+        pub fn new(seed_size: usize, eval_size: usize) -> Self {
+            assert!(
+                seed_size <= eval_size,
+                "eval size must be at least the seed size"
+            );
+
+            AESPRG {
+                seed_size,
+                eval_size,
+            }
+        }
+    }
+
+    // Implementation of an AES-based PRG
+    impl PRG for AESPRG {
+        type Seed = AESSeed;
+        type Output = Bytes;
+
+        /// generates a new (random) seed for the given PRG
+        fn new_seed(&self) -> AESSeed {
+            let mut seed_bytes = vec![0; self.seed_size];
+            thread_rng().fill_bytes(&mut seed_bytes);
+
+            AESSeed {
+                bytes: Bytes::from(seed_bytes),
+            }
         }
 
+        /// evaluates the PRG on the given seed
+        fn eval(&self, seed: &AESSeed) -> Self::Output {
+            // nonce set to zero: PRG eval should be deterministic
+            let iv: [u8; 16] = [0; 16];
 
-        #[test]
-        fn test_group_prg_null_combine(prg in any::<GroupPRG>()) {
-            run_test_prg_null_combine(prg);
+            // data is what AES will be "encrypting"
+            // must be of size self.eval_size since we want the PRG
+            // to expand to that size
+            let data = vec![0; self.eval_size];
+
+            // crt mode is fastest and ok for PRG
+            let cipher = Cipher::aes_128_ctr();
+            let mut ciphertext = encrypt(
+                cipher,
+                seed.bytes.as_ref(), // use seed bytes as the AES "key"
+                Some(&iv),
+                &data,
+            )
+            .unwrap();
+
+            ciphertext.truncate(self.eval_size);
+            ciphertext.into()
         }
 
+        fn null_output(&self) -> Bytes {
+            Bytes::empty(self.eval_size)
+        }
+    }
 
+    #[cfg(test)]
+    mod tests {
+        extern crate rand;
+        use super::super::tests as prg_tests;
+        use super::*;
+        use proptest::prelude::*;
+        use std::ops::Range;
+
+        const SIZES: Range<usize> = 16..1000; // in bytes
+        const SEED_SIZE: usize = 16; // in bytes
+
+        impl Arbitrary for AESPRG {
+            type Parameters = ();
+            type Strategy = BoxedStrategy<Self>;
+
+            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+                SIZES
+                    .prop_map(|output_size| AESPRG::new(SEED_SIZE, output_size))
+                    .boxed()
+            }
+        }
+
+        impl Arbitrary for AESSeed {
+            type Parameters = ();
+            type Strategy = BoxedStrategy<Self>;
+
+            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+                prop::collection::vec(any::<u8>(), SEED_SIZE)
+                    .prop_map(|data| AESSeed { bytes: data.into() })
+                    .boxed()
+            }
+        }
+
+        // aes prg testing
+        proptest! {
+            #[test]
+            fn test_aes_prg_seed_random(prg in any::<AESPRG>()) {
+               prg_tests::run_test_prg_seed_random(prg);
+            }
+
+            #[test]
+            fn test_aes_prg_eval_deterministic(
+                prg in any::<AESPRG>(),
+                seed in any::<AESSeed>()
+            ) {
+                prg_tests::run_test_prg_eval_deterministic(prg, seed);
+            }
+
+            #[test]
+            fn test_aes_prg_eval_random(
+                prg in any::<AESPRG>(),
+                seeds in prop::collection::vec(any::<AESSeed>(), 10),
+            ) {
+                prg_tests::run_test_prg_eval_random(prg, &seeds);
+            }
+        }
+    }
+}
+
+pub mod group {
+    use super::aes::AESSeed;
+    use super::*;
+
+    // Implementation of a group-based PRG
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct GroupPRG {
+        generators: Vec<GroupElement>,
+        eval_size: usize,
+    }
+
+    impl GroupPRG {
+        pub fn new(eval_size: usize, generator_seed: AESSeed) -> Self {
+            let generators = GroupPRG::compute_generators(eval_size, &generator_seed);
+            GroupPRG {
+                generators,
+                eval_size,
+            }
+        }
+
+        fn compute_generators(eval_size: usize, seed: &AESSeed) -> Vec<GroupElement> {
+            let num_elements: usize = eval_size / Group::order_size_in_bytes(); // prg eval size (# group elements needed)
+            Group::generators(num_elements, seed)
+        }
+    }
+
+    impl PRG for GroupPRG {
+        type Seed = Integer;
+        type Output = Vec<GroupElement>;
+
+        /// generates a new (random) seed for the given PRG
+        fn new_seed(&self) -> Integer {
+            let mut rand_bytes = vec![0; Group::order_size_in_bytes()];
+            thread_rng().fill_bytes(&mut rand_bytes);
+            Integer::from_digits(&rand_bytes.as_ref(), Order::LsfLe)
+        }
+
+        /// evaluates the PRG on the given seed
+        fn eval(&self, seed: &Integer) -> Self::Output {
+            self.generators.iter().map(|g| g.pow(seed)).collect()
+        }
+
+        fn null_output(&self) -> Self::Output {
+            repeat(Group::identity())
+                .take(self.generators.len())
+                .collect()
+        }
+    }
+
+    impl SeedHomomorphicPRG for GroupPRG {
+        fn combine_seeds(&self, seeds: Vec<Integer>) -> Integer {
+            Integer::from(Integer::sum(seeds.iter()))
+        }
+
+        fn combine_outputs(&self, outputs: Vec<Vec<GroupElement>>) -> Vec<GroupElement> {
+            let mut combined = self.null_output();
+
+            for output in outputs {
+                for (acc, val) in combined.iter_mut().zip(output.iter()) {
+                    *acc ^= val
+                }
+            }
+            combined
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        extern crate rand;
+        use super::super::tests as prg_tests;
+        use super::aes::AESSeed;
+        use super::*;
+        use proptest::prelude::*;
+        use rug::Integer;
+        use std::fmt::Debug;
+        use std::ops::Range;
+
+        const GROUP_PRG_EVAL_SIZES: Range<usize> = 64..1000; // in bytes
+
+        impl Arbitrary for GroupPRG {
+            type Parameters = Option<(usize, AESSeed)>;
+            type Strategy = BoxedStrategy<Self>;
+
+            fn arbitrary_with(params: Self::Parameters) -> Self::Strategy {
+                match params {
+                    Some(params) => Just(GroupPRG::new(params.0, params.1)).boxed(),
+                    None => (GROUP_PRG_EVAL_SIZES, any::<AESSeed>())
+                        .prop_flat_map(move |(output_size, generator_seed)| {
+                            Just(GroupPRG::new(output_size, generator_seed))
+                        })
+                        .boxed(),
+                }
+            }
+        }
+
+        pub fn integers() -> impl Strategy<Value = Integer> {
+            (0..10).prop_map(Integer::from)
+        }
+        // group prg and vector of seeds
+        pub fn group_prg_and_seed_vec(
+            num: usize,
+        ) -> impl Strategy<Value = (GroupPRG, Vec<Integer>)> {
+            let prg = any::<GroupPRG>();
+
+            // TODO: (fixme) this is too hacky
+            let seeds = prg.clone().prop_flat_map(move |prg| {
+                prop::collection::vec(integers().prop_map(move |_| prg.new_seed()), num)
+            });
+
+            (prg, seeds)
+        }
+
+        fn run_test_prg_eval_homomorphism<P>(prg: P, seeds: Vec<P::Seed>)
+        where
+            P: SeedHomomorphicPRG,
+            P::Seed: Eq + Clone + Debug,
+            P::Output: Eq + Clone + Debug + Hash,
+        {
+            // tests for seed-homomorphism: G(s1) ^ G(s2) = G(s1 * s2)
+            let outputs: Vec<P::Output> = seeds.iter().map(|seed| prg.eval(seed)).collect();
+
+            assert_eq!(
+                prg.combine_outputs(outputs),
+                prg.eval(&prg.combine_seeds(seeds))
+            );
+        }
+
+        // group prg testing
+        proptest! {
+            #[test]
+            fn test_group_prg_seed_random(prg: GroupPRG) {
+                prg_tests::run_test_prg_seed_random(prg);
+            }
+
+            #[test]
+            fn test_group_prg_eval_deterministic(
+                (prg, seeds) in group_prg_and_seed_vec(1)
+            ) {
+                prg_tests::run_test_prg_eval_deterministic(prg, seeds[0].clone());
+            }
+
+            #[test]
+            fn test_group_prg_eval_random(
+                (prg, seeds) in group_prg_and_seed_vec(10)
+            ) {
+                prg_tests::run_test_prg_eval_random(prg, &seeds);
+            }
+        }
+
+        // seed homomorphic prg tests
+        proptest! {
+            #[test]
+            fn test_group_prg_eval_homomorphism(
+                (prg, seeds) in group_prg_and_seed_vec(10)
+            ) {
+                run_test_prg_eval_homomorphism(prg, seeds);
+            }
+
+
+            #[test]
+            fn test_group_prg_null_combine(prg in any::<GroupPRG>()) {
+                prg_tests::run_test_prg_null_combine(prg);
+            }
+        }
     }
 }

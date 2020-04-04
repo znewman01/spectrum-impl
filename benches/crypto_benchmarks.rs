@@ -9,7 +9,7 @@ use spectrum_impl::{
         dpf::{DPF, PRGDPF},
         field::Field,
         group::Group,
-        prg::{GroupPRG, AESPRG, PRG},
+        prg::{aes::AESPRG, aes::AESSeed, group::GroupPRG, PRG},
         vdpf::{FieldVDPF, VDPF},
     },
 };
@@ -24,9 +24,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     c.bench_function("group PRG eval", |b| {
-        let mut rand_seed_bytes: [u8; 16] = [0; 16];
+        let mut rand_seed_bytes = vec![0; 16];
         thread_rng().fill_bytes(&mut rand_seed_bytes);
-        let prg = GroupPRG::new(EVAL_SIZE, rand_seed_bytes);
+        let prg = GroupPRG::new(EVAL_SIZE, AESSeed::from(rand_seed_bytes));
         let seed = prg.new_seed();
         b.iter(|| prg.eval(&seed))
     });

@@ -1,12 +1,9 @@
 //! Spectrum implementation.
-use crate::{
-    bytes::Bytes,
-    crypto::{
-        dpf::{DPF, PRGDPF},
-        field::{Field, FieldElement},
-        lss::{SecretShare, LSS},
-        prg::AESPRG,
-    },
+use crate::crypto::{
+    dpf::{DPF, PRGDPF},
+    field::{Field, FieldElement},
+    lss::{SecretShare, LSS},
+    prg::aes::AESPRG,
 };
 
 use rug::rand::RandState;
