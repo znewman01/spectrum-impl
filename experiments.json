@@ -1,0 +1,97 @@
+// Note: this file needs the comments stripped before it's proper JSON.
+// JSMin or similar tools will do it.
+[
+    // A record for one experiment to be run. Records should be repeated to indicate
+    // multiple trials with the same configuration.
+    {
+        // These parameters all have default values, and *do not* need to be
+        // specified. The given values are the defaults.
+
+        // AWS instance types to use for the various machines.
+        //
+        // The machines we spawn are detailed inline.
+        "machine_types": {
+            // 1 "publisher" machine.
+            //
+            // This coordinates the experiments and runs etcd.
+            "publisher": "m5.large",
+
+            // Many (see "group_size") "worker" machines per trust group.
+            //
+            // These run the bulk of the protocol.
+            "worker": "c5.metal",
+
+            // Many (see "clients") "client" machines.
+            //
+            // Each simulates a number (see // "clients_per_machine") of clients
+            // (both viewers and broadcasters).
+            "client": "m5.large"
+        },
+
+        // The maximum number of clients to simulate on a single machine.
+        "clients_per_machine": 100,
+
+        // The ID of the Amazon AWS AMI to use (use Ubuntu 18.04).
+        //
+        // Note that AMIs are per-region.
+        "base_ami": "ami_0fc20dd1da406780b",
+
+        // Number of worker machines per group.
+        "group_size": 1,
+
+        // The remaining parameters *do not* have defaults, and the values given
+        // are representative examples.
+
+        // Total number of clients to simulate.
+        //
+        // (The number of client machines will be this number divided by
+        // "clients_per_machine", up to some rounding).
+        "clients": 1000,
+
+        // The number of channels for the protocol run.
+        //
+        // We simulate one broadcaster per channel.
+        "channels": 10,
+
+        // The size (in bytes) of each message.
+        "message_size": 1024,
+
+        // Protocol to run.
+        //
+        // There are several variants here; see later examples in this file for
+        // examples of each.
+        "protocol": {
+            // Main Spectrum protocol. Has exactly 2 trust groups.
+            "Symmetric": {
+                // Security parameter (in bytes).
+                "security": 16
+            }
+        }
+    },
+    {
+        "clients": 1000,
+        "channels": 10,
+        "message_size": 1024,
+
+        "protocol": {
+            // Insecure protocol, for benchmarking.
+            "Insecure": {
+                // Number of "trust groups" to simulate in the protocol.
+                "parties": 2
+            }
+        }
+    },
+    {
+        "clients": 1000,
+        "channels": 10,
+        "message_size": 1024,
+
+        "protocol": {
+            // Extension to main Spectrum protocol allowing many trust groups.
+            "SeedHomomorphic": {
+                // Number of "trust groups" to simulate in the protocol.
+                "parties": 3
+            }
+        }
+    }
+]
