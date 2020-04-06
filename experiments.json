@@ -19,12 +19,12 @@
             // Many (see "group_size") "worker" machines per trust group.
             //
             // These run the bulk of the protocol.
-            "worker": "c5.metal",
 
             // Many (see "clients") "client" machines.
             //
             // Each simulates a number (see // "clients_per_machine") of clients
             // (both viewers and broadcasters).
+            "worker": "m5.large",
             "client": "m5.large"
         },
 
