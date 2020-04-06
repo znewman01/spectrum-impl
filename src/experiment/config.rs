@@ -26,14 +26,9 @@ fn _16() -> u16 {
     16
 }
 
-fn c5_metal() -> MachineType {
-    MachineType {
-        instance_type: "c5_metal".to_string(),
-    }
-}
 fn m5_large() -> MachineType {
     MachineType {
-        instance_type: "m5_large".to_string(),
+        instance_type: "m5.large".to_string(),
     }
 }
 
@@ -50,7 +45,7 @@ struct MachineTypeConfiguration {
     publisher: MachineType,
 
     /// Machine type of the server for running workers/leaders.
-    #[serde(default = "c5_metal")]
+    #[serde(default = "m5_large")]
     worker: MachineType,
 
     /// Machine type of the server for simulating clients.
