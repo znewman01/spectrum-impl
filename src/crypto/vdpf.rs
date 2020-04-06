@@ -6,6 +6,7 @@ use crate::crypto::{
     prg::aes::AESPRG,
 };
 
+use crate::bytes::Bytes;
 use rug::rand::RandState;
 use serde::{Deserialize, Serialize};
 
