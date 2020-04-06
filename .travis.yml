@@ -2,10 +2,10 @@ language: rust
 rust:
 - stable
 - beta
-- nightly-2019-03-22
+- nightly-2019-04-06
 jobs:
   allow_failures:
-  - rust: nightly-2019-03-22
+  - rust: nightly-2019-04-06
   - rust: beta
   fast_finish: true
 before_script:
