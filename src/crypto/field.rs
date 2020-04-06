@@ -8,6 +8,8 @@ use std::fmt::Debug;
 use std::ops;
 use std::sync::Arc;
 
+const BYTE_ORDER: Order = Order::LsfLe;
+
 // NOTE: can't use From/Into due to Rust orphaning rules. Define an extension trait?
 // TODO(zjn): more efficient data format?
 fn parse_integer(data: &str) -> Integer {
@@ -90,7 +92,7 @@ impl Field {
     }
 
     pub fn element_from_bytes(&self, bytes: &Bytes) -> FieldElement {
-        let val = Integer::from_digits(bytes.as_ref(), Order::LsfLe);
+        let val = Integer::from_digits(bytes.as_ref(), BYTE_ORDER);
         self.new_element(val)
     }
 }
@@ -112,8 +114,10 @@ impl FieldElement {
     pub fn get_value(&self) -> Integer {
         self.value.clone()
     }
+}
 
-    pub fn to_bytes(&self) -> Bytes {
+impl Into<Bytes> for FieldElement {
+    fn into(self) -> Bytes {
         Bytes::from(self.value.to_digits(Order::LsfLe))
     }
 }
@@ -296,10 +300,6 @@ pub mod tests {
         })
     }
 
-    // TODO: additional tests:
-    // 1) ==, != work as expected
-    // 2) all these ops w/ different fields result in panic
-
     proptest! {
         #[test]
         fn test_field_rand_element_not_deterministic(field in any::<Field>()) {
@@ -319,7 +319,7 @@ pub mod tests {
     #[test]
     fn test_field_element_bytes_rt(element: FieldElement) {
         prop_assert_eq!(
-            element.field.element_from_bytes(&element.to_bytes()),
+            element.field.element_from_bytes(&element.clone().into()),
             element
         );
       }
@@ -360,6 +360,31 @@ pub mod tests {
         fn test_distributive((x, y, z) in field_element_triples()) {
             assert_eq!(x.clone() * (y.clone() + z.clone()), (x.clone() * y) + (x * z));
         }
+
+
+        #[test]
+        #[should_panic]
+        fn test_add_in_different_fields_fails(a: FieldElement, b: FieldElement) {
+            prop_assume!(a.field.order != b.field.order, "Fields should not be equal");
+            a + b
+        }
+
+
+        #[test]
+        #[should_panic]
+        fn test_prod_in_different_fields_fails(a: FieldElement, b: FieldElement) {
+            prop_assume!(a.field.order != b.field.order, "Fields should not be equal");
+            a * b
+        }
+
+
+        #[test]
+        fn test_equality((a, b) in field_element_pairs()) {
+            let eq = a == b && a.value == b.value && a.field.order == b.field.order;
+            let neq = a != b && (a.value != b.value || a.field.order != b.field.order);
+            assert!(neq || eq);
+        }
+
     }
 
     #[test]
