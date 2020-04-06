@@ -20,6 +20,7 @@ codegen-units = 1  # makes it take a very long time
 
 [dependencies]
 hex = "0.4"
+jubjub = "0.3.0"
 futures = "0.3"
 openssl = "0.10.28"
 prost = "0.6"

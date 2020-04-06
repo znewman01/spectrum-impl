@@ -1,14 +1,14 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
 use crate::proto;
-
-use rug::{integer::IsPrime, rand::RandState, Integer};
+use rug::{integer::IsPrime, integer::Order, rand::RandState, Integer};
 use serde::{Deserialize, Serialize};
-
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops;
 use std::sync::Arc;
+
+const BYTE_ORDER: Order = Order::LsfLe;
 
 // NOTE: can't use From/Into due to Rust orphaning rules. Define an extension trait?
 // TODO(zjn): more efficient data format?
@@ -92,9 +92,7 @@ impl Field {
     }
 
     pub fn element_from_bytes(&self, bytes: &Bytes) -> FieldElement {
-        // TODO(sss): find a less hacky way of doing this?
-        let byte_str = hex::encode(bytes);
-        let val = Integer::from_str_radix(&byte_str, 16).unwrap();
+        let val = Integer::from_digits(bytes.as_ref(), BYTE_ORDER);
         self.new_element(val)
     }
 }
@@ -115,6 +113,12 @@ impl FieldElement {
 
     pub fn get_value(&self) -> Integer {
         self.value.clone()
+    }
+}
+
+impl Into<Bytes> for FieldElement {
+    fn into(self) -> Bytes {
+        Bytes::from(self.value.to_digits(Order::LsfLe))
     }
 }
 
@@ -296,10 +300,6 @@ pub mod tests {
         })
     }
 
-    // TODO: additional tests:
-    // 1) ==, != work as expected
-    // 2) all these ops w/ different fields result in panic
-
     proptest! {
         #[test]
         fn test_field_rand_element_not_deterministic(field in any::<Field>()) {
@@ -315,6 +315,18 @@ pub mod tests {
     }
 
     proptest! {
+
+    #[test]
+    fn test_field_element_bytes_rt(element: FieldElement) {
+        prop_assert_eq!(
+            element.field.element_from_bytes(&element.clone().into()),
+            element
+        );
+      }
+    }
+
+    proptest! {
+
         #[test]
         fn test_add_commutative((x, y) in field_element_pairs()) {
             assert_eq!(x.clone() + y.clone(), y + x);
@@ -348,6 +360,31 @@ pub mod tests {
         fn test_distributive((x, y, z) in field_element_triples()) {
             assert_eq!(x.clone() * (y.clone() + z.clone()), (x.clone() * y) + (x * z));
         }
+
+
+        #[test]
+        #[should_panic]
+        fn test_add_in_different_fields_fails(a: FieldElement, b: FieldElement) {
+            prop_assume!(a.field.order != b.field.order, "Fields should not be equal");
+            a + b
+        }
+
+
+        #[test]
+        #[should_panic]
+        fn test_prod_in_different_fields_fails(a: FieldElement, b: FieldElement) {
+            prop_assume!(a.field.order != b.field.order, "Fields should not be equal");
+            a * b
+        }
+
+
+        #[test]
+        fn test_equality((a, b) in field_element_pairs()) {
+            let eq = a == b && a.value == b.value && a.field.order == b.field.order;
+            let neq = a != b && (a.value != b.value || a.field.order != b.field.order);
+            assert!(neq || eq);
+        }
+
     }
 
     #[test]

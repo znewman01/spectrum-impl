@@ -172,7 +172,7 @@ mod trivial_prg {
     mod tests {
         use super::*;
         use crate::crypto::dpf::tests::*;
-        use crate::crypto::prg::{AESPRG, PRG};
+        use crate::crypto::prg::{aes::AESPRG, PRG};
         use proptest::prelude::*;
 
         const MAX_NUM_POINTS: usize = 10;

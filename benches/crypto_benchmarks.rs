@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate criterion;
-
 use criterion::Criterion;
 use rug::Integer;
 use spectrum_impl::{
@@ -8,23 +7,36 @@ use spectrum_impl::{
     crypto::{
         dpf::{DPF, PRGDPF},
         field::Field,
-        prg::{AESPRG, PRG},
+        group::Group,
+        prg::{aes::AESSeed, aes::AESPRG, group::GroupPRG, PRG},
         vdpf::{FieldVDPF, VDPF},
     },
 };
 
-const EVAL_SIZE: usize = 1 << 20; // approx 1MB
+const EVAL_SIZE: usize = 1 << 20; // (in bytes) approx 1MB
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("PRG eval benchmark", |b| {
+    c.bench_function("PRG eval", |b| {
         let prg = AESPRG::new(16, EVAL_SIZE);
         let seed = prg.new_seed();
         b.iter(|| prg.eval(&seed))
     });
 
+    c.bench_function("group PRG eval", |b| {
+        let prg = GroupPRG::new(EVAL_SIZE, AESSeed::random(16));
+        let seed = prg.new_seed();
+        b.iter(|| prg.eval(&seed))
+    });
+
+    c.bench_function("group operation", |b| {
+        let el1 = Group::rand_element();
+        let el2 = Group::rand_element();
+        b.iter(|| el1.clone() * &el2)
+    });
+
     let num_points = 1;
     let point_idx = 0;
-    c.bench_function("PRGDPF eval benchmark", |b| {
+    c.bench_function("DPF (AES) eval", |b| {
         let dpf = PRGDPF::new(AESPRG::new(16, EVAL_SIZE), num_points);
         let data = Bytes::empty(EVAL_SIZE);
         let keys = dpf.gen(data, point_idx);

@@ -6,7 +6,7 @@ use crate::{
     crypto::{
         dpf::{DPF, PRGDPF},
         field::Field,
-        prg::AESPRG,
+        prg::aes::AESPRG,
         vdpf::{FieldProofShare, FieldToken, FieldVDPF, VDPF},
     },
     protocols::Protocol,
