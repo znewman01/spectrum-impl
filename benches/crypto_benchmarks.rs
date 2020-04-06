@@ -48,7 +48,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let num_points = 1;
     let prime: Integer = Integer::from(800_000_000).next_prime_ref().into();
     c.bench_function("gen_audit", |b| {
-        let field = Field::new(prime.clone());
+        let field = Field::new(prime.to_u128().unwrap());
         let dpf = PRGDPF::new(AESPRG::new(16, EVAL_SIZE), num_points);
         let vdpf = FieldVDPF::new(dpf, field.clone());
 

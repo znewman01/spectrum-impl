@@ -1,40 +1,39 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
 use crate::proto;
-use rug::{integer::IsPrime, integer::Order, rand::RandState, Integer};
+use rug::rand::RandState;
+use rug::{integer::IsPrime, integer::Order, Integer};
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops;
-use std::sync::Arc;
 
 const BYTE_ORDER: Order = Order::LsfLe;
 
 // NOTE: can't use From/Into due to Rust orphaning rules. Define an extension trait?
 // TODO(zjn): more efficient data format?
-fn parse_integer(data: &str) -> Integer {
-    Integer::parse(data).unwrap().into()
+fn parse_u128(data: &str) -> u128 {
+    data.parse::<u128>().unwrap()
 }
 
-fn emit_integer(value: &Integer) -> String {
+fn emit_integer(value: &u128) -> String {
     value.to_string()
 }
 
 /// prime order field
-#[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub struct Field {
-    order: Arc<Integer>,
+    order: u128,
 }
 
-impl From<Integer> for Field {
-    fn from(value: Integer) -> Field {
+impl From<u128> for Field {
+    fn from(value: u128) -> Field {
         Field::new(value)
     }
 }
 
 impl From<proto::Integer> for Field {
     fn from(msg: proto::Integer) -> Field {
-        parse_integer(msg.data.as_ref()).into()
+        parse_u128(msg.data.as_ref()).into()
     }
 }
 
@@ -47,62 +46,61 @@ impl Into<proto::Integer> for Field {
 }
 
 /// element in a prime order field
-#[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub struct FieldElement {
-    value: Integer,
+    value: u128,
     field: Field,
 }
 
 impl Field {
     /// generate new field of prime order
     /// order must be a prime
-    pub fn new(order: Integer) -> Field {
+    pub fn new(order: u128) -> Field {
         // probability of failure is negligible in k, suggested to set k=15
         // which is the default used by Rust https://docs.rs/rug/1.6.0/rug/struct.Integer.html
-        if order.is_probably_prime(15) == IsPrime::No {
+        if Integer::from(order).is_probably_prime(15) == IsPrime::No {
             panic!("field must have prime order!");
         }
 
-        Field {
-            order: Arc::new(order),
-        }
+        Field { order }
     }
 
     pub fn zero(&self) -> FieldElement {
         FieldElement {
-            value: 0.into(),
+            value: 0,
             field: self.clone(),
         }
     }
 
-    pub fn new_element(&self, value: Integer) -> FieldElement {
+    pub fn new_element(&self, value: u128) -> FieldElement {
         FieldElement::new(value, self.clone())
     }
 
     // generates a new random field element
     pub fn rand_element(&self, rng: &mut RandState) -> FieldElement {
+        let rand: Integer = Integer::from(self.order).random_below_ref(rng).into();
         FieldElement {
-            value: self.order.random_below_ref(rng).into(),
+            value: rand.to_u128().unwrap(),
             field: self.clone(),
         }
     }
 
     pub fn from_proto(&self, msg: proto::Integer) -> FieldElement {
-        FieldElement::new(parse_integer(msg.data.as_ref()), self.clone())
+        FieldElement::new(parse_u128(msg.data.as_ref()), self.clone())
     }
 
     pub fn element_from_bytes(&self, bytes: &Bytes) -> FieldElement {
         let val = Integer::from_digits(bytes.as_ref(), BYTE_ORDER);
-        self.new_element(val)
+        self.new_element(val.to_u128().unwrap())
     }
 }
 
 impl FieldElement {
     // TODO: move reduce_modulo to Field::new_element and remove
     /// generates a new field element; value mod field.order
-    pub fn new(v: Integer, field: Field) -> FieldElement {
+    pub fn new(v: u128, field: Field) -> FieldElement {
         FieldElement {
-            value: reduce_modulo(v, &field.order),
+            value: v % field.order,
             field,
         }
     }
@@ -111,14 +109,14 @@ impl FieldElement {
         self.field.clone()
     }
 
-    pub fn get_value(&self) -> Integer {
+    pub fn get_value(&self) -> u128 {
         self.value.clone()
     }
 }
 
 impl Into<Bytes> for FieldElement {
     fn into(self) -> Bytes {
-        Bytes::from(self.value.to_digits(Order::LsfLe))
+        Bytes::from(Integer::from(self.value).to_digits(Order::LsfLe))
     }
 }
 
@@ -130,14 +128,27 @@ impl Into<proto::Integer> for FieldElement {
     }
 }
 
-// perform modulo reducation after a field operation.
-// note: different from % given that reduce_modulo compares
-// to zero rather than just take the remainder.
-fn reduce_modulo(v: Integer, order: &Integer) -> Integer {
-    if v.cmp0() == Ordering::Less {
-        (order.clone() + v) % order
-    } else {
-        v % order
+// adds two u128 values together and reduces modulo the provided modulus
+// if an overflow occurs, the operation is performed using rug::Integer
+// and then converted back to u128
+fn add_mod(a: u128, b: u128, modulus: u128) -> u128 {
+    match a.checked_add(b) {
+        Some(result) => result % modulus,
+        None => ((Integer::from(a) + Integer::from(b)) % Integer::from(modulus))
+            .to_u128()
+            .unwrap(),
+    }
+}
+
+// multiplies two u128 values together and reduces modulo the provided modulus
+// if an overflow occurs, the operation is performed using rug::Integer
+// and then converted back to u128
+fn mul_mod(a: u128, b: u128, modulus: u128) -> u128 {
+    match a.checked_mul(b) {
+        Some(result) => result % modulus,
+        None => ((Integer::from(a) * Integer::from(b)) % Integer::from(modulus))
+            .to_u128()
+            .unwrap(),
     }
 }
 
@@ -148,14 +159,10 @@ impl ops::Add<FieldElement> for FieldElement {
     fn add(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
 
-        let mut value = self.value + other.value;
-
-        // perform modulo reduction after adding
-        if (&value) >= self.field.order.as_ref() {
-            value -= self.field.order.as_ref();
-        }
-
-        FieldElement::new(value, other.field)
+        FieldElement::new(
+            add_mod(self.value, other.value, self.field.order),
+            other.field,
+        )
     }
 }
 
@@ -165,14 +172,11 @@ impl ops::Sub<FieldElement> for FieldElement {
 
     fn sub(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
-        let mut value = self.value - other.value;
 
-        // perform modulo reduction after subtracting
-        if value < 0 {
-            value += self.field.order.as_ref();
-        }
-
-        FieldElement::new(value, other.field)
+        FieldElement::new(
+            add_mod(self.value, (-other.clone()).value, self.field.order),
+            other.field,
+        )
     }
 }
 
@@ -183,21 +187,18 @@ impl ops::Mul<FieldElement> for FieldElement {
     fn mul(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
         FieldElement::new(
-            reduce_modulo(self.value * &other.value, &other.field.order),
+            mul_mod(self.value, other.value, self.field.order),
             other.field,
         )
     }
 }
 
 /// override * operation: want result.value = element1.value * element2.value mod field.order
-impl ops::Mul<u8> for FieldElement {
+impl ops::Mul<u128> for FieldElement {
     type Output = FieldElement;
 
-    fn mul(self, scalar: u8) -> FieldElement {
-        FieldElement::new(
-            reduce_modulo(self.value * scalar, &self.field.order),
-            self.field,
-        )
+    fn mul(self, scalar: u128) -> FieldElement {
+        FieldElement::new(mul_mod(self.value, scalar, self.field.order), self.field)
     }
 }
 
@@ -206,7 +207,7 @@ impl ops::Neg for FieldElement {
     type Output = FieldElement;
 
     fn neg(self) -> FieldElement {
-        FieldElement::new(reduce_modulo(-self.value, &self.field.order), self.field)
+        FieldElement::new(self.field.order - self.value, self.field)
     }
 }
 
@@ -215,7 +216,7 @@ impl ops::AddAssign<FieldElement> for FieldElement {
     fn add_assign(&mut self, other: FieldElement) {
         assert_eq!(self.field, other.field);
         *self = Self {
-            value: reduce_modulo(self.value.clone() + other.value, &other.field.order),
+            value: add_mod(self.value, other.value, self.field.order),
             field: other.field,
         };
     }
@@ -225,7 +226,7 @@ impl ops::SubAssign<FieldElement> for FieldElement {
     fn sub_assign(&mut self, other: FieldElement) {
         assert_eq!(self.field, other.field);
         *self = Self {
-            value: reduce_modulo(self.value.clone() - other.value, &other.field.order),
+            value: add_mod(self.value, (-other.clone()).value, self.field.order),
             field: other.field,
         };
     }
@@ -238,12 +239,15 @@ pub mod tests {
     use std::collections::HashSet;
     use std::iter::repeat_with;
 
-    pub fn integers() -> impl Strategy<Value = Integer> {
-        (0..1000).prop_map(Integer::from)
+    pub fn integers() -> impl Strategy<Value = u128> {
+        any::<u128>()
     }
 
-    pub fn prime_integers() -> impl Strategy<Value = Integer> {
-        integers().prop_map(Integer::next_prime)
+    pub fn prime_integers() -> impl Strategy<Value = u128> {
+        integers().prop_map(|value| {
+            let prime = Integer::next_prime(value.into());
+            prime.to_u128().unwrap()
+        })
     }
 
     impl Arbitrary for Field {
@@ -302,7 +306,7 @@ pub mod tests {
 
     proptest! {
         #[test]
-        fn test_field_rand_element_not_deterministic(field in any::<Field>()) {
+        fn test_field_rand_element_not_deterministic(field: Field) {
             let mut rng = RandState::new();
             let elements: HashSet<_> = repeat_with(|| field.rand_element(&mut rng))
                 .take(10)
@@ -361,7 +365,6 @@ pub mod tests {
             assert_eq!(x.clone() * (y.clone() + z.clone()), (x.clone() * y) + (x * z));
         }
 
-
         #[test]
         #[should_panic]
         fn test_add_in_different_fields_fails(a: FieldElement, b: FieldElement) {
@@ -390,6 +393,6 @@ pub mod tests {
     #[test]
     #[should_panic]
     fn test_field_must_be_prime() {
-        Field::new(Integer::from(4));
+        Field::new(4);
     }
 }
