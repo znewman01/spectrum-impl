@@ -8,7 +8,7 @@ use crate::{
     bytes::Bytes,
     config::store::Store,
     experiment::Experiment,
-    net::get_addr,
+    net::Config as NetConfig,
     protocols::{
         accumulator::Accumulator,
         wrapper::{ChannelKeyWrapper, ProtocolWrapper},
@@ -290,7 +290,7 @@ where
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
 {
     info!("Worker starting up.");
-    let addr = get_addr();
+    let net_config = NetConfig::with_free_port();
 
     let (start_tx, start_rx) = watch::channel(false);
     let (registry, registry_remote) = ServiceRegistry::new_with_remote();
@@ -299,13 +299,13 @@ where
     let server = tonic::transport::server::Server::builder()
         .add_service(HealthServer::new(AllGoodHealthServer::default()))
         .add_service(WorkerServer::new(worker))
-        .serve_with_shutdown(addr, shutdown);
+        .serve_with_shutdown(net_config.local_socket_addr(), shutdown);
 
     let server_task = spawn(server);
 
-    wait_for_health(format!("http://{}", addr)).await?;
+    wait_for_health(format!("http://{}", net_config.public_addr())).await?;
     trace!("Worker {:?} healthy and serving.", info);
-    register(&config, Node::new(info.into(), addr)).await?;
+    register(&config, Node::new(info.into(), net_config.public_addr())).await?;
 
     let start_time = wait_for_start_time_set(&config).await.unwrap();
     registry_remote.init(info, &config).await?;

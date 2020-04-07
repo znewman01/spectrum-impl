@@ -4,7 +4,6 @@ use crate::{
 };
 
 use config::store::{Error, Key, Store};
-use std::net::SocketAddr;
 
 fn to_config_key(service: Service) -> Key {
     match service {
@@ -30,11 +29,11 @@ fn to_config_key(service: Service) -> Key {
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct Node {
     pub service: Service,
-    pub addr: SocketAddr,
+    pub addr: String,
 }
 
 impl Node {
-    pub fn new(service: Service, addr: SocketAddr) -> Node {
+    pub fn new(service: Service, addr: String) -> Node {
         Node { service, addr }
     }
 }

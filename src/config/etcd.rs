@@ -5,18 +5,20 @@ use crate::config::{
     factory::CONFIG_SERVER_ENV_VAR,
     store::{Error, Key, Store, Value},
 };
+use crate::net::Config as NetConfig;
+
 use derivative::Derivative;
 use etcd_rs::{Client, ClientConfig, KeyRange, PutRequest, RangeRequest};
-use port_check::free_local_port;
-use std::ffi::OsStr;
-use std::process::Stdio;
-use std::time::Duration;
 use tempfile::TempDir;
 use tokio::{
     process::{Child, Command},
     time::delay_for,
 };
 use tonic::async_trait;
+
+use std::ffi::OsStr;
+use std::process::Stdio;
+use std::time::Duration;
 
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
@@ -55,21 +57,15 @@ pub struct Runner {
     process: Child,
 }
 
-fn get_addr() -> String {
-    // Note: replace with net::get_addr()?
-    let port = free_local_port().expect("No ports free.");
-    format!("127.0.0.1:{}", port)
-}
-
 impl Runner {
     pub async fn create() -> Result<Self, Error> {
         let temp_dir = tempfile::tempdir().expect("Couldn't create temp dir");
         let data_dir = temp_dir.path().join("test.etcd");
         let data_dir: &OsStr = data_dir.as_ref();
 
-        let client_addr = get_addr();
-        let client_url = format!("http://{}", client_addr);
-        let peer_url = format!("http://{}", get_addr());
+        let client_addr = NetConfig::with_free_port();
+        let client_url = format!("http://{}", client_addr.public_addr());
+        let peer_url = format!("http://{}", NetConfig::with_free_port().public_addr());
 
         let process = Command::new("etcd")
             .arg("--data-dir")
@@ -90,7 +86,7 @@ impl Runner {
         delay_for(Duration::from_millis(100)).await;
 
         Ok(Runner {
-            addr: client_addr,
+            addr: client_addr.public_addr(),
             data_dir: temp_dir,
             process,
         })

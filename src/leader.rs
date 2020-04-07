@@ -8,7 +8,7 @@ use crate::{
     bytes::Bytes,
     config::store::Store,
     experiment::Experiment,
-    net::get_addr,
+    net::Config as NetConfig,
     protocols::{accumulator::Accumulator, wrapper::ProtocolWrapper, Protocol},
     services::{
         discovery::{register, resolve_all, Node},
@@ -111,25 +111,25 @@ where
     let (tx, rx) = watch::channel(None);
     let state = MyLeader::from_protocol(protocol, experiment.group_size(), rx);
     info!("Leader starting up.");
-    let addr = get_addr();
+    let addr = NetConfig::with_free_port();
     let server_task = tokio::spawn(
         tonic::transport::server::Server::builder()
             .add_service(HealthServer::new(AllGoodHealthServer::default()))
             .add_service(LeaderServer::new(state))
-            .serve_with_shutdown(addr, shutdown),
+            .serve_with_shutdown(addr.local_socket_addr(), shutdown),
     );
 
-    wait_for_health(format!("http://{}", addr)).await?;
+    wait_for_health(format!("http://{}", addr.public_addr())).await?;
     trace!("Leader {:?} healthy and serving.", info);
 
-    let node = Node::new(info.into(), addr);
+    let node = Node::new(info.into(), addr.public_addr());
     register(&config, node).await?;
     debug!("Registered with config server.");
 
     wait_for_start_time_set(&config).await.unwrap();
     let publisher_addr = resolve_all(&config)
         .await?
-        .iter()
+        .into_iter()
         .find_map(|node| match node.service {
             Service::Publisher(_) => Some(node.addr),
             _ => None,
