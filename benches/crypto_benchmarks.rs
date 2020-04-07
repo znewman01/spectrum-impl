@@ -50,7 +50,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("gen_audit", |b| {
         let field = Field::new(prime.to_u128().unwrap());
         let dpf = PRGDPF::new(AESPRG::new(16, EVAL_SIZE), num_points);
-        let vdpf = FieldVDPF::new(dpf, field.clone());
+        let vdpf = FieldVDPF::new(dpf, field);
 
         let data = Bytes::empty(EVAL_SIZE);
         let dpf_keys = vdpf.gen(data, point_idx);

@@ -160,22 +160,22 @@ impl VDPF for ConcreteVdpf {
         let res_seed = dpf_key_a
             .seeds
             .iter()
-            .map(|s| s.to_field_element(self.field.clone()))
+            .map(|s| s.to_field_element(self.field))
             .fold(self.field.zero(), |x, y| x + y);
         let res_seed = dpf_key_b
             .seeds
             .iter()
-            .map(|s| s.to_field_element(self.field.clone()))
+            .map(|s| s.to_field_element(self.field))
             .fold(res_seed, |x, y| x - y);
 
         // If the bit is `1` for server A, then we need to negate the share
         // to ensure that (bit_A - bit_B = 1)*key = -key and not key
         let bit_proof = if dpf_key_a.bits[point_idx] == 1 {
-            -auth_key.clone()
+            -(*auth_key)
         } else {
-            auth_key.clone()
+            *auth_key
         };
-        let seed_proof = auth_key.clone() * res_seed;
+        let seed_proof = (*auth_key) * res_seed;
 
         FieldProofShare::share(bit_proof, seed_proof, self.num_keys())
     }
@@ -190,17 +190,17 @@ impl VDPF for ConcreteVdpf {
         dpf_key: &<Self as DPF>::Key,
         proof_share: &FieldProofShare,
     ) -> FieldToken {
-        let mut bit_check = proof_share.bit.clone();
-        let mut seed_check = proof_share.seed.clone();
+        let mut bit_check = proof_share.bit;
+        let mut seed_check = proof_share.seed;
         for ((key, seed), bit) in auth_keys
             .iter()
             .zip(dpf_key.seeds.iter())
             .zip(dpf_key.bits.iter())
         {
-            seed_check -= key.clone() * seed.to_field_element(self.field.clone());
+            seed_check -= (*key) * seed.to_field_element(self.field);
             match *bit {
                 0 => {}
-                1 => bit_check += key.clone(),
+                1 => bit_check += *key,
                 _ => panic!("Bit must be 0 or 1"),
             }
         }
@@ -267,7 +267,7 @@ pub mod tests {
             (any::<Field>(), hashes())
                 .prop_flat_map(|(field, data)| {
                     (
-                        any_with::<FieldElement>(Some(field.clone())),
+                        any_with::<FieldElement>(Some(field)),
                         any_with::<FieldElement>(Some(field)),
                     )
                         .prop_map(move |(bit, seed)| FieldToken {

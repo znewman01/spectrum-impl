@@ -68,12 +68,12 @@ impl Field {
     pub fn zero(&self) -> FieldElement {
         FieldElement {
             value: 0,
-            field: self.clone(),
+            field: *self,
         }
     }
 
     pub fn new_element(&self, value: u128) -> FieldElement {
-        FieldElement::new(value, self.clone())
+        FieldElement::new(value, *self)
     }
 
     // generates a new random field element
@@ -81,12 +81,12 @@ impl Field {
         let rand: Integer = Integer::from(self.order).random_below_ref(rng).into();
         FieldElement {
             value: rand.to_u128().unwrap(),
-            field: self.clone(),
+            field: *self,
         }
     }
 
     pub fn from_proto(&self, msg: proto::Integer) -> FieldElement {
-        FieldElement::new(parse_u128(msg.data.as_ref()), self.clone())
+        FieldElement::new(parse_u128(msg.data.as_ref()), *self)
     }
 
     pub fn element_from_bytes(&self, bytes: &Bytes) -> FieldElement {
@@ -106,11 +106,11 @@ impl FieldElement {
     }
 
     pub fn field(&self) -> Field {
-        self.field.clone()
+        self.field
     }
 
     pub fn get_value(&self) -> u128 {
-        self.value.clone()
+        self.value
     }
 }
 
@@ -174,7 +174,7 @@ impl ops::Sub<FieldElement> for FieldElement {
         assert_eq!(self.field, other.field);
 
         FieldElement::new(
-            add_mod(self.value, (-other.clone()).value, self.field.order),
+            add_mod(self.value, (-other).value, self.field.order),
             other.field,
         )
     }
@@ -226,7 +226,7 @@ impl ops::SubAssign<FieldElement> for FieldElement {
     fn sub_assign(&mut self, other: FieldElement) {
         assert_eq!(self.field, other.field);
         *self = Self {
-            value: add_mod(self.value, (-other.clone()).value, self.field.order),
+            value: add_mod(self.value, (-other).value, self.field.order),
             field: other.field,
         };
     }
@@ -279,7 +279,7 @@ pub mod tests {
     pub fn field_element_pairs() -> impl Strategy<Value = (FieldElement, FieldElement)> {
         any::<Field>().prop_flat_map(|field| {
             (
-                any_with::<FieldElement>(Some(field.clone())),
+                any_with::<FieldElement>(Some(field)),
                 any_with::<FieldElement>(Some(field)),
             )
         })
@@ -290,8 +290,8 @@ pub mod tests {
     {
         any::<Field>().prop_flat_map(|field| {
             (
-                any_with::<FieldElement>(Some(field.clone())),
-                any_with::<FieldElement>(Some(field.clone())),
+                any_with::<FieldElement>(Some(field)),
+                any_with::<FieldElement>(Some(field)),
                 any_with::<FieldElement>(Some(field)),
             )
         })
@@ -323,7 +323,7 @@ pub mod tests {
     #[test]
     fn test_field_element_bytes_rt(element: FieldElement) {
         prop_assert_eq!(
-            element.field.element_from_bytes(&element.clone().into()),
+            element.field.element_from_bytes(&element.into()),
             element
         );
       }
@@ -333,36 +333,36 @@ pub mod tests {
 
         #[test]
         fn test_add_commutative((x, y) in field_element_pairs()) {
-            assert_eq!(x.clone() + y.clone(), y + x);
+            assert_eq!(x + y, y + x);
         }
         #[test]
         fn test_add_associative((x, y, z) in field_element_triples()) {
-            assert_eq!((x.clone() + y.clone()) + z.clone(), x + (y + z));
+            assert_eq!((x + y) + z, x + (y + z));
         }
 
         #[test]
         fn test_add_sub_inverses((x, y) in field_element_pairs()) {
-            assert_eq!(x.clone() - y.clone(), x + (-y));
+            assert_eq!(x - y, x + (-y));
         }
 
         #[test]
         fn test_add_inverse(x in any::<FieldElement>()) {
-            assert_eq!(x.field().zero(), x.clone() + (-x));
+            assert_eq!(x.field().zero(), x + (-x));
         }
 
         #[test]
         fn test_mul_commutative((x, y) in field_element_pairs()) {
-            assert_eq!(x.clone() * y.clone(), y * x);
+            assert_eq!(x * y, y * x);
         }
 
         #[test]
         fn test_mul_associative((x, y, z) in field_element_triples()) {
-            assert_eq!((x.clone() * y.clone()) * z.clone(), x * (y * z));
+            assert_eq!((x * y) * z, x * (y * z));
         }
 
         #[test]
         fn test_distributive((x, y, z) in field_element_triples()) {
-            assert_eq!(x.clone() * (y.clone() + z.clone()), (x.clone() * y) + (x * z));
+            assert_eq!(x * (y + z), (x * y) + (x * z));
         }
 
         #[test]
