@@ -22,6 +22,8 @@ struct Args {
     logs: cli::LogArgs,
     #[clap(flatten)]
     leader: LeaderArgs,
+    #[clap(flatten)]
+    net: cli::NetArgs,
 }
 
 #[derive(Clap)]
@@ -46,5 +48,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let experiment = experiment::read_from_store(&config).await?;
     let protocol = experiment.get_protocol().clone();
     let info = LeaderInfo::from(args.leader);
-    leader::run(config, experiment, protocol, info, ctrl_c().map(|_| ())).await
+    leader::run(
+        config,
+        experiment,
+        protocol,
+        info,
+        args.net.into(),
+        ctrl_c().map(|_| ()),
+    )
+    .await
 }

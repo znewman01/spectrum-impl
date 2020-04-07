@@ -19,6 +19,8 @@ use tokio::sync::{Mutex, Notify};
 struct Args {
     #[clap(flatten)]
     logs: cli::LogArgs,
+    #[clap(flatten)]
+    net: cli::NetArgs,
 }
 
 #[derive(Debug, Clone)]
@@ -74,6 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         config,
         experiment.get_protocol().clone(),
         info,
+        args.net.into(),
         remote,
         shutdown,
     )

@@ -103,6 +103,7 @@ async fn inner_run<C, F, R, P>(
     config: C,
     protocol: P,
     info: PublisherInfo,
+    net: NetConfig,
     remote: R,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
@@ -114,8 +115,7 @@ where
 {
     let state = MyPublisher::from_protocol(protocol, remote.clone());
     info!("Publisher starting up.");
-    let addr = NetConfig::with_free_port();
-    let local_socket_addr = addr.local_socket_addr();
+    let local_socket_addr = net.local_socket_addr();
     let server_task = tokio::spawn(async move {
         tonic::transport::server::Server::builder()
             .add_service(HealthServer::new(AllGoodHealthServer::default()))
@@ -124,10 +124,10 @@ where
             .await
     });
 
-    wait_for_health(format!("http://{}", addr.public_addr())).await?;
+    wait_for_health(format!("http://{}", net.public_addr())).await?;
     trace!("Publisher {:?} healthy and serving.", info);
 
-    let node = Node::new(info.into(), addr.public_addr());
+    let node = Node::new(info.into(), net.public_addr());
     register(&config, node).await?;
     debug!("Registered with config server.");
 
@@ -151,6 +151,7 @@ pub async fn run<C, R, F>(
     config: C,
     protocol: ProtocolWrapper,
     info: PublisherInfo,
+    net: NetConfig,
     remote: R,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
@@ -161,10 +162,10 @@ where
 {
     match protocol {
         ProtocolWrapper::Secure(protocol) => {
-            inner_run(config, protocol, info, remote, shutdown).await?;
+            inner_run(config, protocol, info, net, remote, shutdown).await?;
         }
         ProtocolWrapper::Insecure(protocol) => {
-            inner_run(config, protocol, info, remote, shutdown).await?;
+            inner_run(config, protocol, info, net, remote, shutdown).await?;
         }
     }
     Ok(())

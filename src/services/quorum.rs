@@ -114,12 +114,11 @@ mod test {
     use futures::executor::block_on;
     use proptest::prelude::*;
     use std::iter::once;
-    use std::net::SocketAddr;
 
     const NO_TIME: Duration = Duration::from_millis(0);
 
-    fn addr() -> SocketAddr {
-        SocketAddr::new("127.0.0.1".parse().unwrap(), 22)
+    fn addr() -> String {
+        "localhost:8080".to_string()
     }
 
     prop_compose! {

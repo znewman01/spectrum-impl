@@ -1,4 +1,7 @@
-use crate::{experiment::Experiment, protocols::wrapper::ProtocolWrapper};
+use crate::{
+    experiment::Experiment, net::Config as NetConfig, protocols::wrapper::ProtocolWrapper,
+};
+
 use clap::Clap;
 use simplelog::{LevelFilter, SimpleLogger, TermLogger, TerminalMode};
 
@@ -38,6 +41,32 @@ impl LogArgs {
         TermLogger::init(self.log_level, config.clone(), TerminalMode::Stderr)
             .or_else(|_| SimpleLogger::init(self.log_level, config))
             .unwrap();
+    }
+}
+
+#[derive(Clap)]
+pub struct NetArgs {
+    /// Port on which the service should bind (localhost interface).
+    ///
+    /// If not given, a random unused port will be picked.
+    #[clap(long)]
+    local_port: Option<u16>,
+
+    /// Host (and optional port) to publish as the address of this service.
+    ///
+    /// If not given, use `localhost` and the port from `--local-port`.
+    #[clap(long = "public-address")]
+    public_addr: Option<String>,
+}
+
+impl Into<NetConfig> for NetArgs {
+    fn into(self) -> NetConfig {
+        match (self.local_port, self.public_addr) {
+            (None, None) => NetConfig::with_free_port_localhost(),
+            (None, Some(public_addr)) => NetConfig::with_free_port(public_addr),
+            (Some(local_port), None) => NetConfig::new_localhost(local_port),
+            (Some(local_port), Some(public_addr)) => NetConfig::new(local_port, public_addr),
+        }
     }
 }
 
