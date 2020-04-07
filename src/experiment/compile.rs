@@ -120,6 +120,7 @@ fn build_spectrum(
 async fn spawn_and_compile(
     log: &slog::Logger,
     bin_dir: PathBuf,
+    hash: String,
     src_archive: PathBuf,
     machine_types: Vec<String>,
     profile: Profile,
@@ -134,7 +135,7 @@ async fn spawn_and_compile(
 
     for machine_type in machine_types.into_iter() {
         let src_archive = src_archive.clone();
-        let archive_name = format!("spectrum-{}.tar.gz", &machine_type);
+        let archive_name = format_binary(&hash, profile, &machine_type);
         let bin_archive = bin_dir.join(archive_name);
         bin_archives.insert(machine_type.to_string(), bin_archive.clone());
 
@@ -167,8 +168,8 @@ async fn spawn_and_compile(
 }
 
 /// Format the name of a compiled binary.
-fn format_binary(hash: &str, machine: &str) -> String {
-    format!("spectrum-{}-{}.tar.gz", hash, machine)
+fn format_binary(hash: &str, profile: Profile, machine: &str) -> String {
+    format!("spectrum-{}-{}-{}.tar.gz", hash, machine, profile.name())
 }
 
 /// Compile Spectrum binaries for the given machine types (in AWS).
@@ -217,8 +218,8 @@ pub async fn compile(
     trace!(log, "Source tarball created"; "hash" => &hash);
     let machine_types: Vec<String> = machine_types
         .into_iter()
-        .filter(|t| !bin_dir.join(format_binary(&hash, t)).exists())
+        .filter(|t| !bin_dir.join(format_binary(&hash, profile, t)).exists())
         .collect();
 
-    spawn_and_compile(log, bin_dir, src_archive, machine_types, profile, ami).await
+    spawn_and_compile(log, bin_dir, hash, src_archive, machine_types, profile, ami).await
 }
