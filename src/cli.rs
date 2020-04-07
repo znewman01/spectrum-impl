@@ -1,6 +1,6 @@
 use crate::{experiment::Experiment, protocols::wrapper::ProtocolWrapper};
 use clap::Clap;
-use simplelog::{LevelFilter, TermLogger, TerminalMode};
+use simplelog::{LevelFilter, SimpleLogger, TermLogger, TerminalMode};
 
 #[derive(Clap)]
 pub struct Args {
@@ -32,14 +32,12 @@ pub struct LogArgs {
 
 impl LogArgs {
     pub fn init(&self) {
-        TermLogger::init(
-            self.log_level,
-            simplelog::ConfigBuilder::new()
-                .add_filter_allow_str("spectrum_impl")
-                .build(),
-            TerminalMode::Stderr,
-        )
-        .unwrap();
+        let config = simplelog::ConfigBuilder::new()
+            .add_filter_allow_str("spectrum_impl")
+            .build();
+        TermLogger::init(self.log_level, config.clone(), TerminalMode::Stderr)
+            .or_else(|_| SimpleLogger::init(self.log_level, config))
+            .unwrap();
     }
 }
 
