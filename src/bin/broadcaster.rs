@@ -31,7 +31,7 @@ struct Args {
 #[clap(group = ArgGroup::with_name("message").required(true))]
 struct BroadcasterArgs {
     /// The index of this broadcaster among all clients.
-    #[clap(long = "index")]
+    #[clap(long = "index", env = "SPECTRUM_BROADCASTER_INDEX")]
     idx: u16,
 
     /// The message to broadcast
