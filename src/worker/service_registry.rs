@@ -29,7 +29,7 @@ impl Map {
         let peer_workers: Vec<_> = all_services
             .iter()
             .filter_map(|node| match node.service {
-                Service::Worker(info) => Some((info, node.addr)),
+                Service::Worker(info) => Some((info, node.addr.clone())),
                 _ => None,
             })
             .collect();
@@ -39,7 +39,7 @@ impl Map {
         }
 
         let addr = all_services
-            .iter()
+            .into_iter()
             .find_map(|node| match node.service {
                 Service::Leader(leader) if leader.group == worker.group => Some(node.addr),
                 _ => None,

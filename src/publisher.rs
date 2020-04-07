@@ -7,7 +7,7 @@ use crate::{
     bytes::Bytes,
     config::store::Store,
     experiment,
-    net::get_addr,
+    net::Config as NetConfig,
     protocols::{accumulator::Accumulator, wrapper::ProtocolWrapper, Protocol},
     services::{
         discovery::{register, Node},
@@ -114,19 +114,20 @@ where
 {
     let state = MyPublisher::from_protocol(protocol, remote.clone());
     info!("Publisher starting up.");
-    let addr = get_addr();
+    let addr = NetConfig::with_free_port();
+    let local_socket_addr = addr.local_socket_addr();
     let server_task = tokio::spawn(async move {
         tonic::transport::server::Server::builder()
             .add_service(HealthServer::new(AllGoodHealthServer::default()))
             .add_service(PublisherServer::new(state))
-            .serve_with_shutdown(addr, shutdown)
+            .serve_with_shutdown(local_socket_addr, shutdown)
             .await
     });
 
-    wait_for_health(format!("http://{}", addr)).await?;
+    wait_for_health(format!("http://{}", addr.public_addr())).await?;
     trace!("Publisher {:?} healthy and serving.", info);
 
-    let node = Node::new(info.into(), addr);
+    let node = Node::new(info.into(), addr.public_addr());
     register(&config, node).await?;
     debug!("Registered with config server.");
 
