@@ -129,7 +129,6 @@ async fn spawn_and_compile(
     debug!(log, "Compiling binaries for"; "machine_types" => format!("{:?}", &machine_types));
     let mut bin_archives: HashMap<String, PathBuf> = HashMap::new();
 
-    let mut aws_launcher = aws::Launcher::default();
     let mut compile_tsunami = TsunamiBuilder::default();
     compile_tsunami.set_logger(log.new(o!("tsunami" => "compile")));
 
@@ -157,6 +156,8 @@ async fn spawn_and_compile(
         compile_tsunami.add(&machine_type, machine)?;
     }
 
+    let mut aws_launcher = aws::Launcher::default();
+    aws_launcher.set_max_instance_duration(1);
     compile_tsunami.spawn(&mut aws_launcher)?;
 
     // Nothing happens until this point.
