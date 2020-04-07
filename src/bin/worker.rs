@@ -29,11 +29,11 @@ struct Args {
 #[derive(Clap)]
 struct WorkerArgs {
     /// The index of the group of this worker.
-    #[clap(long)]
+    #[clap(long, env = "SPECTRUM_WORKER_GROUP")]
     group: u16,
 
     /// The index within the group of this worker.
-    #[clap(long = "index")]
+    #[clap(long = "index", env = "SPECTRUM_WORKER_INDEX")]
     idx: u16,
 }
 

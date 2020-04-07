@@ -27,7 +27,7 @@ struct Args {
 #[derive(Clap)]
 struct LeaderArgs {
     /// The index of the group of this leader.
-    #[clap(long)]
+    #[clap(long, env = "SPECTURM_LEADER_GROUP")]
     group: u16,
 }
 

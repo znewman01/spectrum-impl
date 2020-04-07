@@ -26,7 +26,7 @@ struct Args {
 #[derive(Clap)]
 struct ViewerArgs {
     /// The index of this viewer among all clients.
-    #[clap(long = "index")]
+    #[clap(long = "index", env = "SPECTRUM_VIEWER_INDEX")]
     idx: u16,
 }
 
