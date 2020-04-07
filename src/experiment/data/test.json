@@ -1,0 +1,49 @@
+[
+    {
+        "machine_types": {
+            "publisher": "m5.large",
+            "worker": "m5.large",
+            "client": "m5.large"
+        },
+
+        "clients_per_machine": 100,
+
+        "base_ami": "ami_0fc20dd1da406780b",
+
+        "group_size": 1,
+
+        "clients": 1000,
+
+        "channels": 10,
+
+        "message_size": 1024,
+
+        "protocol": {
+            "Symmetric": {
+                "security": 16
+            }
+        }
+    },
+    {
+        "clients": 1000,
+        "channels": 10,
+        "message_size": 1024,
+
+        "protocol": {
+            "Insecure": {
+                "parties": 2
+            }
+        }
+    },
+    {
+        "clients": 1000,
+        "channels": 10,
+        "message_size": 1024,
+
+        "protocol": {
+            "SeedHomomorphic": {
+                "parties": 3
+            }
+        }
+    }
+]
