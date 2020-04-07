@@ -180,31 +180,10 @@ impl Result {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::io::prelude::*;
-    use std::io::BufReader;
-    use std::path::Path;
 
     #[test]
     fn test_parses_example() {
-        let reader = BufReader::new(
-            File::open(Path::new("/home/zjn/git/spectrum-impl/experiments.json"))
-                .expect("Cannot find experiments.json file."),
-        );
-
-        // The file is JSON *with comments*, so not valid JSON.
-        // We need to strip comments out before we parse it.
-        let mut json = String::new();
-        for line in reader.lines() {
-            let line = line.unwrap();
-            // Only matches comments at beginning of line, but that's okay.
-            // We don't want to write a full parser.
-            if line.trim_start_matches(' ').starts_with("//") {
-                continue;
-            }
-            json += &line;
-        }
-
+        let json = include_str!("data/test.json");
         let _experiments: Vec<Experiment> =
             serde_json::from_str(&json).expect("Serialization should have been successful.");
     }
