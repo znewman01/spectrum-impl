@@ -49,7 +49,7 @@ pub async fn resolve_all<C: Store>(config: &C) -> Result<Vec<Node>, Error> {
     Ok(config
         .list(vec!["nodes".to_string()])
         .await?
-        .iter()
+        .into_iter()
         .map(|(key, addr)| {
             let key: Vec<&str> = key.iter().map(|x| x.as_str()).collect();
             // TODO(zjn): don't unwrap
@@ -65,7 +65,7 @@ pub async fn resolve_all<C: Store>(config: &C) -> Result<Vec<Node>, Error> {
                     panic!(); // TODO(zjn): better error
                 }
             };
-            Node::new(service, addr.parse().unwrap())
+            Node::new(service, addr)
         })
         .collect())
 }

@@ -276,6 +276,7 @@ async fn inner_run<C, F, P>(
     experiment: Experiment,
     protocol: P,
     info: WorkerInfo,
+    net: NetConfig,
     shutdown: F,
 ) -> Result<(), Error>
 where
@@ -290,7 +291,6 @@ where
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
 {
     info!("Worker starting up.");
-    let net_config = NetConfig::with_free_port();
 
     let (start_tx, start_rx) = watch::channel(false);
     let (registry, registry_remote) = ServiceRegistry::new_with_remote();
@@ -299,13 +299,13 @@ where
     let server = tonic::transport::server::Server::builder()
         .add_service(HealthServer::new(AllGoodHealthServer::default()))
         .add_service(WorkerServer::new(worker))
-        .serve_with_shutdown(net_config.local_socket_addr(), shutdown);
+        .serve_with_shutdown(net.local_socket_addr(), shutdown);
 
     let server_task = spawn(server);
 
-    wait_for_health(format!("http://{}", net_config.public_addr())).await?;
+    wait_for_health(format!("http://{}", net.public_addr())).await?;
     trace!("Worker {:?} healthy and serving.", info);
-    register(&config, Node::new(info.into(), net_config.public_addr())).await?;
+    register(&config, Node::new(info.into(), net.public_addr())).await?;
 
     let start_time = wait_for_start_time_set(&config).await.unwrap();
     registry_remote.init(info, &config).await?;
@@ -321,6 +321,7 @@ pub async fn run<C, F>(
     experiment: Experiment,
     protocol: ProtocolWrapper,
     info: WorkerInfo,
+    net: NetConfig,
     shutdown: F,
 ) -> Result<(), Error>
 where
@@ -329,10 +330,10 @@ where
 {
     match protocol {
         ProtocolWrapper::Secure(protocol) => {
-            inner_run(config, experiment, protocol, info, shutdown).await?;
+            inner_run(config, experiment, protocol, info, net, shutdown).await?;
         }
         ProtocolWrapper::Insecure(protocol) => {
-            inner_run(config, experiment, protocol, info, shutdown).await?;
+            inner_run(config, experiment, protocol, info, net, shutdown).await?;
         }
     }
     Ok(())

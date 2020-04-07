@@ -101,6 +101,7 @@ async fn inner_run<C, F, P>(
     experiment: Experiment,
     protocol: P,
     info: LeaderInfo,
+    net: NetConfig,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
@@ -111,18 +112,17 @@ where
     let (tx, rx) = watch::channel(None);
     let state = MyLeader::from_protocol(protocol, experiment.group_size(), rx);
     info!("Leader starting up.");
-    let addr = NetConfig::with_free_port();
     let server_task = tokio::spawn(
         tonic::transport::server::Server::builder()
             .add_service(HealthServer::new(AllGoodHealthServer::default()))
             .add_service(LeaderServer::new(state))
-            .serve_with_shutdown(addr.local_socket_addr(), shutdown),
+            .serve_with_shutdown(net.local_socket_addr(), shutdown),
     );
 
-    wait_for_health(format!("http://{}", addr.public_addr())).await?;
+    wait_for_health(format!("http://{}", net.public_addr())).await?;
     trace!("Leader {:?} healthy and serving.", info);
 
-    let node = Node::new(info.into(), addr.public_addr());
+    let node = Node::new(info.into(), net.public_addr());
     register(&config, node).await?;
     debug!("Registered with config server.");
 
@@ -152,6 +152,7 @@ pub async fn run<C, F>(
     experiment: Experiment,
     protocol: ProtocolWrapper,
     info: LeaderInfo,
+    net: NetConfig,
     shutdown: F,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
@@ -160,10 +161,10 @@ where
 {
     match protocol {
         ProtocolWrapper::Secure(protocol) => {
-            inner_run(config, experiment, protocol, info, shutdown).await?;
+            inner_run(config, experiment, protocol, info, net, shutdown).await?;
         }
         ProtocolWrapper::Insecure(protocol) => {
-            inner_run(config, experiment, protocol, info, shutdown).await?;
+            inner_run(config, experiment, protocol, info, net, shutdown).await?;
         }
     }
     Ok(())

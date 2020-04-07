@@ -29,9 +29,8 @@ pub mod bytes;
 pub mod cli;
 pub mod config;
 pub mod experiment;
+pub mod net;
 pub mod services;
-
-mod net;
 
 mod proto {
     use tonic::Status;
@@ -123,16 +122,35 @@ where
         };
 
         let protocol = experiment.get_protocol().clone();
+        let net = net::Config::with_free_port_localhost();
         handles.push(match service {
-            Publisher(info) => {
-                publisher::run(config.clone(), protocol, info, remote.clone(), shutdown).boxed()
-            }
-            Leader(info) => {
-                leader::run(config.clone(), experiment.clone(), protocol, info, shutdown).boxed()
-            }
-            Worker(info) => {
-                worker::run(config.clone(), experiment.clone(), protocol, info, shutdown).boxed()
-            }
+            Publisher(info) => publisher::run(
+                config.clone(),
+                protocol,
+                info,
+                net,
+                remote.clone(),
+                shutdown,
+            )
+            .boxed(),
+            Leader(info) => leader::run(
+                config.clone(),
+                experiment.clone(),
+                protocol,
+                info,
+                net,
+                shutdown,
+            )
+            .boxed(),
+            Worker(info) => worker::run(
+                config.clone(),
+                experiment.clone(),
+                protocol,
+                info,
+                net,
+                shutdown,
+            )
+            .boxed(),
             Client(info) => client::viewer::run(config.clone(), protocol, info, shutdown).boxed(),
         });
     }

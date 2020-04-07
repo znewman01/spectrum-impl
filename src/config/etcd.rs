@@ -63,9 +63,12 @@ impl Runner {
         let data_dir = temp_dir.path().join("test.etcd");
         let data_dir: &OsStr = data_dir.as_ref();
 
-        let client_addr = NetConfig::with_free_port();
+        let client_addr = NetConfig::with_free_port_localhost();
         let client_url = format!("http://{}", client_addr.public_addr());
-        let peer_url = format!("http://{}", NetConfig::with_free_port().public_addr());
+        let peer_url = format!(
+            "http://{}",
+            NetConfig::with_free_port_localhost().public_addr()
+        );
 
         let process = Command::new("etcd")
             .arg("--data-dir")
