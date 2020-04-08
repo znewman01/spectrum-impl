@@ -224,10 +224,23 @@ pub async fn compile(
         .trim_end_matches('\n')
         .to_string();
     trace!(log, "Source tarball created"; "hash" => &hash);
+    let mut binaries = HashMap::<String, PathBuf>::new();
     let machine_types: Vec<String> = machine_types
         .into_iter()
-        .filter(|t| !bin_dir.join(format_binary(&hash, profile, t)).exists())
+        .filter(|machine_type| {
+            let path = bin_dir.join(format_binary(&hash, profile, machine_type));
+            if path.exists() {
+                binaries.insert(machine_type.to_string(), path);
+                false
+            } else {
+                true
+            }
+        })
         .collect();
 
-    spawn_and_compile(log, bin_dir, hash, src_archive, machine_types, profile, ami).await
+    let new_binaries =
+        spawn_and_compile(log, bin_dir, hash, src_archive, machine_types, profile, ami).await?;
+    binaries.extend(new_binaries);
+
+    Ok(binaries)
 }
