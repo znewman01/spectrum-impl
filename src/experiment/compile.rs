@@ -79,7 +79,14 @@ fn build_spectrum(
 ) -> Result<()> {
     const SRC_ARCHIVE_NAME: &str = "spectrum-src.tar.gz";
     const BIN_ARCHIVE_NAME: &str = "spectrum-bin.tar.gz";
-    const ALL_BINARIES: &[&str] = &["publisher", "worker", "leader", "viewer", "broadcaster"];
+    const ALL_BINARIES: &[&str] = &[
+        "publisher",
+        "worker",
+        "leader",
+        "viewer",
+        "broadcaster",
+        "setup",
+    ];
 
     trace!(log, "Uploading and extracting source archive.");
     ssh.upload(source, Path::new(SRC_ARCHIVE_NAME))?;

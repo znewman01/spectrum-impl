@@ -71,7 +71,7 @@ impl Into<NetConfig> for NetArgs {
 }
 
 #[derive(Clap)]
-struct ExperimentArgs {
+pub struct ExperimentArgs {
     /// Number of clients to simulate.
     ///
     /// This includes both viewers and broadcasters (one per channel), so it
