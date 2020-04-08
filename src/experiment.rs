@@ -94,7 +94,7 @@ impl Experiment {
         match &self.protocol {
             ProtocolWrapper::Secure(protocol) => channels
                 .map(|idx: usize| {
-                    let secret = protocol.vdpf.field.new_element(idx.into());
+                    let secret = protocol.vdpf.field.new_element(idx as u128);
                     secure::ChannelKey::<secure::ConcreteVdpf>::new(idx, secret).into()
                 })
                 .collect(),

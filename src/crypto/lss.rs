@@ -7,7 +7,7 @@ use std::ops;
 
 /// message contains a vector of bytes representing data in spectrum
 /// and is used for easily performing binary operations over bytes
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SecretShare {
     value: FieldElement,
 }
@@ -40,7 +40,7 @@ impl LSS {
         let values: Vec<_> = repeat_with(|| field.rand_element(rng))
             .take(n - 1)
             .collect();
-        let sum = values.iter().fold(value, |a, b| a + b.clone());
+        let sum = values.iter().fold(value, |a, b| a + (*b));
         once(sum).chain(values).map(SecretShare::new).collect()
     }
 
@@ -54,7 +54,7 @@ impl LSS {
         shares
             .iter()
             .skip(1)
-            .fold(shares[0].value.clone(), |a, b| a - b.value.clone())
+            .fold(shares[0].value, |a, b| a - b.value)
     }
 }
 
@@ -124,7 +124,7 @@ mod tests {
         ) {
             let mut rng = RandState::new();
             assert_eq!(
-                LSS::recover(LSS::share(value.clone(), num_shares, &mut rng)),
+                LSS::recover(LSS::share(value, num_shares, &mut rng)),
                 value
             );
         }
@@ -136,7 +136,7 @@ mod tests {
         ) {
             let mut rng = RandState::new();
             assert_ne!(
-                LSS::share(value.clone(), num_shares, &mut rng),
+                LSS::share(value, num_shares, &mut rng),
                 LSS::share(value, num_shares, &mut rng),
             );
         }
@@ -148,7 +148,7 @@ mod tests {
         ) {
             let mut rng = RandState::new();
             assert_eq!(
-                LSS::recover(LSS::share(value.clone(), num_shares, &mut rng)) + constant.clone(),
+                LSS::recover(LSS::share(value, num_shares, &mut rng)) + constant,
                 value + constant
             );
         }
@@ -159,9 +159,9 @@ mod tests {
             num_shares in 2..MAX_SPLIT
         ) {
             let mut rng = RandState::new();
-            let shares = LSS::share(value1.clone(), num_shares, &mut rng)
+            let shares = LSS::share(value1, num_shares, &mut rng)
                 .into_iter()
-                .zip(LSS::share(value2.clone(), num_shares, &mut rng).into_iter())
+                .zip(LSS::share(value2, num_shares, &mut rng).into_iter())
                 .map(|(x, y)| x + y)
                 .collect();
             assert_eq!(LSS::recover(shares), value1 + value2);
@@ -173,9 +173,9 @@ mod tests {
             num_shares in 2..MAX_SPLIT
         ) {
             let mut rng = RandState::new();
-            let shares = LSS::share(value.clone(), num_shares, &mut rng)
+            let shares = LSS::share(value, num_shares, &mut rng)
                 .into_iter()
-                .map(|x| x * constant.clone())
+                .map(|x| x * constant)
                 .collect();
             assert_eq!(
                 LSS::recover(shares),
