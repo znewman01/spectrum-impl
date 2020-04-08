@@ -71,7 +71,9 @@ impl TryFrom<BroadcasterArgs> for ClientInfo {
         let key_file_reader = File::open(&key_file).map_err(|e| e.to_string())?;
         let key: ChannelKeyWrapper = serde_json::from_reader(key_file_reader)
             .map_err(|e| format!("Could not read key file [{}]: {}", key_file, e.to_string()))?;
-        Ok(Self::new_broadcaster(args.idx, msg, key))
+        // -1 because the CLI needs non-zero or it thinks we didn't supply it
+        // from environment variable
+        Ok(Self::new_broadcaster(args.idx - 1, msg, key))
     }
 }
 

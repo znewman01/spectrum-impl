@@ -32,7 +32,7 @@ struct ViewerArgs {
 
 impl From<ViewerArgs> for ClientInfo {
     fn from(args: ViewerArgs) -> Self {
-        Self::new(args.idx)
+        Self::new(args.idx - 1)
     }
 }
 
