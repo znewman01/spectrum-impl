@@ -128,30 +128,6 @@ impl Into<proto::Integer> for FieldElement {
     }
 }
 
-// adds two u128 values together and reduces modulo the provided modulus
-// if an overflow occurs, the operation is performed using rug::Integer
-// and then converted back to u128
-fn add_mod(a: u128, b: u128, modulus: u128) -> u128 {
-    match a.checked_add(b) {
-        Some(result) => result % modulus,
-        None => ((Integer::from(a) + Integer::from(b)) % Integer::from(modulus))
-            .to_u128()
-            .unwrap(),
-    }
-}
-
-// multiplies two u128 values together and reduces modulo the provided modulus
-// if an overflow occurs, the operation is performed using rug::Integer
-// and then converted back to u128
-fn mul_mod(a: u128, b: u128, modulus: u128) -> u128 {
-    match a.checked_mul(b) {
-        Some(result) => result % modulus,
-        None => ((Integer::from(a) * Integer::from(b)) % Integer::from(modulus))
-            .to_u128()
-            .unwrap(),
-    }
-}
-
 /// override + operation: want result.value = element1.value  + element2.value  mod field.order
 impl ops::Add<FieldElement> for FieldElement {
     type Output = FieldElement;
@@ -229,6 +205,56 @@ impl ops::SubAssign<FieldElement> for FieldElement {
             value: add_mod(self.value, (-other).value, self.field.order),
             field: other.field,
         };
+    }
+}
+
+/// Returns a + b (mod modulus)
+/// see https://stackoverflow.com/questions/11248012/ 
+/// for reference
+fn add_mod(a: u128, b: u128, modulus: u128) -> u128 {
+    match a.checked_add(b) {
+        Some(result) => result % modulus,
+        None => {
+            if b == 0 {
+                a
+            } else {
+                let c = modulus - b;
+                if c <= a {
+                    a - c
+                } else {
+                    modulus - c + a
+                }
+            }
+        }
+    }
+}
+
+/// Returns a * b (mod modulus) without overflowing u128
+/// see https://stackoverflow.com/questions/54487936
+fn mul_mod(a: u128, b: u128, modulus: u128) -> u128 {
+    if modulus <= 1 << 64 {
+        ((a % modulus) * (b % modulus)) % modulus
+    } else {
+        let add = |x: u128, y: u128| x.checked_sub(modulus - y).unwrap_or_else(|| x + y);
+        let split = |x: u128| (x >> 64, x & !(!0 << 64));
+        let (a_hi, a_lo) = split(a);
+        let (b_hi, b_lo) = split(b);
+        let mut c = a_hi * b_hi % modulus;
+        let (d_hi, d_lo) = split(a_lo * b_hi);
+        c = add(c, d_hi);
+        let (e_hi, e_lo) = split(a_hi * b_lo);
+        c = add(c, e_hi);
+        for _ in 0..64 {
+            c = add(c, c);
+        }
+        c = add(c, d_lo);
+        c = add(c, e_lo);
+        let (f_hi, f_lo) = split(a_lo * b_lo);
+        c = add(c, f_hi);
+        for _ in 0..64 {
+            c = add(c, c);
+        }
+        add(c, f_lo)
     }
 }
 
