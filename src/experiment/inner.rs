@@ -94,6 +94,7 @@ impl Experiment {
         match &self.protocol {
             ProtocolWrapper::Secure(protocol) => channels
                 .map(|idx: usize| {
+                    // TODO: sample randomly (keep an Option<Key> in Self).
                     let secret = protocol.vdpf.field.new_element(idx.into());
                     secure::ChannelKey::<secure::ConcreteVdpf>::new(idx, secret).into()
                 })
