@@ -1,7 +1,5 @@
 use clap::{crate_authors, crate_version, Clap};
-use futures::prelude::*;
 use spectrum_impl::{cli, client, config, experiment, services::ClientInfo};
-use tokio::signal::ctrl_c;
 
 /// Run a Spectrum viewing client.
 ///
@@ -48,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         config,
         experiment.get_protocol().clone(),
         info,
-        ctrl_c().map(|_| ()),
+        futures::future::ready(()),
     )
     .await
 }
