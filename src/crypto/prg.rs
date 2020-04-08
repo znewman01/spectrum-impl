@@ -1,8 +1,9 @@
 //! Spectrum implementation.
+extern crate aesrng;
 use crate::bytes::Bytes;
 use crate::crypto::field::{Field, FieldElement};
 use crate::crypto::group::{Group, GroupElement};
-use openssl::symm::{encrypt, Cipher};
+
 use rand::prelude::*;
 use rug::{integer::Order, Integer};
 use serde::{Deserialize, Serialize};
@@ -154,26 +155,9 @@ pub mod aes {
 
         /// evaluates the PRG on the given seed
         fn eval(&self, seed: &AESSeed) -> Self::Output {
-            // nonce set to zero: PRG eval should be deterministic
-            let iv: [u8; 16] = [0; 16];
-
-            // data is what AES will be "encrypting"
-            // must be of size self.eval_size since we want the PRG
-            // to expand to that size
-            let data = vec![0; self.eval_size];
-
-            // crt mode is fastest and ok for PRG
-            let cipher = Cipher::aes_128_ctr();
-            let mut ciphertext = encrypt(
-                cipher,
-                seed.bytes.as_ref(), // use seed bytes as the AES "key"
-                Some(&iv),
-                &data,
-            )
-            .unwrap();
-
-            ciphertext.truncate(self.eval_size);
-            ciphertext.into()
+            let mut prg = aesrng::AesRng::from_seed(seed.bytes.as_ref());
+            let mut buf = vec![0; self.eval_size];
+            prg.fill_bytes(&mut buf).into()
         }
 
         fn null_output(&self) -> Bytes {
