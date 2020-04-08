@@ -84,17 +84,17 @@ pub struct Environment {
     // TODO: AWS region.
     /// Number of worker machines per group.
     #[serde(default = "_1")]
-    group_size: u16,
+    pub group_size: u16,
 
     // TODO(zjn): move the following to Experiment when we can change them at runtime.
     /// Number of clients to simulate.
-    clients: u32,
+    pub clients: u32,
 
     /// Number of channels for the protocol.
-    channels: u16,
+    pub channels: u16,
 
     // The size, in bytes, for each message.
-    message_size: u16,
+    pub message_size: u16,
 
     // The protocol to run.
     //
@@ -154,7 +154,7 @@ pub struct Experiment {
     ///
     /// Experiments will be grouped by environment and run on the same infrastructure.
     #[serde(flatten)]
-    environment: Environment,
+    pub environment: Environment,
 }
 
 impl Experiment {
