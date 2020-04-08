@@ -1,2 +1,2 @@
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-Ctarget-cpu=native", "-Ctarget-feature=+pclmul,+avx,+sse2,+sse4.1"]
+rustflags = ["-Ctarget-cpu=native", "-Ctarget-feature=+pclmul,+avx,+aes,+sse2,+sse4.1"]
