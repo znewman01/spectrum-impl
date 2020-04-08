@@ -105,6 +105,9 @@ async fn main() -> Result<()> {
 
     let experiment_sets = config::Experiment::by_environment(experiments);
     for (environment, experiments) in experiment_sets {
+        slog::debug!(&log, "Setting up a new environment!");
+        slog::trace!(&log, "Env: {:?}", environment);
+
         // Performance optimizations:
         // - make our own AMI
         // - many rounds
@@ -117,6 +120,9 @@ async fn main() -> Result<()> {
         let mut vms = aws_launcher.connect_all()?;
 
         for experiment in experiments {
+            slog::debug!(&log, "Running a new experiment");
+            slog::trace!(&log, "Experiment: {:?}", experiment);
+
             // Set up etcd
             let etcd_hostname = {
                 let etcd = &vms["publisher"];
@@ -139,7 +145,7 @@ async fn main() -> Result<()> {
                     "etcd_env" => &etcd_env
                 );
                 let publisher = &vms["publisher"];
-                let protocol_flag = match experiment.environment.protocol {
+                let protocol_flag = match experiment.protocol {
                     config::Protocol::Symmetric { security } => format!("--security {}", security),
                     config::Protocol::Insecure { .. } => "--no-security".to_string(),
                     config::Protocol::SeedHomomorphic { .. } => unimplemented!(),
@@ -156,18 +162,18 @@ async fn main() -> Result<()> {
                     ",
                     etcd_env = &etcd_env,
                     protocol = protocol_flag,
-                    channels = experiment.environment.channels,
-                    clients = experiment.environment.clients,
-                    group_size = experiment.environment.group_size,
-                    message_size = experiment.environment.message_size,
+                    channels = experiment.channels,
+                    clients = experiment.clients,
+                    group_size = experiment.group_size,
+                    message_size = experiment.message_size,
                 ))?;
                 // TODO: download key files
             }
 
             let workers = vms.iter_mut().filter(|(l, _)| l.starts_with("worker-"));
             for (id, (_, worker)) in workers.enumerate() {
-                let group = id / (experiment.environment.group_size as usize);
-                let idx = id % (experiment.environment.group_size as usize);
+                let group = id / (experiment.group_size as usize);
+                let idx = id % (experiment.group_size as usize);
 
                 let spectrum_conf = vec![
                     etcd_env.clone(),
@@ -204,8 +210,8 @@ async fn main() -> Result<()> {
 
             let clients = vms.iter_mut().filter(|(l, _)| l.starts_with("client-"));
             for (id, (_label, client)) in clients.enumerate() {
-                let clients: u32 = experiment.environment.clients;
-                let clients_per_machine = experiment.environment.clients_per_machine;
+                let clients: u32 = experiment.clients;
+                let clients_per_machine = experiment.clients_per_machine;
                 // max number on every machine but the last
                 let num_clients: u32 = clients - (id as u32) * (clients_per_machine as u32);
                 let num_clients: u16 = std::cmp::min(num_clients, clients_per_machine.into())
@@ -220,7 +226,7 @@ async fn main() -> Result<()> {
                     Path::new("/etc/spectrum.conf"),
                 )?;
 
-                // Start at 1.
+                // start at 1 because CLI doesn't like 0 input
                 let start_idx = id * (clients_per_machine as usize) + 1;
                 slog::trace!(
                     &log, "Starting client simulator.";
@@ -246,6 +252,7 @@ async fn main() -> Result<()> {
 
                 let ssh = publisher.ssh.as_ref().unwrap();
                 ssh.cmd("sudo systemctl start spectrum-publisher --wait")?;
+                slog::trace!(&log, "Publisher exited successfully.");
 
                 pause()?;
 
@@ -256,11 +263,12 @@ async fn main() -> Result<()> {
                     | grep -o 'Elapsed time: .*' \
                     | sed 's/Elapsed time: \\(.*\\)ms/\\1/'",
                 )?;
+                slog::trace!(&log, "Got time: [{}]", time_millis);
                 // don't let this same output confuse us if we run on this
                 // machine again
                 ssh.cmd("sudo journalctl --rotate")?;
                 ssh.cmd("sudo journalctl --vacuum-time=1s")?;
-                time_millis.parse().unwrap()
+                time_millis.trim().parse().unwrap()
             };
 
             let time = Duration::from_millis(time_millis);
@@ -268,14 +276,13 @@ async fn main() -> Result<()> {
             let result = config::Result::new(experiment, time);
             seq.serialize_element(&result)?;
 
-            // TODO: clean up
+            slog::trace!(&log, "Shutting down everything");
             for (label, vm) in &vms {
                 let ssh = vm.ssh.as_ref().unwrap();
-                ssh.cmd("sudo systemctl stop spectrum-publisher")?;
                 ssh.cmd("sudo systemctl stop spectrum-leader")?;
                 ssh.cmd("sudo systemctl stop spectrum-worker")?;
-                // - clean out etcd
                 if label == "publisher" {
+                    slog::trace!(&log, "Cleaning out etcd");
                     ssh.cmd("ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix \"\"")?;
                 }
             }

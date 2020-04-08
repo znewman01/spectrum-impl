@@ -63,52 +63,22 @@ impl Default for MachineTypeConfiguration {
 /// Configuration for the environment in which to run an experiment.
 ///
 /// As a rule of thumb, anything that can requires a change in infrastructure
-/// (machines set-up/torn-down, files written, services started/stopped) should
-/// go here.
-#[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
+/// (machines set-up/torn-down) should go here.
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct Environment {
     /// The AWS instance types to use for each type of VM in the experiment.
-    #[serde(default)]
     pub machine_types: MachineTypeConfiguration,
 
-    /// Maximum number of clients a given machine should simulate
-    #[serde(default = "_100")]
-    pub clients_per_machine: u16,
+    /// Total number of client machines
+    pub client_machines: u16,
+
+    /// Total number of worker machines
+    pub worker_machines: u16,
 
     /// Amazon AMI ID to use as the base image for experiments.
     ///
     /// The default is a recent (as of 2020-03-30) build of Ubuntu server 18.04.
-    #[serde(default = "ami_0fc20dd1da406780b")]
     pub base_ami: String,
-
-    // TODO: AWS region.
-    /// Number of worker machines per group.
-    #[serde(default = "_1")]
-    pub group_size: u16,
-
-    // TODO(zjn): move the following to Experiment when we can change them at runtime.
-    /// Number of clients to simulate.
-    pub clients: u32,
-
-    /// Number of channels for the protocol.
-    pub channels: u16,
-
-    // The size, in bytes, for each message.
-    pub message_size: u16,
-
-    // The protocol to run.
-    //
-    // Note that this encapsulates the number of trust groups.
-    pub protocol: Protocol,
-}
-
-impl Environment {
-    pub fn client_machines(&self) -> u16 {
-        // The last machine may have fewer than CLIENTS_PER_MACHINE clients
-        (self.clients / (self.clients_per_machine as u32) + 1)
-            .try_into()
-            .unwrap()
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
@@ -150,17 +120,45 @@ impl Protocol {
 /// A configuration for an experiment to run.
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct Experiment {
-    /// The environment (infrastructure etc.) in which to run an experiment.
+    /// The AWS instance types to use for each type of VM in the experiment.
+    #[serde(default)]
+    pub machine_types: MachineTypeConfiguration,
+
+    /// Maximum number of clients a given machine should simulate
+    #[serde(default = "_100")]
+    pub clients_per_machine: u16,
+
+    /// Amazon AMI ID to use as the base image for experiments.
     ///
-    /// Experiments will be grouped by environment and run on the same infrastructure.
-    #[serde(flatten)]
-    pub environment: Environment,
+    /// The default is a recent (as of 2020-03-30) build of Ubuntu server 18.04.
+    #[serde(default = "ami_0fc20dd1da406780b")]
+    pub base_ami: String,
+
+    // TODO: AWS region.
+    /// Number of worker machines per group.
+    #[serde(default = "_1")]
+    pub group_size: u16,
+
+    // TODO(zjn): move the following to Experiment when we can change them at runtime.
+    /// Number of clients to simulate.
+    pub clients: u32,
+
+    /// Number of channels for the protocol.
+    pub channels: u16,
+
+    // The size, in bytes, for each message.
+    pub message_size: u16,
+
+    // The protocol to run.
+    //
+    // Note that this encapsulates the number of trust groups.
+    pub protocol: Protocol,
 }
 
 impl Experiment {
-    /// Returns an iterator over all AWS instance types for all VM types in this experiment.
+    /// Returns all AWS instance types for all VM types in this experiment.
     pub fn instance_types(&self) -> Vec<String> {
-        let machines = &self.environment.machine_types;
+        let machines = &self.machine_types;
         vec![
             machines.publisher.instance_type.clone(),
             machines.worker.instance_type.clone(),
@@ -171,8 +169,25 @@ impl Experiment {
     pub fn by_environment(experiments: Vec<Experiment>) -> HashMap<Environment, Vec<Experiment>> {
         experiments
             .into_iter()
-            .map(|e| (e.environment.clone(), e))
+            .map(|e| (e.environment(), e))
             .into_group_map()
+    }
+
+    pub fn groups(&self) -> u16 {
+        self.protocol.groups()
+    }
+
+    fn environment(&self) -> Environment {
+        // The last machine may have fewer than clients_per_machine clients
+        let client_machines = (self.clients / (self.clients_per_machine as u32) + 1)
+            .try_into()
+            .unwrap();
+        Environment {
+            client_machines,
+            machine_types: self.machine_types.clone(),
+            worker_machines: self.group_size * self.groups(),
+            base_ami: self.base_ami.clone(),
+        }
     }
 }
 

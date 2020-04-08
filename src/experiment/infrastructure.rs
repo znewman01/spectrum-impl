@@ -205,7 +205,7 @@ pub fn setup<H: std::hash::BuildHasher>(
         let bin_archive = bin_archives[&machine_type].clone();
         let base_ami = base_ami.clone();
         tsunami.add_multiple(
-            environment.protocol.groups().into(),
+            environment.worker_machines.into(),
             "worker",
             aws::Setup::default()
                 .region(Region::UsEast2)
@@ -224,7 +224,7 @@ pub fn setup<H: std::hash::BuildHasher>(
         let machine_type = machine_types.client.instance_type;
         let bin_archive = bin_archives[&machine_type].clone();
         tsunami.add_multiple(
-            environment.client_machines().into(),
+            environment.client_machines.into(),
             "client",
             aws::Setup::default()
                 .region(Region::UsEast2)
