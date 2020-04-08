@@ -1,0 +1,7 @@
+server {
+    listen ${external};
+
+    location / {
+        proxy_pass http://localhost:${internal};
+    }
+}
