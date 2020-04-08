@@ -1,7 +1,7 @@
 server {
-    listen ${external};
+    listen ${external} http2;
 
     location / {
-        proxy_pass http://localhost:${internal};
+        grpc_pass grpc://localhost:${internal};
     }
 }

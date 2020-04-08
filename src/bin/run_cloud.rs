@@ -116,8 +116,6 @@ async fn main() -> Result<()> {
         // vms[_].ssh is guaranteed to be populated by this point, so we can unwrap
         let mut vms = aws_launcher.connect_all()?;
 
-        pause()?;
-
         for experiment in experiments {
             // Set up etcd
             let etcd_hostname = {
@@ -134,8 +132,6 @@ async fn main() -> Result<()> {
                 etcd_hostname,
                 infrastructure::ETCD_PUBLIC_PORT
             );
-
-            pause()?;
 
             {
                 slog::trace!(
@@ -168,8 +164,6 @@ async fn main() -> Result<()> {
                 // TODO: download key files
             }
 
-            pause()?;
-
             let workers = vms.iter_mut().filter(|(l, _)| l.starts_with("worker-"));
             for (id, (_, worker)) in workers.enumerate() {
                 let group = id / (experiment.environment.group_size as usize);
@@ -177,9 +171,9 @@ async fn main() -> Result<()> {
 
                 let spectrum_conf = vec![
                     etcd_env.clone(),
-                    format!("SPECTRUM_WORKER_GROUP={}", group),
-                    format!("SPECTRUM_LEADER_GROUP={}", group),
-                    format!("SPECTRUM_WORKER_INDEX={}", idx),
+                    format!("SPECTRUM_WORKER_GROUP={}", group + 1),
+                    format!("SPECTRUM_LEADER_GROUP={}", group + 1),
+                    format!("SPECTRUM_WORKER_INDEX={}", idx + 1),
                 ]
                 .join("\n");
                 slog::trace!(
@@ -208,8 +202,6 @@ async fn main() -> Result<()> {
                 }
             }
 
-            pause()?;
-
             let clients = vms.iter_mut().filter(|(l, _)| l.starts_with("client-"));
             for (id, (_label, client)) in clients.enumerate() {
                 let clients: u32 = experiment.environment.clients;
@@ -228,7 +220,8 @@ async fn main() -> Result<()> {
                     Path::new("/etc/spectrum.conf"),
                 )?;
 
-                let start_idx = id * (clients_per_machine as usize);
+                // Start at 1.
+                let start_idx = id * (clients_per_machine as usize) + 1;
                 slog::trace!(
                     &log, "Starting client simulator.";
                     "start_idx" => start_idx, "num_clients" => num_clients,
@@ -237,13 +230,11 @@ async fn main() -> Result<()> {
                 client.ssh.as_ref().unwrap().cmd(&format!(
                     "sudo systemctl start viewer@{{{}..{}}}",
                     start_idx,
-                    start_idx + (num_clients as usize)
+                    start_idx + (num_clients as usize) - 1
                 ))?;
             }
 
-            pause()?;
-
-            {
+            let time_millis: u64 = {
                 let publisher = vms.get_mut("publisher").unwrap();
                 let spectrum_conf = vec![etcd_env.clone()].join("\n");
                 infrastructure::install_config_file(
@@ -253,17 +244,26 @@ async fn main() -> Result<()> {
                     Path::new("/etc/spectrum.conf"),
                 )?;
 
-                publisher
-                    .ssh
-                    .as_ref()
-                    .unwrap()
-                    .cmd("sudo systemctl start spectrum-publisher --wait")?;
-                // TODO actually get the info down somehow--journalctl?
-            }
+                let ssh = publisher.ssh.as_ref().unwrap();
+                ssh.cmd("sudo systemctl start spectrum-publisher --wait")?;
 
-            pause()?;
+                pause()?;
 
-            let time = Duration::from_millis(1100);
+                // output of publisher: "Elapsed time: 100ms"
+                let (time_millis, _) = ssh.cmd(
+                    "\
+                    journalctl --unit spectrum-publisher \
+                    | grep -o 'Elapsed time: .*' \
+                    | sed 's/Elapsed time: \\(.*\\)ms/\\1/'",
+                )?;
+                // don't let this same output confuse us if we run on this
+                // machine again
+                ssh.cmd("sudo journalctl --rotate")?;
+                ssh.cmd("sudo journalctl --vacuum-time=1s")?;
+                time_millis.parse().unwrap()
+            };
+
+            let time = Duration::from_millis(time_millis);
 
             let result = config::Result::new(experiment, time);
             seq.serialize_element(&result)?;
