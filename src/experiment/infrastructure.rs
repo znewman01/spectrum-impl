@@ -149,7 +149,7 @@ fn install_spectrum(log: &Logger, ssh: &mut Session, archive: &Path) -> Result<(
         log,
         ssh,
         include_str!("data/broadcaster@.service.template").to_string(),
-        &Path::new("/etc/systemd/system/viewer@.service"),
+        &Path::new("/etc/systemd/system/broadcaster@.service"),
     )?;
 
     ssh.cmd("sudo nginx -s reload")?;

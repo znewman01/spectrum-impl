@@ -1,12 +1,12 @@
 # Start as:
-#    systemctl client{300..399}.service
+#    systemctl viewer{300..399}.service
 # Then, everywhere you see "%i" in this file will be replaced by the client index.
 
 [Unit]
 Description=Spectrum client
 
 [Service]
-ExecStart=/home/ubuntu/spectrum/viewer --index %i --log-level debug
+ExecStart=/home/ubuntu/spectrum/viewer --index %i --log-level trace
 Type=simple
 Restart=no
 EnvironmentFile=/etc/spectrum.conf
