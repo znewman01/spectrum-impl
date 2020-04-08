@@ -48,7 +48,7 @@ impl publisher::Remote for CliRemote {
     async fn done(&self) {
         let start = self.start.lock().await;
         let elapsed = start.expect("Can't call done() before start()!").elapsed();
-        eprintln!("Elapsed time: {:?}", elapsed);
+        eprintln!("Elapsed time: {}ms", elapsed.as_millis());
         self.done.notify();
     }
 }
