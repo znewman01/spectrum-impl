@@ -5,6 +5,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::time::Duration;
 
 // TODO: this can all go away when serde has support for default literals.
@@ -34,23 +35,23 @@ fn m5_large() -> MachineType {
 
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
 #[serde(transparent)]
-struct MachineType {
+pub struct MachineType {
     pub instance_type: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
-struct MachineTypeConfiguration {
+pub struct MachineTypeConfiguration {
     /// Machine type of the publisher/etcd machine
     #[serde(default = "m5_large")]
-    publisher: MachineType,
+    pub publisher: MachineType,
 
     /// Machine type of the server for running workers/leaders.
     #[serde(default = "m5_large")]
-    worker: MachineType,
+    pub worker: MachineType,
 
     /// Machine type of the server for simulating clients.
     #[serde(default = "m5_large")]
-    client: MachineType,
+    pub client: MachineType,
 }
 
 impl Default for MachineTypeConfiguration {
@@ -68,17 +69,17 @@ impl Default for MachineTypeConfiguration {
 pub struct Environment {
     /// The AWS instance types to use for each type of VM in the experiment.
     #[serde(default)]
-    machine_types: MachineTypeConfiguration,
+    pub machine_types: MachineTypeConfiguration,
 
     /// Maximum number of clients a given machine should simulate
     #[serde(default = "_100")]
-    clients_per_machine: u16,
+    pub clients_per_machine: u16,
 
     /// Amazon AMI ID to use as the base image for experiments.
     ///
     /// The default is a recent (as of 2020-03-30) build of Ubuntu server 18.04.
     #[serde(default = "ami_0fc20dd1da406780b")]
-    base_ami: String,
+    pub base_ami: String,
 
     // TODO: AWS region.
     /// Number of worker machines per group.
@@ -98,11 +99,20 @@ pub struct Environment {
     // The protocol to run.
     //
     // Note that this encapsulates the number of trust groups.
-    protocol: Protocol,
+    pub protocol: Protocol,
+}
+
+impl Environment {
+    pub fn client_machines(&self) -> u16 {
+        // The last machine may have fewer than CLIENTS_PER_MACHINE clients
+        (self.clients / (self.clients_per_machine as u32) + 1)
+            .try_into()
+            .unwrap()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
-enum Protocol {
+pub enum Protocol {
     /// The main Spectrum protocol: two parties, using a standard cryptographic PRG.
     Symmetric {
         /// The security level, in bytes, for the protocol.
@@ -125,6 +135,16 @@ enum Protocol {
     ///
     /// Uses a seed-homomorphic PRG and the JubJub group.
     SeedHomomorphic { parties: u16 },
+}
+
+impl Protocol {
+    pub fn groups(&self) -> u16 {
+        match self {
+            Self::Symmetric { .. } => 2,
+            Self::Insecure { parties } => *parties,
+            Self::SeedHomomorphic { parties } => *parties,
+        }
+    }
 }
 
 /// A configuration for an experiment to run.
