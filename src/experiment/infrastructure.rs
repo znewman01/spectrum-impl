@@ -183,7 +183,7 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .setup(move |ssh, log| {
                     ssh.cmd("sudo apt update")?;
                     install_spectrum(log, ssh, &bin_archive)?;
-                    ssh.cmd("sudo apt install -y etcd-server")?;
+                    ssh.cmd("sudo apt install -y etcd-server etcd-client")?;
                     let (hostname, _) = ssh.cmd("ec2metadata --local-hostname")?;
                     let hostname = hostname.trim();
                     let etcd_config = format!(

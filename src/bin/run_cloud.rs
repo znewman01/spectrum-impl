@@ -1,18 +1,28 @@
-use spectrum_impl::experiment::{compile, config};
+use spectrum_impl::experiment::{compile, config, infrastructure};
 
 use clap::{crate_authors, crate_version, Clap};
 use failure::Error;
 use serde::ser::{SerializeSeq, Serializer};
 use std::path::PathBuf;
+use tsunami::providers::{aws, Launcher};
 
 use std::collections::HashSet;
+use std::convert::TryInto;
 use std::fs::File;
 use std::io;
+use std::path::Path;
 use std::time::Duration;
 
 const BASE_AMI: &str = "ami-0fc20dd1da406780b";
 
 type Result<T> = std::result::Result<T, Error>;
+
+fn pause() -> Result<()> {
+    println!("hit enter to continue...");
+    let mut _unused = String::new();
+    std::io::stdin().read_line(&mut _unused)?;
+    Ok(())
+}
 
 /// Spectrum -- driver for cloud-based experiments.
 ///
@@ -78,7 +88,8 @@ async fn main() -> Result<()> {
         .flat_map(|e| e.instance_types())
         .collect();
     let src_dir = PathBuf::from("/home/zjn/git/spectrum-impl/");
-    compile::compile(
+    // TODO: Store binaries on EBS or something! uploading takes a long time.
+    let bin_archives = compile::compile(
         &log,
         args.binary_dir.clone(),
         src_dir,
@@ -87,30 +98,187 @@ async fn main() -> Result<()> {
         BASE_AMI.to_string(),
     )
     .await?;
-    // TODO: compile on target machines of each machine type
 
     // Stream the results to STDOUT.
     let mut serializer = serde_json::Serializer::new(io::stdout());
     let mut seq = serializer.serialize_seq(None)?;
 
     let experiment_sets = config::Experiment::by_environment(experiments);
-    for (_environment, experiments) in experiment_sets {
+    for (environment, experiments) in experiment_sets {
         // Performance optimizations:
         // - make our own AMI
         // - many rounds
 
-        // TODO: bring up environment
+        let tsunami = infrastructure::setup(&log, &bin_archives, environment)?;
+        let mut aws_launcher = aws::Launcher::default();
+        aws_launcher.set_max_instance_duration(1);
+        tsunami.spawn(&mut aws_launcher)?;
+        // vms[_].ssh is guaranteed to be populated by this point, so we can unwrap
+        let mut vms = aws_launcher.connect_all()?;
+
+        pause()?;
 
         for experiment in experiments {
-            // TODO: run the experiment
-            // - set SPECTRUM_CONFIG_SERVER=etcd://<private IP of publisher>
-            // - dump experiment to store! (will require messing with security groups)
-            // - trigger build via publisher!
+            // Set up etcd
+            let etcd_hostname = {
+                let etcd = &vms["publisher"];
+                let (hostname, _) = etcd
+                    .ssh
+                    .as_ref()
+                    .unwrap()
+                    .cmd("ec2metadata --local-hostname")?;
+                hostname.trim().to_string()
+            };
+            let etcd_env = format!(
+                "SPECTRUM_CONFIG_SERVER=etcd://{}:{}",
+                etcd_hostname,
+                infrastructure::ETCD_PUBLIC_PORT
+            );
+
+            pause()?;
+
+            {
+                slog::trace!(
+                    &log, "Writing experiment config to etcd using `setup` binary.";
+                    "etcd_env" => &etcd_env
+                );
+                let publisher = &vms["publisher"];
+                let protocol_flag = match experiment.environment.protocol {
+                    config::Protocol::Symmetric { security } => format!("--security {}", security),
+                    config::Protocol::Insecure { .. } => "--no-security".to_string(),
+                    config::Protocol::SeedHomomorphic { .. } => unimplemented!(),
+                };
+                publisher.ssh.as_ref().unwrap().cmd(&format!(
+                    "\
+                    {etcd_env} \
+                    $HOME/spectrum/setup \
+                        {protocol} \
+                        --channels {channels} \
+                        --clients {clients} \
+                        --group-size {group_size} \
+                        --message-size {message_size}\
+                    ",
+                    etcd_env = &etcd_env,
+                    protocol = protocol_flag,
+                    channels = experiment.environment.channels,
+                    clients = experiment.environment.clients,
+                    group_size = experiment.environment.group_size,
+                    message_size = experiment.environment.message_size,
+                ))?;
+                // TODO: download key files
+            }
+
+            pause()?;
+
+            let workers = vms.iter_mut().filter(|(l, _)| l.starts_with("worker-"));
+            for (id, (_, worker)) in workers.enumerate() {
+                let group = id / (experiment.environment.group_size as usize);
+                let idx = id % (experiment.environment.group_size as usize);
+
+                let spectrum_conf = vec![
+                    etcd_env.clone(),
+                    format!("SPECTRUM_WORKER_GROUP={}", group),
+                    format!("SPECTRUM_LEADER_GROUP={}", group),
+                    format!("SPECTRUM_WORKER_INDEX={}", idx),
+                ]
+                .join("\n");
+                slog::trace!(
+                    &log, "Starting worker";
+                    "group" => group, "index" => idx, "config" => &spectrum_conf
+                );
+                infrastructure::install_config_file(
+                    &log,
+                    worker.ssh.as_mut().unwrap(),
+                    spectrum_conf,
+                    Path::new("/etc/spectrum.conf"),
+                )?;
+
+                worker
+                    .ssh
+                    .as_ref()
+                    .unwrap()
+                    .cmd("sudo systemctl start spectrum-worker")?;
+                if idx == 0 {
+                    slog::trace!(&log, "Starting leader too!"; "group" => group);
+                    worker
+                        .ssh
+                        .as_ref()
+                        .unwrap()
+                        .cmd("sudo systemctl start spectrum-leader")?;
+                }
+            }
+
+            pause()?;
+
+            let clients = vms.iter_mut().filter(|(l, _)| l.starts_with("client-"));
+            for (id, (_label, client)) in clients.enumerate() {
+                let clients: u32 = experiment.environment.clients;
+                let clients_per_machine = experiment.environment.clients_per_machine;
+                // max number on every machine but the last
+                let num_clients: u32 = clients - (id as u32) * (clients_per_machine as u32);
+                let num_clients: u16 = std::cmp::min(num_clients, clients_per_machine.into())
+                    .try_into()
+                    .unwrap();
+
+                let spectrum_conf = vec![etcd_env.clone()].join("\n");
+                infrastructure::install_config_file(
+                    &log,
+                    client.ssh.as_mut().unwrap(),
+                    spectrum_conf.clone(),
+                    Path::new("/etc/spectrum.conf"),
+                )?;
+
+                let start_idx = id * (clients_per_machine as usize);
+                slog::trace!(
+                    &log, "Starting client simulator.";
+                    "start_idx" => start_idx, "num_clients" => num_clients,
+                    "id" => id, "config" => &spectrum_conf
+                );
+                client.ssh.as_ref().unwrap().cmd(&format!(
+                    "sudo systemctl start viewer@{{{}..{}}}",
+                    start_idx,
+                    start_idx + (num_clients as usize)
+                ))?;
+            }
+
+            pause()?;
+
+            {
+                let publisher = vms.get_mut("publisher").unwrap();
+                let spectrum_conf = vec![etcd_env.clone()].join("\n");
+                infrastructure::install_config_file(
+                    &log,
+                    publisher.ssh.as_mut().unwrap(),
+                    spectrum_conf,
+                    Path::new("/etc/spectrum.conf"),
+                )?;
+
+                publisher
+                    .ssh
+                    .as_ref()
+                    .unwrap()
+                    .cmd("sudo systemctl start spectrum-publisher --wait")?;
+                // TODO actually get the info down somehow--journalctl?
+            }
+
+            pause()?;
 
             let time = Duration::from_millis(1100);
 
             let result = config::Result::new(experiment, time);
             seq.serialize_element(&result)?;
+
+            // TODO: clean up
+            for (label, vm) in &vms {
+                let ssh = vm.ssh.as_ref().unwrap();
+                ssh.cmd("sudo systemctl stop spectrum-publisher")?;
+                ssh.cmd("sudo systemctl stop spectrum-leader")?;
+                ssh.cmd("sudo systemctl stop spectrum-worker")?;
+                // - clean out etcd
+                if label == "publisher" {
+                    ssh.cmd("ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix \"\"")?;
+                }
+            }
         }
     }
     seq.end()?;
