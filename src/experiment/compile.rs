@@ -17,7 +17,7 @@ type Result<T> = std::result::Result<T, Error>;
 ///
 /// Installs (using apt) all dependences, and then (using rustup) nightly rust
 /// with rustfmt.
-fn install_rust(log: &Logger, ssh: &mut Session) -> Result<()> {
+pub fn install_rust(log: &Logger, ssh: &mut Session) -> Result<()> {
     trace!(log, "Installing Rust dependencies...");
     // Rust dependencies
     ssh.cmd(

@@ -33,6 +33,7 @@ tokio = { version = "0.2.13", features = [ "macros", "signal", "sync", "rt-threa
 rug = { version = "1.7", features = [ "serde" ] }
 async-trait = "0.1.26"
 chrono = "0.4"
+envsubst = "0.2.0"
 futures-retry = "0.4"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
