@@ -41,7 +41,9 @@ struct WorkerArgs {
 
 impl From<WorkerArgs> for WorkerInfo {
     fn from(args: WorkerArgs) -> Self {
-        Self::new(Group::new(args.group), args.idx)
+        // -1 because the CLI needs non-zero or it thinks we didn't supply it
+        // from environment variable
+        Self::new(Group::new(args.group - 1), args.idx - 1)
     }
 }
 
