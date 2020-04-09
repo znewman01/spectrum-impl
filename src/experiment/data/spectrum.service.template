@@ -2,7 +2,7 @@
 Description=Spectrum ${service}
 
 [Service]
-ExecStart=${binary} --local-port ${port} --public-address ${public_address} --log-level debug
+ExecStart=${binary} --local-port ${port} --public-address ${public_address} --log-level trace
 Type=simple
 Restart=no
 EnvironmentFile=/etc/spectrum.conf
