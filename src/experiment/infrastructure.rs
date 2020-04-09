@@ -132,7 +132,7 @@ fn install_spectrum(log: &Logger, ssh: &mut Session, archive: &Path) -> Result<(
         .into_iter()
         .zip(6000..)
     {
-        let external_port = port - 1000;
+        let external_port = port; // skip NGINX
         install_nginx_conf(log, ssh, external_port, port)?;
         let public_addr = format!("{}:{}", hostname, external_port);
         let binary = Path::new("/home/ubuntu/spectrum").join(service);
@@ -181,7 +181,6 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .username("ubuntu")
                 .instance_type(machine_type)
                 .setup(move |ssh, log| {
-                    ssh.cmd("sudo apt update")?;
                     install_spectrum(log, ssh, &bin_archive)?;
                     ssh.cmd("sudo apt install -y etcd-server etcd-client")?;
                     let (hostname, _) = ssh.cmd("ec2metadata --local-hostname")?;
@@ -213,7 +212,6 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .username("ubuntu")
                 .instance_type(machine_type)
                 .setup(move |ssh, log| {
-                    ssh.cmd("sudo apt update")?;
                     install_spectrum(log, ssh, &bin_archive)?;
                     Ok(())
                 }),
@@ -232,7 +230,6 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .username("ubuntu")
                 .instance_type(machine_type)
                 .setup(move |ssh, log| {
-                    ssh.cmd("sudo apt update")?;
                     install_spectrum(log, ssh, &bin_archive)?;
                     Ok(())
                 }),

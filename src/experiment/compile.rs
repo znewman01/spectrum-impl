@@ -18,10 +18,28 @@ type Result<T> = std::result::Result<T, Error>;
 /// Installs (using apt) all dependences, and then (using rustup) nightly rust
 /// with rustfmt.
 pub fn install_rust(log: &Logger, ssh: &mut Session) -> Result<()> {
+    // try five times
+    let mut result = install_rust_inner(log, ssh);
+    for _ in 0..10 {
+        if let Ok(()) = result {
+            return result;
+        }
+        trace!(
+            log,
+            "Retrying due to error installing rust dependencies: {:?}",
+            result
+        );
+        result = install_rust_inner(log, ssh);
+    }
+    result
+}
+
+pub fn install_rust_inner(log: &Logger, ssh: &mut Session) -> Result<()> {
     trace!(log, "Installing Rust dependencies...");
     // Rust dependencies
+    ssh.cmd("sudo apt update -y")?;
     ssh.cmd(
-        "sudo apt-get install -y \
+        "sudo apt install -y \
          build-essential \
          libssl-dev \
          pkg-config \
@@ -154,7 +172,6 @@ async fn spawn_and_compile(
                 .instance_type(&machine_type)
                 .setup(move |ssh, log| {
                     let log = log.new(o!("machine_type" => machine_type.clone()));
-                    ssh.cmd("sudo apt update")?;
                     install_rust(&log, ssh)?;
                     build_spectrum(&log, ssh, &src_archive, &bin_archive, profile)?;
                     Ok(())

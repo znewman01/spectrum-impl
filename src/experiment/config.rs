@@ -147,7 +147,7 @@ pub struct Experiment {
     pub channels: u16,
 
     // The size, in bytes, for each message.
-    pub message_size: u16,
+    pub message_size: u32,
 
     // The protocol to run.
     //
@@ -179,7 +179,7 @@ impl Experiment {
 
     fn environment(&self) -> Environment {
         // The last machine may have fewer than clients_per_machine clients
-        let client_machines = (self.clients / (self.clients_per_machine as u32) + 1)
+        let client_machines = ((self.clients - 1) / (self.clients_per_machine as u32) + 1)
             .try_into()
             .unwrap();
         Environment {
