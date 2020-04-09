@@ -1,6 +1,9 @@
+use crate::experiment::infrastructure::install_config_file;
+
 use failure::Error;
 use itertools::Itertools;
 use rusoto_core::Region;
+use rusoto_s3::{S3Client, S3};
 use sessh::Session;
 use slog::{debug, o, trace, Logger};
 use tokio::process::Command;
@@ -8,10 +11,12 @@ use tsunami::providers::aws;
 use tsunami::providers::Launcher;
 use tsunami::TsunamiBuilder;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 type Result<T> = std::result::Result<T, Error>;
+
+const PROJECT_S3_BUCKET: &str = "hornet-spectrum";
 
 /// Install Rust and dependencies over the given SSH session.
 ///
@@ -43,6 +48,7 @@ pub fn install_rust_inner(log: &Logger, ssh: &mut Session) -> Result<()> {
          build-essential \
          libssl-dev \
          pkg-config \
+         unzip \
          m4",
     )?;
 
@@ -55,6 +61,64 @@ pub fn install_rust_inner(log: &Logger, ssh: &mut Session) -> Result<()> {
     )?;
 
     trace!(log, "Done installing Rust dependencies!");
+    Ok(())
+}
+
+pub fn install_aws_cli(log: &Logger, ssh: &mut Session) -> Result<()> {
+    // Download and install AWS CLI
+    slog::trace!(log, "Downloading AWS CLI");
+    ssh.cmd(
+        "\
+        curl \
+             \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" \
+             -o \"awscliv2.zip\"\
+        ",
+    )?;
+    slog::trace!(log, "Unzipping and installing AWS CLI");
+    ssh.cmd("unzip awscliv2.zip")?;
+    ssh.cmd("sudo ./aws/install")?;
+    slog::trace!(log, "AWS CLI installed.");
+
+    slog::trace!(log, "Configuring AWS CLI.");
+    ssh.cmd("mkdir -p $HOME/.aws")?;
+    install_config_file(
+        log,
+        ssh,
+        include_str!("data/aws-config.template").to_string(),
+        Path::new(".aws/config"),
+    )?;
+
+    // We wouldn't have gotten this far if these weren't set.
+    let vars = vec![
+        (
+            "AWS_ACCESS_KEY_ID".to_string(),
+            std::env::var("AWS_ACCESS_KEY_ID")?,
+        ),
+        (
+            "AWS_SECRET_ACCESS_KEY".to_string(),
+            std::env::var("AWS_SECRET_ACCESS_KEY")?,
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let aws_creds = envsubst::substitute(include_str!("data/aws-credentials.template"), &vars)?;
+    install_config_file(log, ssh, aws_creds, Path::new(".aws/config"))?;
+    slog::trace!(log, "AWS CLI configured.");
+
+    Ok(())
+}
+
+fn upload_s3(log: &Logger, ssh: &mut Session, src: &Path, object: &str) -> Result<()> {
+    let dst = format!("s3://{}/{}", PROJECT_S3_BUCKET, object);
+    trace!(log, "Uploading {:?} to {}", src, dst);
+    ssh.cmd(&format!("aws s3 cp {} {}", src.to_string_lossy(), dst))?;
+    Ok(())
+}
+
+pub fn download_s3(log: &Logger, ssh: &mut Session, dst: &Path, object: &str) -> Result<()> {
+    let src = format!("s3://{}/{}", PROJECT_S3_BUCKET, object);
+    trace!(log, "Downloading {} to {:?}", src, dst);
+    ssh.cmd(&format!("aws s3 cp {} {}", src, dst.to_string_lossy(),))?;
     Ok(())
 }
 
@@ -92,7 +156,7 @@ fn build_spectrum(
     log: &Logger,
     ssh: &mut Session,
     source: &Path,
-    dest: &Path,
+    dest: &str,
     profile: Profile,
 ) -> Result<()> {
     const SRC_ARCHIVE_NAME: &str = "spectrum-src.tar.gz";
@@ -137,22 +201,21 @@ fn build_spectrum(
         binaries
     ))?;
 
-    trace!(log, "Downloading compiled binaries.");
-    ssh.download(Path::new(BIN_ARCHIVE_NAME), dest)?;
+    trace!(log, "Uploading compiled binaries to s3.");
+    upload_s3(log, ssh, Path::new(BIN_ARCHIVE_NAME), dest)?;
     Ok(())
 }
 
 async fn spawn_and_compile(
     log: &slog::Logger,
-    bin_dir: PathBuf,
     hash: String,
     src_archive: PathBuf,
     machine_types: Vec<String>,
     profile: Profile,
     ami: String,
-) -> Result<HashMap<String, PathBuf>> {
+) -> Result<HashMap<String, String>> {
     debug!(log, "Compiling binaries for"; "machine_types" => format!("{:?}", &machine_types));
-    let mut bin_archives: HashMap<String, PathBuf> = HashMap::new();
+    let mut s3_binaries: HashMap<String, String> = HashMap::new();
 
     let mut compile_tsunami = TsunamiBuilder::default();
     compile_tsunami.set_logger(log.new(o!("tsunami" => "compile")));
@@ -160,8 +223,7 @@ async fn spawn_and_compile(
     for machine_type in machine_types.into_iter() {
         let src_archive = src_archive.clone();
         let archive_name = format_binary(&hash, profile, &machine_type);
-        let bin_archive = bin_dir.join(archive_name);
-        bin_archives.insert(machine_type.to_string(), bin_archive.clone());
+        s3_binaries.insert(machine_type.to_string(), archive_name.clone());
 
         let machine = {
             let machine_type = machine_type.clone();
@@ -173,7 +235,8 @@ async fn spawn_and_compile(
                 .setup(move |ssh, log| {
                     let log = log.new(o!("machine_type" => machine_type.clone()));
                     install_rust(&log, ssh)?;
-                    build_spectrum(&log, ssh, &src_archive, &bin_archive, profile)?;
+                    install_aws_cli(&log, ssh)?;
+                    build_spectrum(&log, ssh, &src_archive, &archive_name, profile)?;
                     Ok(())
                 })
         };
@@ -188,7 +251,7 @@ async fn spawn_and_compile(
     aws_launcher.connect_all()?;
     trace!(log, "Compilation complete.");
 
-    Ok(bin_archives)
+    Ok(s3_binaries)
 }
 
 /// Format the name of a compiled binary.
@@ -211,7 +274,7 @@ pub async fn compile(
     machine_types: Vec<String>,
     profile: Profile,
     ami: String,
-) -> Result<HashMap<String, PathBuf>> {
+) -> Result<HashMap<String, String>> {
     trace!(
         log,
         "Creating a tarball with current checked-in Git src (HEAD)"
@@ -240,22 +303,38 @@ pub async fn compile(
         .trim_end_matches('\n')
         .to_string();
     trace!(log, "Source tarball created"; "hash" => &hash);
-    let mut binaries = HashMap::<String, PathBuf>::new();
-    let machine_types: Vec<String> = machine_types
+    let mut binaries = HashMap::<String, String>::new();
+
+    let s3 = S3Client::new(Region::UsEast2);
+    let request = rusoto_s3::ListObjectsRequest {
+        bucket: PROJECT_S3_BUCKET.to_string(),
+        ..Default::default()
+    };
+    let objects: HashSet<String> = s3
+        .list_objects(request)
+        .await?
+        .contents
+        .unwrap()
+        .into_iter()
+        .filter_map(|o| o.key)
+        .collect();
+
+    let needs_build: Vec<String> = machine_types
         .into_iter()
         .filter(|machine_type| {
-            let path = bin_dir.join(format_binary(&hash, profile, machine_type));
-            if path.exists() {
-                binaries.insert(machine_type.to_string(), path);
+            let object = format_binary(&hash, profile, machine_type);
+            if objects.contains(&object) {
+                slog::trace!(log, "Found {} in s3!", &object);
+                binaries.insert(machine_type.to_string(), object);
                 false
             } else {
+                slog::trace!(log, "Didn't find {} in s3!", &object);
                 true
             }
         })
         .collect();
 
-    let new_binaries =
-        spawn_and_compile(log, bin_dir, hash, src_archive, machine_types, profile, ami).await?;
+    let new_binaries = spawn_and_compile(log, hash, src_archive, needs_build, profile, ami).await?;
     binaries.extend(new_binaries);
 
     Ok(binaries)

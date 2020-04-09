@@ -45,6 +45,7 @@ itertools = "0.9.0"
 clap = { git = "http://github.com/clap-rs/clap/", rev = "37889c661134e8286102f7d2ab3267965d010403" }
 csv = "1.1"
 rusoto_core = "0.43.0"
+rusoto_s3 = "0.43.0"
 etcd-rs = { git = "http://github.com/znewman01/etcd-rs/", branch = "lazy_tunnels" }
 tempfile = "3"
 blake3 = "0.3.0"
