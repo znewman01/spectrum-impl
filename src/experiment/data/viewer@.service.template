@@ -10,3 +10,4 @@ ExecStart=/home/ubuntu/spectrum/viewer --index %i --log-level trace
 Type=simple
 Restart=no
 EnvironmentFile=/etc/spectrum.conf
+Environment="RUST_BACKTRACE=1"
