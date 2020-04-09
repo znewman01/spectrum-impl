@@ -132,7 +132,7 @@ fn install_spectrum(log: &Logger, ssh: &mut Session, archive: &Path) -> Result<(
         .into_iter()
         .zip(6000..)
     {
-        let external_port = port; // skip NGINX
+        let external_port = port - 1000; // skip NGINX
         install_nginx_conf(log, ssh, external_port, port)?;
         let public_addr = format!("{}:{}", hostname, external_port);
         let binary = Path::new("/home/ubuntu/spectrum").join(service);
