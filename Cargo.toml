@@ -49,7 +49,7 @@ rusoto_core = "0.43.0"
 etcd-rs = { git = "http://github.com/znewman01/etcd-rs/", branch = "lazy_tunnels" }
 tempfile = "3"
 blake3 = "0.3.0"
-tsunami = { git = "http://github.com/znewman01/tsunami/", rev = "d473f287fd74b6464d44c5b2f0be1b71f7ec972d" }
+tsunami = { git = "http://github.com/znewman01/tsunami/", rev = "8c91e80513f6c587621d2ac30a88e8ed046e2430" }
 sessh = "0.2.0"
 failure = "0.1.7"
 
