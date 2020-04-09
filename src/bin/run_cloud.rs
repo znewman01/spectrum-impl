@@ -113,8 +113,7 @@ async fn main() -> Result<()> {
         // - many rounds
 
         let tsunami = infrastructure::setup(&log, &bin_archives, environment)?;
-        let mut aws_launcher = aws::Launcher::default();
-        aws_launcher.set_max_instance_duration(1);
+        let mut aws_launcher = aws::OnDemandLauncher::default();
         tsunami.spawn(&mut aws_launcher)?;
         // vms[_].ssh is guaranteed to be populated by this point, so we can unwrap
         let mut vms = aws_launcher.connect_all()?;

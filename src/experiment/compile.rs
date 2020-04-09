@@ -163,8 +163,7 @@ async fn spawn_and_compile(
         compile_tsunami.add(&machine_type, machine)?;
     }
 
-    let mut aws_launcher = aws::Launcher::default();
-    aws_launcher.set_max_instance_duration(1);
+    let mut aws_launcher = aws::OnDemandLauncher::default();
     compile_tsunami.spawn(&mut aws_launcher)?;
 
     // Nothing happens until this point.
