@@ -9,6 +9,7 @@ use crate::net::Config as NetConfig;
 
 use derivative::Derivative;
 use etcd_rs::{Client, ClientConfig, KeyRange, PutRequest, RangeRequest};
+use log::debug;
 use tempfile::TempDir;
 use tokio::{
     process::{Child, Command},
@@ -30,17 +31,28 @@ pub struct EtcdStore {
 }
 
 impl EtcdStore {
-    #[allow(dead_code)]
     pub async fn connect(endpoint: String) -> Result<EtcdStore, Box<dyn std::error::Error>> {
         let endpoints = vec![endpoint];
         let client_config = ClientConfig {
             endpoints: endpoints.clone(),
             auth: None,
         };
-        let client = Client::connect(client_config)
-            .await
-            .map_err(|e| format!("Error connecting to etcd: {}", e))?;
-        Ok(EtcdStore { endpoints, client })
+        let mut client = Client::connect(client_config).await;
+        for _ in 0..10u8 {
+            if client.is_ok() {
+                break;
+            }
+            debug!("Error connecting to etcd; sleep+retry.");
+            delay_for(Duration::from_millis(50)).await;
+            let client_config = ClientConfig {
+                endpoints: endpoints.clone(),
+                auth: None,
+            };
+            client = Client::connect(client_config).await;
+        }
+        Ok(client
+            .map(|client| EtcdStore { endpoints, client })
+            .map_err(|e| format!("Error connecting to etcd: {}", e))?)
     }
 }
 
