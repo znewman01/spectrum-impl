@@ -35,12 +35,25 @@ pub struct LogArgs {
 
 impl LogArgs {
     pub fn init(&self) {
-        let config = simplelog::ConfigBuilder::new()
-            .add_filter_allow_str("spectrum_impl")
-            .build();
-        TermLogger::init(self.log_level, config.clone(), TerminalMode::Stderr)
-            .or_else(|_| SimpleLogger::init(self.log_level, config))
-            .unwrap();
+        use simplelog::{CombinedLogger, ConfigBuilder, SharedLogger};
+        const FILTER: &str = "spectrum_impl";
+
+        let config = ConfigBuilder::new().add_filter_ignore_str(FILTER).build();
+        let other_logger: Box<dyn SharedLogger> =
+            match TermLogger::new(LevelFilter::Info, config.clone(), TerminalMode::Stderr) {
+                Some(logger) => logger,
+                None => SimpleLogger::new(LevelFilter::Info, config),
+            };
+
+        let config = ConfigBuilder::new().add_filter_allow_str(FILTER).build();
+        let spectrum_logger: Box<dyn SharedLogger> =
+            match TermLogger::new(self.log_level, config.clone(), TerminalMode::Stderr) {
+                Some(logger) => logger,
+                None => SimpleLogger::new(LevelFilter::Info, config),
+            };
+
+        CombinedLogger::init(vec![spectrum_logger, other_logger])
+            .expect("Failed initializing logger.");
     }
 }
 
