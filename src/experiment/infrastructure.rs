@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 ///! Infrastructure for running Spectrum experiments.
 ///!
 ///! At a high level, we have the following machine types:
@@ -21,7 +20,7 @@
 ///! - publisher: 6002
 // TODO: etcd security (fine for now because of intense AWS firewalling)
 // TODO: TLS (on Nginx)
-use crate::experiment::compile::install_rust;
+use crate::experiment::compile::{download_s3, install_aws_cli, install_rust};
 use crate::experiment::config::Environment;
 
 use failure::{format_err, Error};
@@ -33,7 +32,7 @@ use tsunami::TsunamiBuilder;
 
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -80,7 +79,7 @@ fn install_systemd_service_unit(
     .into_iter()
     .collect();
     let config = envsubst::substitute(include_str!("data/spectrum.service.template"), &vars)?;
-    trace!(log, "Formatted systemd service"; "config" => &config);
+    trace!(log, "Formatted systemd service");
     let path = Path::new("/etc/systemd/system/").join(format!("spectrum-{}.service", service));
     install_config_file(log, ssh, config, &path)?;
 
@@ -105,7 +104,7 @@ fn install_nginx_conf(
     .into_iter()
     .collect();
     let config = envsubst::substitute(include_str!("data/nginx.conf.template"), &vars)?;
-    trace!(log, "Formatted nginx config"; "config" => &config);
+    trace!(log, "Formatted nginx config");
     let path = Path::new("/etc/nginx/conf.d/")
         .join(format!("proxy-{}-{}.conf", external_port, localhost_port));
 
@@ -114,15 +113,15 @@ fn install_nginx_conf(
     Ok(())
 }
 
-fn install_spectrum(log: &Logger, ssh: &mut Session, archive: &Path) -> Result<()> {
+fn install_spectrum(log: &Logger, ssh: &mut Session, s3_object: &str) -> Result<()> {
     const ARCHIVE_NAME: &str = "spectrum.tar.gz";
 
     // not necessary to install all rust dependencies but probably sufficient
     install_rust(log, ssh)?;
     ssh.cmd("sudo apt install -y nginx")?;
 
-    trace!(log, "Copying up binaries."; "archive" => archive.to_string_lossy().to_string());
-    ssh.upload(archive, Path::new(ARCHIVE_NAME))?;
+    install_aws_cli(log, ssh)?;
+    download_s3(log, ssh, Path::new(ARCHIVE_NAME), s3_object)?;
     ssh.cmd(&format!("tar -xzf {}", ARCHIVE_NAME))?;
 
     let (hostname, _) = ssh.cmd("ec2metadata --local-hostname")?;
@@ -160,7 +159,7 @@ fn install_spectrum(log: &Logger, ssh: &mut Session, archive: &Path) -> Result<(
 
 pub fn setup<H: std::hash::BuildHasher>(
     log: &Logger,
-    bin_archives: &HashMap<String, PathBuf, H>,
+    s3_binaries: &HashMap<String, String, H>,
     environment: Environment,
 ) -> Result<TsunamiBuilder<aws::Setup>> {
     let mut tsunami = TsunamiBuilder::default();
@@ -171,7 +170,7 @@ pub fn setup<H: std::hash::BuildHasher>(
 
     {
         let machine_type = machine_types.publisher.instance_type.clone();
-        let bin_archive = bin_archives[&machine_type].clone();
+        let s3_binary = s3_binaries[&machine_type].clone();
         let base_ami = base_ami.clone();
         tsunami.add(
             "publisher",
@@ -181,7 +180,7 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .username("ubuntu")
                 .instance_type(machine_type)
                 .setup(move |ssh, log| {
-                    install_spectrum(log, ssh, &bin_archive)?;
+                    install_spectrum(log, ssh, &s3_binary)?;
                     ssh.cmd("sudo apt install -y etcd-server etcd-client")?;
                     let (hostname, _) = ssh.cmd("ec2metadata --local-hostname")?;
                     let hostname = hostname.trim();
@@ -201,7 +200,7 @@ pub fn setup<H: std::hash::BuildHasher>(
 
     {
         let machine_type = machine_types.worker.instance_type.clone();
-        let bin_archive = bin_archives[&machine_type].clone();
+        let s3_binary = s3_binaries[&machine_type].clone();
         let base_ami = base_ami.clone();
         tsunami.add_multiple(
             environment.worker_machines.into(),
@@ -212,7 +211,7 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .username("ubuntu")
                 .instance_type(machine_type)
                 .setup(move |ssh, log| {
-                    install_spectrum(log, ssh, &bin_archive)?;
+                    install_spectrum(log, ssh, &s3_binary)?;
                     Ok(())
                 }),
         )?;
@@ -220,7 +219,7 @@ pub fn setup<H: std::hash::BuildHasher>(
 
     {
         let machine_type = machine_types.client.instance_type;
-        let bin_archive = bin_archives[&machine_type].clone();
+        let s3_binary = s3_binaries[&machine_type].clone();
         tsunami.add_multiple(
             environment.client_machines.into(),
             "client",
@@ -230,7 +229,7 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .username("ubuntu")
                 .instance_type(machine_type)
                 .setup(move |ssh, log| {
-                    install_spectrum(log, ssh, &bin_archive)?;
+                    install_spectrum(log, ssh, &s3_binary)?;
                     Ok(())
                 }),
         )?;
