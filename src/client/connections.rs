@@ -1,4 +1,5 @@
 use crate::proto::{worker_client::WorkerClient, RegisterClientRequest};
+use crate::Error;
 use crate::{
     config,
     services::{
@@ -7,10 +8,14 @@ use crate::{
     },
 };
 use config::store::Store;
-use log::trace;
+
+use log::{debug, trace};
 use rand::{seq::IteratorRandom, thread_rng};
+use tokio::time::delay_for;
+
 use std::collections::HashSet;
 use std::iter::FromIterator;
+use std::time::Duration;
 
 type TokioError = Box<dyn std::error::Error + Sync + Send>;
 
@@ -47,6 +52,24 @@ fn pick_worker_shards(nodes: Vec<Node>) -> Vec<Node> {
     shards
 }
 
+async fn connect(
+    addr: String,
+) -> Result<WorkerClient<tonic::transport::channel::Channel>, TokioError> {
+    let mut client = WorkerClient::connect(format!("http://{}", addr)).await;
+    for _ in 0..10u8 {
+        if client.is_ok() {
+            return Ok(client?);
+        }
+        debug!("Failed to connect to worker; sleeping: {:?}", client);
+        delay_for(Duration::from_millis(50)).await;
+        client = WorkerClient::connect(format!("http://{}", addr)).await;
+    }
+    Err(Box::new(Error::from(format!(
+        "Failed to connect to worker on every attempt! {:?}",
+        client
+    ))))
+}
+
 pub async fn connect_and_register<C>(
     config: &C,
     info: ClientInfo,
@@ -68,7 +91,7 @@ where
             .collect(),
     };
     for shard in shards {
-        let mut client = WorkerClient::connect(format!("http://{}", shard.addr)).await?;
+        let mut client = connect(shard.addr.clone()).await?;
         let req = tonic::Request::new(req.clone());
         trace!("Registering with shard {}...", shard.addr);
         client.register_client(req).await?;
