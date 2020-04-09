@@ -197,7 +197,7 @@ fn run_experiment(
 
     let time_millis: u64 = {
         let publisher = vms.get_mut("publisher").unwrap();
-        let spectrum_conf = vec![etcd_env.clone()].join("\n");
+        let spectrum_conf = vec![etcd_env].join("\n");
         infrastructure::install_config_file(
             &log,
             publisher.ssh.as_mut().unwrap(),
