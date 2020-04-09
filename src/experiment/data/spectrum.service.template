@@ -2,10 +2,11 @@
 Description=Spectrum ${service}
 
 [Service]
-ExecStart=${binary} --local-port ${port} --public-address ${public_address} --log-level info
+ExecStart=${binary} --local-port ${port} --public-address ${public_address} --log-level debug
 Type=simple
 Restart=no
 EnvironmentFile=/etc/spectrum.conf
+Environment="RUST_BACKTRACE=1"
 LimitNOFILE=64000
 LimitFSIZE=infinity
 LimitCPU=infinity
