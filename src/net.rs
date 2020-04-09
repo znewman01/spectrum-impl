@@ -45,7 +45,7 @@ impl Config {
     }
 
     pub fn local_socket_addr(&self) -> SocketAddr {
-        SocketAddr::new("127.0.0.1".parse().unwrap(), self.local_port)
+        SocketAddr::new("0.0.0.0".parse().unwrap(), self.local_port)
     }
 
     pub fn public_addr(&self) -> String {
