@@ -17,13 +17,6 @@ const BASE_AMI: &str = "ami-0fc20dd1da406780b";
 
 type Result<T> = std::result::Result<T, Error>;
 
-fn pause() -> Result<()> {
-    println!("hit enter to continue...");
-    let mut _unused = String::new();
-    std::io::stdin().read_line(&mut _unused)?;
-    Ok(())
-}
-
 /// Spectrum -- driver for cloud-based experiments.
 ///
 /// Runs the whole protocol on AWS defined-duration spot instances.
@@ -100,7 +93,7 @@ async fn main() -> Result<()> {
     .await?;
 
     // Stream the results to STDOUT.
-    let mut serializer = serde_json::Serializer::new(io::stdout());
+    let mut serializer = serde_json::Serializer::pretty(io::stdout());
     let mut seq = serializer.serialize_seq(None)?;
 
     let experiment_sets = config::Experiment::by_environment(experiments);
@@ -108,14 +101,15 @@ async fn main() -> Result<()> {
         slog::debug!(&log, "Setting up a new environment!");
         slog::trace!(&log, "Env: {:?}", environment);
 
-        // Performance optimizations:
+        // TODO: Performance optimizations
         // - make our own AMI
         // - many rounds
 
         let tsunami = infrastructure::setup(&log, &bin_archives, environment)?;
         let mut aws_launcher = aws::OnDemandLauncher::default();
         tsunami.spawn(&mut aws_launcher)?;
-        // vms[_].ssh is guaranteed to be populated by this point, so we can unwrap
+        // vms[_].ssh is guaranteed to be populated by this point, so we can
+        // unwrap
         let mut vms = aws_launcher.connect_all()?;
 
         for experiment in experiments {
@@ -252,8 +246,6 @@ async fn main() -> Result<()> {
                 let ssh = publisher.ssh.as_ref().unwrap();
                 ssh.cmd("sudo systemctl start spectrum-publisher --wait")?;
                 slog::trace!(&log, "Publisher exited successfully.");
-
-                pause()?;
 
                 // output of publisher: "Elapsed time: 100ms"
                 let (time_millis, _) = ssh.cmd(
