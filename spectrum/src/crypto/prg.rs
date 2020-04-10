@@ -243,11 +243,15 @@ pub mod aes {
 pub mod group {
     use super::aes::AESSeed;
     use super::*;
+    use std::ops::{BitXor, BitXorAssign};
+
+    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+    pub struct ElementVector(pub Vec<GroupElement>);
 
     // Implementation of a group-based PRG
     #[derive(Clone, PartialEq, Debug)]
     pub struct GroupPRG {
-        generators: Vec<GroupElement>,
+        generators: ElementVector,
         eval_size: usize,
     }
 
@@ -260,15 +264,15 @@ pub mod group {
             }
         }
 
-        fn compute_generators(eval_size: usize, seed: &AESSeed) -> Vec<GroupElement> {
+        fn compute_generators(eval_size: usize, seed: &AESSeed) -> ElementVector {
             let num_elements: usize = eval_size / Group::order_size_in_bytes(); // prg eval size (# group elements needed)
-            Group::generators(num_elements, seed)
+            ElementVector(Group::generators(num_elements, seed))
         }
     }
 
     impl PRG for GroupPRG {
         type Seed = Integer;
-        type Output = Vec<GroupElement>;
+        type Output = ElementVector;
 
         /// generates a new (random) seed for the given PRG
         fn new_seed(&self) -> Integer {
@@ -279,13 +283,15 @@ pub mod group {
 
         /// evaluates the PRG on the given seed
         fn eval(&self, seed: &Integer) -> Self::Output {
-            self.generators.iter().map(|g| g.pow(seed)).collect()
+            ElementVector(self.generators.0.iter().map(|g| g.pow(seed)).collect())
         }
 
         fn null_output(&self) -> Self::Output {
-            repeat(Group::identity())
-                .take(self.generators.len())
-                .collect()
+            ElementVector(
+                repeat(Group::identity())
+                    .take(self.generators.0.len())
+                    .collect(),
+            )
         }
     }
 
@@ -294,15 +300,44 @@ pub mod group {
             Integer::from(Integer::sum(seeds.iter()))
         }
 
-        fn combine_outputs(&self, outputs: Vec<Vec<GroupElement>>) -> Vec<GroupElement> {
+        fn combine_outputs(&self, outputs: Vec<ElementVector>) -> ElementVector {
             let mut combined = self.null_output();
 
             for output in outputs {
-                for (acc, val) in combined.iter_mut().zip(output.iter()) {
+                for (acc, val) in combined.0.iter_mut().zip(output.0.iter()) {
                     *acc *= val
                 }
             }
             combined
+        }
+    }
+
+    impl BitXor<ElementVector> for ElementVector {
+        type Output = ElementVector;
+
+        // TODO(sss): any way around the clone here?
+        // apply the group operation on each component in the vector
+        fn bitxor(self, rhs: ElementVector) -> ElementVector {
+            ElementVector(
+                self.0
+                    .iter()
+                    .zip(rhs.0.iter())
+                    .map(|(element1, element2)| element1 * element2)
+                    .collect(),
+            )
+        }
+    }
+
+    impl BitXorAssign<ElementVector> for ElementVector {
+        // TODO(sss): don't make a totally new elementvector here?
+        // apply the group operation on each component in the vector
+        fn bitxor_assign(&mut self, rhs: ElementVector) {
+            self.0 = self
+                .0
+                .iter()
+                .zip(rhs.0.iter())
+                .map(|(element1, element2)| element1 * element2)
+                .collect();
         }
     }
 
