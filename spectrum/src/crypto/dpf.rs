@@ -23,6 +23,7 @@ pub trait DPF {
 }
 
 pub type PRGDPF<P> = trivial_prg::Construction<P>;
+pub type SeedHomomorphicDPF<P> = seed_homomorphic_prg::Construction<P>;
 
 // 2-DPF (i.e. num_keys = 2) based on any PRG G(.).
 mod trivial_prg {
@@ -227,6 +228,200 @@ mod trivial_prg {
             ) {
                 run_test_dpf_empty(dpf);
             }
+        }
+    }
+}
+
+// s-DPF (i.e. num_keys = s > 2) based on any seed-homomorphic PRG G(.).
+mod seed_homomorphic_prg {
+    use super::*;
+    use crate::crypto::prg::SeedHomomorphicPRG;
+    use crate::crypto::prg::PRG;
+
+    use derivative::Derivative;
+    use rand::{thread_rng, Rng};
+    use serde::{Deserialize, Serialize};
+
+    use std::iter::repeat_with;
+    use std::ops;
+
+    #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+    pub struct Construction<P> {
+        prg: P,
+        num_points: usize,
+        num_keys: usize,
+    }
+
+    impl<P> Construction<P> {
+        pub fn new(prg: P, num_points: usize, num_keys: usize) -> Construction<P> {
+            Construction {
+                prg,
+                num_points,
+                num_keys,
+            }
+        }
+    }
+
+    #[derive(Derivative)]
+    #[derivative(
+        Debug(bound = "P::Seed: Debug, P::Output: Debug"),
+        PartialEq(bound = "P::Seed: PartialEq, P::Output: PartialEq"),
+        Eq(bound = "P::Seed: Eq, P::Output: Eq"),
+        Clone(bound = "P::Seed: Clone, P::Output: Clone")
+    )]
+    pub struct Key<P: SeedHomomorphicPRG> {
+        pub encoded_msg: P::Output,
+        pub bits: Vec<u8>,
+        pub seeds: Vec<<P as PRG>::Seed>,
+    }
+
+    impl<P: SeedHomomorphicPRG> Key<P> {
+        // generates a new DPF key with the necessary parameters needed for evaluation
+        pub fn new(encoded_msg: P::Output, bits: Vec<u8>, seeds: Vec<P::Seed>) -> Key<P> {
+            assert_eq!(bits.len(), seeds.len());
+            assert!(
+                bits.iter().all(|b| *b == 0 || *b == 1),
+                "All bits must be 0 or 1"
+            );
+            Key {
+                encoded_msg,
+                bits,
+                seeds,
+            }
+        }
+    }
+
+    impl<P> DPF for Construction<P>
+    where
+        P: PRG + Clone + SeedHomomorphicPRG,
+        P::Seed: Clone + PartialEq + Eq + Debug,
+        P::Output: Clone
+            + PartialEq
+            + Eq
+            + Debug
+            + ops::Mul<P::Output, Output = P::Output>
+            + ops::MulAssign<P::Output>,
+    {
+        type Key = Key<P>;
+        type Message = P::Output;
+
+        fn num_points(&self) -> usize {
+            self.num_points
+        }
+
+        fn num_keys(&self) -> usize {
+            self.num_keys
+        }
+
+        fn null_message(&self) -> Self::Message {
+            self.prg.null_output()
+        }
+
+        /// generate new instance of PRG based DPF with two DPF keys
+        fn gen(&self, msg: Self::Message, point_idx: usize) -> Vec<Key<P>> {
+            // vector of seeds for each key
+            let mut seeds: Vec<Vec<_>> = repeat_with(|| {
+                repeat_with(|| self.prg.new_seed())
+                    .take(self.num_points)
+                    .collect()
+            })
+            .take(self.num_keys)
+            .collect();
+
+            // vector of bits for each key
+            let mut bits: Vec<Vec<_>> = repeat_with(|| {
+                repeat_with(|| thread_rng().gen_range(0, 2))
+                    .take(self.num_points)
+                    .collect()
+            })
+            .take(self.num_keys)
+            .collect();
+
+            // generate a new random seed for the specified index
+            seeds[0][point_idx] = self.prg.new_seed();
+
+            // set the first bit to be the xor of all the other bits
+            let xor_bits = bits.iter().fold(0, |xor, bit_vec| xor ^ bit_vec[point_idx]);
+            bits[0][point_idx] = 1 ^ xor_bits;
+
+            let mut outputs: Vec<Self::Message> = seeds
+                .iter_mut()
+                .map(|seed_vec| {
+                    self.prg.eval(&seed_vec[point_idx]) // evaluate the prg on the specified seed at point_idx
+                })
+                .collect();
+
+            // add message to the set of PRG outputs to "combine" together in the next step
+            outputs.push(msg);
+
+            // encoded message G(S*) ^ G(S_1) ... ^ G(S_s) ^ msg
+            let encoded_msg = self.prg.combine_outputs(outputs); // combine all seeds and the message
+
+            seeds
+                .iter()
+                .zip(bits.iter())
+                .map(|(seed_vec, bit_vec)| {
+                    Key::new(encoded_msg.clone(), bit_vec.clone(), seed_vec.clone())
+                })
+                .collect()
+        }
+
+        fn gen_empty(&self) -> Vec<Key<P>> {
+            // vector of seeds for each key
+            let seeds: Vec<Vec<_>> = repeat_with(|| {
+                repeat_with(|| self.prg.new_seed())
+                    .take(self.num_points)
+                    .collect()
+            })
+            .take(self.num_keys)
+            .collect();
+
+            // vector of bits for each key
+            let bits: Vec<Vec<_>> = repeat_with(|| {
+                repeat_with(|| thread_rng().gen_range(0, 2))
+                    .take(self.num_points)
+                    .collect()
+            })
+            .take(self.num_keys)
+            .collect();
+
+            let encoded_msg = self.prg.eval(&self.prg.new_seed()); // psuedo random message
+
+            seeds
+                .iter()
+                .zip(bits.iter())
+                .map(|(seed_vec, bit_vec)| {
+                    Key::new(encoded_msg.clone(), bit_vec.clone(), seed_vec.clone())
+                })
+                .collect()
+        }
+
+        /// evaluates the DPF on a given PRGKey and outputs the resulting data
+        fn eval(&self, key: &Key<P>) -> Vec<P::Output> {
+            key.seeds
+                .iter()
+                .zip(key.bits.iter())
+                .map(|(seed, bits)| {
+                    let mut data = self.prg.eval(seed);
+                    if *bits == 1 {
+                        // TODO(zjn): futz with lifetimes; remove clone()
+                        data *= key.encoded_msg.clone();
+                    }
+                    data
+                })
+                .collect()
+        }
+
+        /// combines the results produced by running eval on both keys
+        fn combine(&self, parts: Vec<Vec<P::Output>>) -> Vec<P::Output> {
+            let mut parts = parts.into_iter();
+            let mut res = parts.next().expect("Need at least one part to combine.");
+            for part in parts {
+                for (x, y) in res.iter_mut().zip(part.into_iter()) {
+                    *x *= y;
+                }
+            }
+            res
         }
     }
 }
