@@ -119,6 +119,14 @@ impl ops::Mul<&GroupElement> for GroupElement {
     }
 }
 
+impl<'a, 'b> ops::Mul<&'b GroupElement> for &'a GroupElement {
+    type Output = GroupElement;
+
+    fn mul(self, rhs: &'b GroupElement) -> GroupElement {
+        GroupElement(self.0.add(&rhs.0))
+    }
+}
+
 impl ops::MulAssign<&GroupElement> for GroupElement {
     fn mul_assign(&mut self, rhs: &GroupElement) {
         self.0 = self.0.add(&rhs.0);
