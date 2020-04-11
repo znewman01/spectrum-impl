@@ -1,6 +1,7 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
 use crate::crypto::prg::{aes::AESSeed, aes::AESPRG, PRG};
+use core::cmp::Ordering;
 use jubjub::Fr as ECFieldElement; // elliptic curve field
 use rand::prelude::*;
 use rug::{integer::Order, Integer};
@@ -43,14 +44,15 @@ impl Group {
 
     /// creates a new group element from an integer
     pub fn new_element(value: &Integer) -> GroupElement {
-        // need to remove all extra significant bits to ensure that
-        // the value fits into a JUBJUB_MAX_CONVERT_BYTES byte array
-        // see significant_digits:
-        // https://docs.rs/rug/1.7.0/rug/struct.Integer.html#method.significant_digits
-        let cutoff_bits: u32 = 8 * JUBJUB_MAX_CONVERT_BYTES as u32;
-        let mut digits: [u8; JUBJUB_MAX_CONVERT_BYTES] = [0x0u8; JUBJUB_MAX_CONVERT_BYTES];
-        Integer::from(value.keep_bits_ref(cutoff_bits)).write_digits(&mut digits, BYTE_ORDER);
-        GroupElement(ECFieldElement::from_bytes_wide(&digits))
+        let reduced = if value.cmp0() == Ordering::Less {
+            Group::order() - (Integer::from(-value) % Self::order())
+        } else {
+            value % Self::order()
+        };
+
+        let mut digits: [u8; JUBJUB_MODULUS_BYTES] = [0x0u8; JUBJUB_MODULUS_BYTES];
+        reduced.write_digits(&mut digits, BYTE_ORDER);
+        GroupElement(ECFieldElement::from_bytes(&digits).unwrap())
     }
 
     /// new element from little endian bytes
@@ -203,12 +205,18 @@ mod tests {
 
         }
 
-
         #[test]
-        fn test_exp_prod(element: GroupElement, a in integer_512_bits(), b in integer_512_bits()) {
+        fn test_pow_prod(element: GroupElement, a in integer_512_bits(), b in integer_512_bits()) {
             let prod = a.clone() * b.clone();
             let expected = prod % Group::order();
             assert_eq!(element.pow(&a).pow(&b), element.pow(&expected))
+        }
+
+        #[test]
+        fn test_pow_negative(element: GroupElement, a in integer_512_bits()) {
+            let negative = -(a.clone() % Group::order());
+            let expected = Group::order() - (a % Group::order());
+            assert_eq!(element.pow(&negative), element.pow(&expected))
         }
 
         #[test]
