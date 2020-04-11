@@ -47,7 +47,7 @@ clap = { git = "http://github.com/clap-rs/clap/", rev = "37889c661134e8286102f7d
 csv = "1.1"
 rusoto_core = "0.43.0"
 rusoto_s3 = "0.43.0"
-etcd-rs = { git = "http://github.com/znewman01/etcd-rs/", branch = "lazy_tunnels" }
+etcd-rs = { git = "http://github.com/luncj/etcd-rs/", rev = "cb21ea0be36533d49e8350cc41498b90a283995b" }
 tempfile = "3"
 blake3 = "0.3.0"
 tsunami = { git = "http://github.com/znewman01/tsunami/", rev = "8c91e80513f6c587621d2ac30a88e8ed046e2430" }
