@@ -22,6 +22,7 @@ pub trait PRG {
 pub trait SeedHomomorphicPRG: PRG {
     fn combine_seeds(&self, seeds: Vec<Self::Seed>) -> Self::Seed;
     fn combine_outputs(&self, outputs: Vec<Self::Output>) -> Self::Output;
+    fn null_seed(&self) -> Self::Seed;
 }
 
 #[cfg(test)]
@@ -30,12 +31,14 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
     use std::fmt::Debug;
+    use std::ops;
 
     pub fn run_test_prg_null_combine<P>(prg: P, seed: P::Seed)
     where
         P: SeedHomomorphicPRG,
         P::Seed: Eq + Debug,
-        P::Output: Eq + Debug,
+        P::Output:
+            Eq + Debug + ops::BitXor<P::Output, Output = P::Output> + ops::BitXorAssign<P::Output>,
     {
         // ensure combine(null, null) = null
         assert_eq!(
@@ -245,7 +248,7 @@ pub mod group {
     use super::*;
     use std::ops::{BitXor, BitXorAssign};
 
-    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+    #[derive(Default, Clone, PartialEq, Eq, Hash, Debug)]
     pub struct ElementVector(pub Vec<GroupElement>);
 
     // Implementation of a group-based PRG
@@ -296,16 +299,19 @@ pub mod group {
     }
 
     impl SeedHomomorphicPRG for GroupPRG {
+        fn null_seed(&self) -> Integer {
+            0.into()
+        }
+
         fn combine_seeds(&self, seeds: Vec<Integer>) -> Integer {
-            Integer::from(Integer::sum(seeds.iter()))
+            Integer::from(Integer::sum(seeds.iter())) % Group::order()
         }
 
         fn combine_outputs(&self, outputs: Vec<ElementVector>) -> ElementVector {
             let mut combined = self.null_output();
-
             for output in outputs {
                 for (acc, val) in combined.0.iter_mut().zip(output.0.iter()) {
-                    *acc *= val
+                    *acc *= val;
                 }
             }
             combined
@@ -351,6 +357,7 @@ pub mod group {
         use rug::Integer;
         use std::collections::HashSet;
         use std::fmt::Debug;
+        use std::ops;
         use std::ops::Range;
 
         const GROUP_PRG_EVAL_SIZES: Range<usize> = 64..1000; // in bytes
@@ -368,6 +375,17 @@ pub mod group {
                         })
                         .boxed(),
                 }
+            }
+        }
+
+        impl Arbitrary for ElementVector {
+            type Parameters = usize;
+            type Strategy = BoxedStrategy<Self>;
+
+            fn arbitrary_with(num_elements: Self::Parameters) -> Self::Strategy {
+                prop::collection::vec(any::<GroupElement>(), num_elements)
+                    .prop_map(ElementVector)
+                    .boxed()
             }
         }
 
@@ -391,6 +409,30 @@ pub mod group {
             assert_eq!(
                 prg.combine_outputs(outputs),
                 prg.eval(&prg.combine_seeds(seeds))
+            );
+        }
+
+        /// tests for seed-homomorphism with null seeds
+        fn run_test_prg_eval_homomorphism_null_seed<P>(prg: P, seeds: Vec<P::Seed>)
+        where
+            P: SeedHomomorphicPRG,
+            P::Seed: Eq + Clone + Debug + ops::Sub<Output = P::Seed>,
+            P::Output: Eq + Clone + Debug + Hash,
+        {
+            let mut outputs: Vec<P::Output> = seeds.iter().map(|seed| prg.eval(seed)).collect();
+
+            // null seed doesn't change the output
+            let expected = prg.combine_outputs(outputs.clone());
+            outputs.push(prg.eval(&prg.null_seed()));
+
+            assert_eq!(prg.combine_outputs(outputs), expected);
+
+            // null seed produces null output
+            let seed = seeds[0].clone();
+            let neg = prg.null_seed() - seeds[0].clone();
+            assert_eq!(
+                prg.combine_outputs(vec![prg.eval(&seed), prg.eval(&neg)]),
+                prg.null_output()
             );
         }
 
@@ -425,6 +467,20 @@ pub mod group {
                 run_test_prg_eval_homomorphism(prg, seeds);
             }
 
+            #[test]
+            fn test_group_prg_eval_homomorphism_null(
+                prg: GroupPRG, seeds in seeds(),
+            ) {
+                run_test_prg_eval_homomorphism_null_seed(prg, seeds);
+            }
+
+            // make sure that a null_seed doesn't change the output
+            #[test]
+            fn test_null_seed(
+                prg: GroupPRG,
+            ) {
+                assert_eq!(prg.eval(&prg.null_seed()), prg.null_output());
+            }
 
             #[test]
             fn test_group_prg_null_combine(prg: GroupPRG, seed in seed()) {
