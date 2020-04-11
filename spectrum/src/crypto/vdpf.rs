@@ -228,7 +228,7 @@ pub mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    use crate::crypto::{dpf::tests::data_with_dpf, field::tests::integers};
+    use crate::crypto::{dpf::prg_tests::data_with_dpf, field::tests::integers};
 
     impl<D: Arbitrary + 'static> Arbitrary for FieldVDPF<D> {
         type Parameters = ();

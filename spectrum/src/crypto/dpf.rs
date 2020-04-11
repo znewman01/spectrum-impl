@@ -170,9 +170,9 @@ mod trivial_prg {
     }
 
     #[cfg(test)]
-    mod tests {
+    mod aes_prg_tests {
         use super::*;
-        use crate::crypto::dpf::tests::*;
+        use crate::crypto::dpf::prg_tests::*;
         use crate::crypto::prg::{aes::AESPRG, PRG};
         use proptest::prelude::*;
 
@@ -237,11 +237,9 @@ mod seed_homomorphic_prg {
     use super::*;
     use crate::crypto::prg::SeedHomomorphicPRG;
     use crate::crypto::prg::PRG;
-
     use derivative::Derivative;
     use rand::{thread_rng, Rng};
     use serde::{Deserialize, Serialize};
-
     use std::iter::repeat_with;
     use std::ops;
 
@@ -294,13 +292,15 @@ mod seed_homomorphic_prg {
     impl<P> DPF for Construction<P>
     where
         P: PRG + Clone + SeedHomomorphicPRG,
-        P::Seed: Clone + PartialEq + Eq + Debug,
-        P::Output: Clone
+        P::Seed: Clone
             + PartialEq
             + Eq
             + Debug
-            + ops::Mul<P::Output, Output = P::Output>
-            + ops::MulAssign<P::Output>,
+            + ops::Sub<Output = P::Seed>
+            + ops::Add
+            + ops::SubAssign
+            + ops::AddAssign,
+        P::Output: Clone + PartialEq + Eq + Debug,
     {
         type Key = Key<P>;
         type Message = P::Output;
@@ -347,7 +347,8 @@ mod seed_homomorphic_prg {
             let mut outputs: Vec<Self::Message> = seeds
                 .iter_mut()
                 .map(|seed_vec| {
-                    self.prg.eval(&seed_vec[point_idx]) // evaluate the prg on the specified seed at point_idx
+                    let negated = self.prg.null_seed() - seed_vec[point_idx].clone();
+                    self.prg.eval(&negated) // evaluate the prg on the specified seed at point_idx
                 })
                 .collect();
 
@@ -368,22 +369,41 @@ mod seed_homomorphic_prg {
 
         fn gen_empty(&self) -> Vec<Key<P>> {
             // vector of seeds for each key
-            let seeds: Vec<Vec<_>> = repeat_with(|| {
+            let mut seeds: Vec<Vec<_>> = repeat_with(|| {
                 repeat_with(|| self.prg.new_seed())
                     .take(self.num_points)
                     .collect()
             })
-            .take(self.num_keys)
+            .take(self.num_keys - 1)
             .collect();
 
+            // want all seeds to cancel out; set last seed to be negation of all former seeds
+            let mut last_seed_vec = vec![self.prg.null_seed(); self.num_points];
+            for seed_vec in seeds.iter() {
+                for (a, b) in last_seed_vec.iter_mut().zip(seed_vec.iter()) {
+                    *a -= b.clone()
+                }
+            }
+            seeds.push(last_seed_vec);
+
             // vector of bits for each key
-            let bits: Vec<Vec<_>> = repeat_with(|| {
+            let mut bits: Vec<Vec<_>> = repeat_with(|| {
                 repeat_with(|| thread_rng().gen_range(0, 2))
                     .take(self.num_points)
                     .collect()
             })
-            .take(self.num_keys)
+            .take(self.num_keys - 1)
             .collect();
+
+            // want bits to cancel out; set the last bit to be the xor of all the other bits
+            let mut last_bit_vec = vec![0; self.num_points];
+            for bit_vec in bits.iter() {
+                for (a, b) in last_bit_vec.iter_mut().zip(bit_vec.iter()) {
+                    *a ^= b
+                }
+            }
+
+            bits.push(last_bit_vec);
 
             let encoded_msg = self.prg.eval(&self.prg.new_seed()); // psuedo random message
 
@@ -405,7 +425,9 @@ mod seed_homomorphic_prg {
                     let mut data = self.prg.eval(seed);
                     if *bits == 1 {
                         // TODO(zjn): futz with lifetimes; remove clone()
-                        data *= key.encoded_msg.clone();
+                        data = self
+                            .prg
+                            .combine_outputs(vec![key.encoded_msg.clone(), data]);
                     }
                     data
                 })
@@ -418,7 +440,7 @@ mod seed_homomorphic_prg {
             let mut res = parts.next().expect("Need at least one part to combine.");
             for part in parts {
                 for (x, y) in res.iter_mut().zip(part.into_iter()) {
-                    *x *= y;
+                    *x = self.prg.combine_outputs(vec![x.clone(), y]);
                 }
             }
             res
@@ -427,7 +449,7 @@ mod seed_homomorphic_prg {
 }
 
 #[cfg(test)]
-pub mod tests {
+pub mod prg_tests {
     use super::*;
     use crate::bytes::Bytes;
     use proptest::prelude::*;
