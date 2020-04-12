@@ -1,6 +1,6 @@
 //! Spectrum implementation.
 use crate::crypto::{
-    dpf::{SeedHomomorphicDPF, DPF, PRGDPF},
+    dpf::{BasicDPF, MultiKeyDPF, DPF},
     field::{Field, FieldElement},
     lss::{SecretShare, LSS},
     prg::aes::AESPRG,
@@ -128,7 +128,7 @@ impl<D: DPF> DPF for FieldVDPF<D> {
     }
 }
 
-pub type ConcreteVdpf = FieldVDPF<PRGDPF<AESPRG>>;
+pub type ConcreteVdpf = FieldVDPF<BasicDPF<AESPRG>>;
 
 impl VDPF for ConcreteVdpf {
     type AuthKey = FieldElement;
