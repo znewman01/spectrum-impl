@@ -318,6 +318,18 @@ pub mod group {
         }
     }
 
+    impl Into<Bytes> for ElementVector {
+        fn into(self) -> Bytes {
+            // outputs all the elements in the vector concatenated as a sequence of bytes
+            let mut all_bytes = vec![0u8; Group::order_size_in_bytes() * self.0.len()];
+            for element in self.0.into_iter() {
+                let bytes: Bytes = element.into();
+                all_bytes.append(&mut bytes.into());
+            }
+            Bytes::from(all_bytes)
+        }
+    }
+
     impl BitXor<ElementVector> for ElementVector {
         type Output = ElementVector;
 
