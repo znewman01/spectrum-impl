@@ -1,15 +1,17 @@
 //! Spectrum implementation.
 use crate::crypto::{
-    dpf::{DPF, PRGDPF},
+    dpf::{SeedHomomorphicDPF, DPF, PRGDPF},
     field::{Field, FieldElement},
     lss::{SecretShare, LSS},
     prg::aes::AESPRG,
+    prg::group::GroupPRG,
 };
 
 use crate::bytes::Bytes;
 use rug::rand::RandState;
 use serde::{Deserialize, Serialize};
 
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::iter::repeat_with;
 
@@ -218,8 +220,13 @@ impl VDPF for ConcreteVdpf {
     }
 
     fn check_audit(&self, tokens: Vec<FieldToken>) -> bool {
-        assert_eq!(tokens.len(), 2, "not implemented");
-        tokens[0] == tokens[1]
+        let recover_bit = LSS::recover(tokens.iter().map(|t| t.bit.clone()).collect());
+        let recover_share = LSS::recover(tokens.iter().map(|t| t.seed.clone()).collect());
+
+        // make sure all hashes are equal ||hash_set|| = 1
+        let hash_set: HashSet<_> = tokens.iter().map(|t| t.data.clone()).collect();
+
+        hash_set.len() == 1 && recover_bit.get_value() == 0 && recover_share.get_value() == 0
     }
 }
 
