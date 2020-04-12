@@ -135,7 +135,7 @@ impl Into<proto::Integer> for FieldElement {
 // to zero rather than just take the remainder.
 fn reduce_modulo(v: Integer, order: &Integer) -> Integer {
     if v.cmp0() == Ordering::Less {
-        (order.clone() + v) % order
+        (order.clone() - (-v % order)) % order
     } else {
         v % order
     }
@@ -359,6 +359,13 @@ pub mod tests {
         #[test]
         fn test_distributive((x, y, z) in field_element_triples()) {
             assert_eq!(x.clone() * (y.clone() + z.clone()), (x.clone() * y) + (x * z));
+        }
+
+        #[test]
+        fn test_negative(field:Field, x in integers(), y in integers()) {
+            let expected = FieldElement::new(x.clone() - y.clone(), field.clone());
+            let actual = FieldElement::new(x, field.clone()) - FieldElement::new(y, field);
+            assert_eq!(actual, expected);
         }
 
 
