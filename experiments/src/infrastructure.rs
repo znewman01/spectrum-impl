@@ -20,8 +20,8 @@
 ///! - publisher: 6002
 // TODO: etcd security (fine for now because of intense AWS firewalling)
 // TODO: TLS (on Nginx)
-use crate::experiment::compile::{download_s3, install_aws_cli, install_rust};
-use crate::experiment::config::Environment;
+use crate::compile::{download_s3, install_aws_cli, install_rust};
+use crate::config::Environment;
 
 use failure::{format_err, Error};
 use rusoto_core::Region;

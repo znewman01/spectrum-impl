@@ -1,4 +1,4 @@
-use crate::experiment::infrastructure::install_config_file;
+use crate::infrastructure::install_config_file;
 
 use failure::Error;
 use itertools::Itertools;

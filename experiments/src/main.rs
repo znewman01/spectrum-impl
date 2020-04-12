@@ -1,4 +1,6 @@
-use spectrum_impl::experiment::{compile, config, infrastructure};
+mod compile;
+mod config;
+mod infrastructure;
 
 use clap::{crate_authors, crate_version, Clap};
 use failure::Error;
