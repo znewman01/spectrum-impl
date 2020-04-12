@@ -269,7 +269,6 @@ fn format_binary(hash: &str, profile: Profile, machine: &str) -> String {
 /// with the given source (cached in `bin_dir`) before compiling.
 pub async fn compile(
     log: &slog::Logger,
-    bin_dir: PathBuf,
     src_dir: PathBuf,
     machine_types: Vec<String>,
     profile: Profile,
@@ -279,18 +278,21 @@ pub async fn compile(
         log,
         "Creating a tarball with current checked-in Git src (HEAD)"
     );
-    let src_archive: PathBuf = bin_dir.join("spectrum-src.tar.gz");
+    let src_archive = tempfile::NamedTempFile::new()?;
     Command::new("git")
         .arg("archive")
         .args(&["--format", "tar.gz"])
-        .args(&["--output", &src_archive.to_string_lossy()])
+        .args(&[
+            "--output",
+            &src_archive.path().to_path_buf().to_string_lossy(),
+        ])
         .args(&["--prefix", "spectrum/"])
         .arg("HEAD")
         .current_dir(&src_dir)
         .spawn()?
         .await?;
 
-    // Only compile machine types that aren't in the `bin_dir` cache already.
+    // Only compile machine types that aren't in the s3 cache already.
     // We format file names based on machine type and the git hash.
     let hash = Command::new("git")
         .args(&["rev-parse", "--short", "HEAD"])
@@ -334,7 +336,15 @@ pub async fn compile(
         })
         .collect();
 
-    let new_binaries = spawn_and_compile(log, hash, src_archive, needs_build, profile, ami).await?;
+    let new_binaries = spawn_and_compile(
+        log,
+        hash,
+        src_archive.path().to_path_buf(),
+        needs_build,
+        profile,
+        ami,
+    )
+    .await?;
     binaries.extend(new_binaries);
 
     Ok(binaries)

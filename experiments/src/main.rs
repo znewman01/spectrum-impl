@@ -35,10 +35,6 @@ struct Args {
     #[clap()]
     experiments_file: String,
 
-    /// Path to a directory where compiled binaries should be stored.
-    #[clap(long)]
-    binary_dir: PathBuf,
-
     /// Whether to compile the binaries in debug mode.
     ///
     /// This is much faster but the performance of the ultimate binaries worse.
@@ -263,7 +259,6 @@ async fn main() -> Result<()> {
         Some(
             compile::compile(
                 &log,
-                args.binary_dir.clone(),
                 src_dir,
                 machine_types.into_iter().collect(),
                 args.profile(),
