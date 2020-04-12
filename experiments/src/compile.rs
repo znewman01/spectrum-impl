@@ -261,23 +261,38 @@ fn format_binary(hash: &str, profile: Profile, machine: &str) -> String {
 
 /// Compile Spectrum binaries for the given machine types (in AWS).
 ///
-/// `src_dir` is the path to the root of the Spectrum git repo.
-/// This function compiles the HEAD commit on the appropriate machine type in
-/// AWS.
+/// This function compiles the latest commit modifying the Spectrum
+/// implementation on the appropriate machine type in AWS EX2.
 ///
 /// Checks whether the binaries have been compiled for the given machine type
-/// with the given source (cached in `bin_dir`) before compiling.
+/// with the given source (cached in AWS S3) before compiling.
 pub async fn compile(
     log: &slog::Logger,
-    src_dir: PathBuf,
     machine_types: Vec<String>,
     profile: Profile,
     ami: String,
 ) -> Result<HashMap<String, String>> {
-    trace!(
-        log,
-        "Creating a tarball with current checked-in Git src (HEAD)"
-    );
+    let git_root = String::from_utf8(
+        Command::new("git")
+            .args(&["rev-parse", "--show-toplevel"])
+            .output()
+            .await?
+            .stdout,
+    )?;
+    let git_root = &Path::new(&git_root);
+
+    // Get the last commit modfiying Spectrum server code.
+    // (ignore changes to experiment harness etc.)
+    let last_commit = String::from_utf8(
+        Command::new("git")
+            .args(&["git", "rev-list", "-1", "HEAD", "--", "spectrum"])
+            .current_dir(&git_root)
+            .output()
+            .await?
+            .stdout,
+    )?;
+
+    trace!(log, "Creating a tarball with current checked-in Git src"; "commit" => &last_commit);
     let src_archive = tempfile::NamedTempFile::new()?;
     Command::new("git")
         .arg("archive")
@@ -287,8 +302,8 @@ pub async fn compile(
             &src_archive.path().to_path_buf().to_string_lossy(),
         ])
         .args(&["--prefix", "spectrum/"])
-        .arg("HEAD")
-        .current_dir(&src_dir)
+        .arg(&last_commit)
+        .current_dir(&git_root)
         .spawn()?
         .await?;
 
@@ -296,7 +311,7 @@ pub async fn compile(
     // We format file names based on machine type and the git hash.
     let hash = Command::new("git")
         .args(&["rev-parse", "--short", "HEAD"])
-        .current_dir(&src_dir)
+        .current_dir(&git_root)
         .output()
         .await?
         .stdout;

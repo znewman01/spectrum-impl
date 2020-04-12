@@ -5,7 +5,6 @@ mod infrastructure;
 use clap::{crate_authors, crate_version, Clap};
 use failure::Error;
 use serde::ser::{SerializeSeq, Serializer};
-use std::path::PathBuf;
 use tsunami::providers::{aws, Launcher};
 
 use std::collections::{HashMap, HashSet};
@@ -253,13 +252,10 @@ async fn main() -> Result<()> {
         .iter()
         .flat_map(|e| e.instance_types())
         .collect();
-    let src_dir = PathBuf::from("/home/zjn/git/spectrum-impl/");
-    // TODO: Store binaries on EBS or something! uploading takes a long time.
     let bin_archives = if !args.dry_run {
         Some(
             compile::compile(
                 &log,
-                src_dir,
                 machine_types.into_iter().collect(),
                 args.profile(),
                 BASE_AMI.to_string(),
