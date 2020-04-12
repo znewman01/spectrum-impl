@@ -279,28 +279,27 @@ pub async fn compile(
             .await?
             .stdout,
     )?;
-    let git_root = &Path::new(&git_root);
+    let git_root = &Path::new(git_root.trim());
 
     // Get the last commit modfiying Spectrum server code.
     // (ignore changes to experiment harness etc.)
     let last_commit = String::from_utf8(
         Command::new("git")
-            .args(&["git", "rev-list", "-1", "HEAD", "--", "spectrum"])
+            .args(&["rev-list", "-1", "HEAD", "--", "spectrum"])
             .current_dir(&git_root)
             .output()
             .await?
             .stdout,
     )?;
+    let last_commit = last_commit.trim();
 
     trace!(log, "Creating a tarball with current checked-in Git src"; "commit" => &last_commit);
-    let src_archive = tempfile::NamedTempFile::new()?;
+    let src_dir = tempfile::TempDir::new()?;
+    let src_archive = src_dir.path().join("spectrum-src.tar.gz");
     Command::new("git")
         .arg("archive")
         .args(&["--format", "tar.gz"])
-        .args(&[
-            "--output",
-            &src_archive.path().to_path_buf().to_string_lossy(),
-        ])
+        .args(&["--output", &src_archive.to_string_lossy()])
         .args(&["--prefix", "spectrum/"])
         .arg(&last_commit)
         .current_dir(&git_root)
@@ -351,15 +350,7 @@ pub async fn compile(
         })
         .collect();
 
-    let new_binaries = spawn_and_compile(
-        log,
-        hash,
-        src_archive.path().to_path_buf(),
-        needs_build,
-        profile,
-        ami,
-    )
-    .await?;
+    let new_binaries = spawn_and_compile(log, hash, src_archive, needs_build, profile, ami).await?;
     binaries.extend(new_binaries);
 
     Ok(binaries)
