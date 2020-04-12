@@ -4,9 +4,6 @@ members = [
     "experiments",
 ]
 
-[profile.dev]
-opt-level = 1  # reasonable mix of compile/run speed
-
 [profile.release]
 lto = "thin"
 debug = false  # turn on for profiling; bigger binaries but not any slower
