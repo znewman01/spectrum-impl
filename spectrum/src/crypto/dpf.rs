@@ -319,52 +319,25 @@ mod seed_homomorphic_prg {
 
         /// generate new instance of PRG based DPF with two DPF keys
         fn gen(&self, msg: Self::Message, point_idx: usize) -> Vec<Key<P>> {
-            // vector of seeds for each key
-            let mut seeds: Vec<Vec<_>> = repeat_with(|| {
-                repeat_with(|| self.prg.new_seed())
-                    .take(self.num_points)
-                    .collect()
-            })
-            .take(self.num_keys)
-            .collect();
-
-            // vector of bits for each key
-            let mut bits: Vec<Vec<_>> = repeat_with(|| {
-                repeat_with(|| thread_rng().gen_range(0, 2))
-                    .take(self.num_points)
-                    .collect()
-            })
-            .take(self.num_keys)
-            .collect();
+            let mut keys = self.gen_empty();
 
             // generate a new random seed for the specified index
-            seeds[0][point_idx] = self.prg.new_seed();
+            let special_seed = self.prg.new_seed();
 
-            // set the first bit to be the xor of all the other bits
-            let xor_bits = bits.iter().fold(0, |xor, bit_vec| xor ^ bit_vec[point_idx]);
-            bits[0][point_idx] = 1 ^ xor_bits;
-
-            let mut outputs: Vec<Self::Message> = seeds
-                .iter_mut()
-                .map(|seed_vec| {
-                    let negated = self.prg.null_seed() - seed_vec[point_idx].clone();
-                    self.prg.eval(&negated) // evaluate the prg on the specified seed at point_idx
-                })
-                .collect();
+            keys[0].seeds[point_idx] += special_seed.clone();
+            keys[0].bits[point_idx] ^= 1;
 
             // add message to the set of PRG outputs to "combine" together in the next step
-            outputs.push(msg);
+            // encoded message G(S*) ^ msg
+            let neg = self.prg.null_seed() - special_seed;
+            let encoded_msg = self.prg.combine_outputs(vec![msg, self.prg.eval(&neg)]);
 
-            // encoded message G(S*) ^ G(S_1) ... ^ G(S_s) ^ msg
-            let encoded_msg = self.prg.combine_outputs(outputs); // combine all seeds and the message
+            // update the encoded message in the keys
+            for key in keys.iter_mut() {
+                key.encoded_msg = encoded_msg.clone();
+            }
 
-            seeds
-                .iter()
-                .zip(bits.iter())
-                .map(|(seed_vec, bit_vec)| {
-                    Key::new(encoded_msg.clone(), bit_vec.clone(), seed_vec.clone())
-                })
-                .collect()
+            keys
         }
 
         fn gen_empty(&self) -> Vec<Key<P>> {
@@ -387,13 +360,10 @@ mod seed_homomorphic_prg {
             seeds.push(last_seed_vec);
 
             // vector of bits for each key
-            let mut bits: Vec<Vec<_>> = repeat_with(|| {
-                repeat_with(|| thread_rng().gen_range(0, 2))
-                    .take(self.num_points)
-                    .collect()
-            })
-            .take(self.num_keys - 1)
-            .collect();
+            let mut bits: Vec<Vec<_>> =
+                repeat_with(|| repeat_with(|| 0).take(self.num_points).collect())
+                    .take(self.num_keys)
+                    .collect();
 
             // want bits to cancel out; set the last bit to be the xor of all the other bits
             let mut last_bit_vec = vec![0; self.num_points];
