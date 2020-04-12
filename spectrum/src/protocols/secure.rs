@@ -4,7 +4,7 @@ use crate::proto;
 use crate::{
     bytes::Bytes,
     crypto::{
-        dpf::{DPF, PRGDPF},
+        dpf::{BasicDPF, DPF},
         field::Field,
         prg::aes::AESPRG,
         vdpf::{FieldProofShare, FieldToken, FieldVDPF, VDPF},
@@ -84,7 +84,7 @@ impl TryFrom<proto::WriteToken> for WriteToken<ConcreteVdpf> {
     fn try_from(token: proto::WriteToken) -> Result<Self, Self::Error> {
         if let proto::write_token::Inner::Secure(inner) = token.inner.unwrap() {
             let key_proto = inner.key.unwrap();
-            let dpf_key = <PRGDPF<AESPRG> as DPF>::Key::new(
+            let dpf_key = <BasicDPF<AESPRG> as DPF>::Key::new(
                 key_proto.encoded_msg.into(),
                 key_proto.bits,
                 key_proto.seeds.into_iter().map(|s| s.into()).collect(),
@@ -184,7 +184,7 @@ impl SecureProtocol<ConcreteVdpf> {
     pub fn with_aes_prg_dpf(sec_bits: u32, channels: usize, msg_size: usize) -> Self {
         let prime: Integer = (Integer::from(2) << sec_bits).next_prime_ref().into();
         let field = Field::from(prime);
-        let vdpf = FieldVDPF::new(PRGDPF::new(AESPRG::new(16, msg_size), channels), field);
+        let vdpf = FieldVDPF::new(BasicDPF::new(AESPRG::new(16, msg_size), channels), field);
         SecureProtocol::new(vdpf, msg_size)
     }
 }
