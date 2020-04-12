@@ -105,6 +105,12 @@ impl GroupElement {
     }
 }
 
+impl Into<Bytes> for GroupElement {
+    fn into(self) -> Bytes {
+        Bytes::from(self.0.to_bytes().to_vec())
+    }
+}
+
 impl ops::Mul<GroupElement> for GroupElement {
     type Output = GroupElement;
 
