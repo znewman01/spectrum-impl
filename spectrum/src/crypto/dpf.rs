@@ -415,6 +415,83 @@ mod multi_key_dpf {
             res
         }
     }
+
+    #[cfg(test)]
+    mod multi_key_dpf_tests {
+        use super::*;
+        use crate::crypto::dpf::prg_tests::*;
+        use crate::crypto::prg::{group::ElementVector, group::GroupPRG, PRG};
+        use proptest::prelude::*;
+
+        const MAX_NUM_POINTS: usize = 100;
+        const MAX_NUM_KEYS: usize = 10;
+
+        impl<P: Arbitrary + 'static> Arbitrary for Construction<P> {
+            type Parameters = ();
+            type Strategy = BoxedStrategy<Self>;
+
+            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+                (any::<P>(), 1..=MAX_NUM_KEYS, 1..=MAX_NUM_POINTS)
+                    .prop_map(move |(prg, num_keys, num_points)| {
+                        Construction::new(prg, num_keys, num_points)
+                    })
+                    .boxed()
+            }
+        }
+
+        impl<P> Arbitrary for Key<P>
+        where
+            P: PRG + SeedHomomorphicPRG,
+            P::Seed: Arbitrary,
+            P::Output: Arbitrary,
+        {
+            type Parameters = ();
+            type Strategy = BoxedStrategy<Self>;
+
+            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+                (1..10usize)
+                    .prop_flat_map(|num_keys| {
+                        (
+                            any::<P::Output>(),
+                            prop::collection::vec(0..1u8, num_keys),
+                            prop::collection::vec(any::<P::Seed>(), num_keys),
+                        )
+                            .prop_map(|(msg, bits, seeds)| Self::new(msg, bits, seeds))
+                    })
+                    .boxed()
+            }
+        }
+
+        pub fn data_with_dpf<D>() -> impl Strategy<Value = (ElementVector, D)>
+        where
+            D: DPF<Message = ElementVector> + Arbitrary + Clone,
+        {
+            any::<D>().prop_flat_map(|dpf| {
+                (
+                    any_with::<ElementVector>(dpf.null_message().0.len().into()),
+                    Just(dpf),
+                )
+            })
+        }
+
+        proptest! {
+            #[test]
+            fn test_prg_dpf(
+                (data, dpf) in data_with_dpf::<MultiKeyDPF<GroupPRG>>(),
+                index in any::<proptest::sample::Index>(),
+            ) {
+                let index = index.index(dpf.num_points());
+                run_test_dpf(dpf, data, index);
+            }
+
+            #[test]
+            fn test_prg_dpf_empty(
+                dpf in any::<MultiKeyDPF<GroupPRG>>(),
+            ) {
+                run_test_dpf_empty(dpf);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
