@@ -22,11 +22,11 @@ pub trait DPF {
     fn combine(&self, parts: Vec<Vec<Self::Message>>) -> Vec<Self::Message>;
 }
 
-pub type PRGDPF<P> = trivial_prg::Construction<P>;
-pub type SeedHomomorphicDPF<P> = seed_homomorphic_prg::Construction<P>;
+pub type BasicDPF<P> = two_server_dpf::Construction<P>;
+pub type MultiKeyDPF<P> = multi_key_dpf::Construction<P>;
 
 // 2-DPF (i.e. num_keys = 2) based on any PRG G(.).
-mod trivial_prg {
+mod two_server_dpf {
     use super::*;
     use crate::crypto::prg::PRG;
 
@@ -170,7 +170,7 @@ mod trivial_prg {
     }
 
     #[cfg(test)]
-    mod aes_prg_tests {
+    mod two_server_dpf_tests {
         use super::*;
         use crate::crypto::dpf::prg_tests::*;
         use crate::crypto::prg::{aes::AESPRG, PRG};
@@ -215,7 +215,7 @@ mod trivial_prg {
         proptest! {
             #[test]
             fn test_prg_dpf(
-                (data, dpf) in data_with_dpf::<PRGDPF<AESPRG>>(),
+                (data, dpf) in data_with_dpf::<BasicDPF<AESPRG>>(),
                 index in any::<proptest::sample::Index>(),
             ) {
                 let index = index.index(dpf.num_points());
@@ -224,7 +224,7 @@ mod trivial_prg {
 
             #[test]
             fn test_prg_dpf_empty(
-                dpf in any::<PRGDPF<AESPRG>>(),
+                dpf in any::<BasicDPF<AESPRG>>(),
             ) {
                 run_test_dpf_empty(dpf);
             }
@@ -233,12 +233,11 @@ mod trivial_prg {
 }
 
 // s-DPF (i.e. num_keys = s > 2) based on any seed-homomorphic PRG G(.).
-mod seed_homomorphic_prg {
+mod multi_key_dpf {
     use super::*;
     use crate::crypto::prg::SeedHomomorphicPRG;
     use crate::crypto::prg::PRG;
     use derivative::Derivative;
-    use rand::{thread_rng, Rng};
     use serde::{Deserialize, Serialize};
     use std::iter::repeat_with;
     use std::ops;
