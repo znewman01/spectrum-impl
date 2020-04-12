@@ -8,11 +8,11 @@ See [design document](https://docs.google.com/document/d/1Z8g1ovBGFthpsDLR_88Pn4
 
 ## Usage
 
-For local development, the primary entry point is `cargo run --bin main`, which
+For local development, the primary entry point is `cargo run --bin run_inmem`, which
 will run all of the parties in the protocol locally. Use `--help` to see
 parameters.
 
-We can run some quick local benchmarks of the whole system with `cargo run --bin local_experiments`.
+We can run some quick local benchmarks of the whole system with `cargo run --bin run_processes`.
 Make sure to use `--release`, and maybe set `ulimit -n 8192`.
 By default, this runs some hard-coded parameters, but we accept arbitrary inputs in CSV format:
 
@@ -23,7 +23,7 @@ $ cat input.csv
 $ cat input.csv |
     cargo run \
         --release \
-        --bin local_experiments \
+        --bin run_processes \
         -- \
         --output data.csv \
         --input -
@@ -35,5 +35,5 @@ groups,group_size,clients,channels,security_bits,msg_size,elapsed_millis
 2,1,50,8,60,1250000,600
 ```
 
-This mode works interactively, too! Though for one-off executions `main` might
+This mode works interactively, too! Though for one-off executions `run_inmem` might
 be better.
