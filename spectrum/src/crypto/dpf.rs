@@ -479,7 +479,7 @@ pub mod multi_key {
         {
             any::<D>().prop_flat_map(|dpf| {
                 (
-                    any_with::<ElementVector>(dpf.null_message().0.len().into()),
+                    any_with::<ElementVector>(dpf.null_message().0.len()),
                     Just(dpf),
                 )
             })
