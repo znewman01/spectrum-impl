@@ -11,7 +11,7 @@ use crate::{
 
 use config::store::Store;
 use futures::prelude::*;
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use tokio::time::delay_for;
 
 use std::convert::{TryFrom, TryInto};
@@ -56,12 +56,23 @@ where
     debug!("Client detected start time ready.");
 
     for (client, write_token) in clients.iter_mut().zip(write_tokens) {
-        let req = tonic::Request::new(UploadRequest {
-            client_id: Some(client_id.clone()),
-            write_token: Some(write_token.into()),
-        });
-        trace!("About to send upload request.");
-        let response = client.upload(req).await?;
+        let response;
+        let write_token = write_token.into();
+        loop {
+            let req = tonic::Request::new(UploadRequest {
+                client_id: Some(client_id.clone()),
+                write_token: Some(write_token.clone()),
+            });
+            trace!("About to send upload request.");
+            match client.upload(req).await {
+                Ok(r) => {
+                    response = r;
+                    break;
+                }
+                Err(err) => warn!("Error, trying again: {}", err),
+            };
+            delay_for(Duration::from_millis(50)).await;
+        }
         debug!("RESPONSE={:?}", response.into_inner());
     }
 
