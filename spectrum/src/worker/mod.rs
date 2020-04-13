@@ -69,7 +69,9 @@ where
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
 {
     async fn upload(&self, client: &ClientInfo, write_token: P::WriteToken) -> Vec<P::AuditShare> {
+        trace!("upload() task for client_info: {:?}", client);
         self.audit_registry.init(&client, write_token.clone()).await;
+        trace!("init'd for client_info: {:?}", client);
 
         let protocol = self.protocol.clone();
         let keys = self.experiment.get_keys(); // TODO(zjn): move into WorkerState
@@ -85,6 +87,7 @@ where
     }
 
     async fn verify(&self, client: &ClientInfo, share: P::AuditShare) -> Option<Vec<Bytes>> {
+        trace!("verify() task for client_info: {:?}", client);
         let check_count = self.audit_registry.add(client, share).await;
         trace!(
             "{}/{} shares received for {:?}",
@@ -203,6 +206,7 @@ where
 
         let client_id = expect_field(request.client_id, "Client ID")?;
         let client_info = ClientInfo::from(&client_id);
+        trace!("upload() client_info: {:?}", &client_info);
         let write_token = expect_field(request.write_token, "Write Token")?;
         let state = self.state.clone();
         let peers: Vec<SharedClient> = self.get_peers(&client_info).await?;
