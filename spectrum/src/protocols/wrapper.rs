@@ -2,7 +2,7 @@ use crate::{
     crypto::field::FieldElement,
     protocols::{
         insecure,
-        secure::{self, ConcreteVdpf},
+        secure::{self, BasicVdpf},
         Protocol,
     },
 };
@@ -18,19 +18,19 @@ pub enum ChannelKeyWrapper {
     Secure(usize, FieldElement),
 }
 
-impl TryFrom<ChannelKeyWrapper> for secure::ChannelKey<ConcreteVdpf> {
+impl TryFrom<ChannelKeyWrapper> for secure::ChannelKey<BasicVdpf> {
     type Error = &'static str;
 
     fn try_from(wrapper: ChannelKeyWrapper) -> Result<Self, Self::Error> {
         if let ChannelKeyWrapper::Secure(idx, secret) = wrapper {
-            Ok(secure::ChannelKey::<ConcreteVdpf>::new(idx, secret))
+            Ok(secure::ChannelKey::<BasicVdpf>::new(idx, secret))
         } else {
             Err("Invalid channel key")
         }
     }
 }
 
-impl Into<ChannelKeyWrapper> for secure::ChannelKey<ConcreteVdpf> {
+impl Into<ChannelKeyWrapper> for secure::ChannelKey<BasicVdpf> {
     fn into(self) -> ChannelKeyWrapper {
         ChannelKeyWrapper::Secure(self.idx, self.secret)
     }
@@ -56,7 +56,7 @@ impl Into<ChannelKeyWrapper> for insecure::ChannelKey {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ProtocolWrapper {
-    Secure(secure::SecureProtocol<ConcreteVdpf>),
+    Secure(secure::SecureProtocol<BasicVdpf>),
     Insecure(insecure::InsecureProtocol),
 }
 
@@ -66,8 +66,8 @@ impl From<insecure::InsecureProtocol> for ProtocolWrapper {
     }
 }
 
-impl From<secure::SecureProtocol<ConcreteVdpf>> for ProtocolWrapper {
-    fn from(protocol: secure::SecureProtocol<ConcreteVdpf>) -> Self {
+impl From<secure::SecureProtocol<BasicVdpf>> for ProtocolWrapper {
+    fn from(protocol: secure::SecureProtocol<BasicVdpf>) -> Self {
         Self::Secure(protocol)
     }
 }
@@ -113,7 +113,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_secure_channel_key_proto_roundtrips(key in any::<secure::ChannelKey<ConcreteVdpf>>()) {
+        fn test_secure_channel_key_proto_roundtrips(key in any::<secure::ChannelKey<BasicVdpf>>()) {
             let wrapped: ChannelKeyWrapper = key.clone().into();
             assert_eq!(key, wrapped.try_into().unwrap());
         }

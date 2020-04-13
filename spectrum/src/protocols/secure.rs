@@ -19,7 +19,7 @@ use std::fmt;
 use std::iter::repeat;
 use std::sync::Arc;
 
-pub use crate::crypto::vdpf::ConcreteVdpf;
+pub use crate::crypto::vdpf::BasicVdpf;
 
 #[derive(Derivative)]
 #[derivative(
@@ -54,7 +54,7 @@ impl<V: VDPF> WriteToken<V> {
     }
 }
 
-impl Into<proto::WriteToken> for WriteToken<ConcreteVdpf> {
+impl Into<proto::WriteToken> for WriteToken<BasicVdpf> {
     fn into(self) -> proto::WriteToken {
         let dpf_key_proto = proto::secure_write_token::DpfKey {
             encoded_msg: self.0.encoded_msg.into(),
@@ -78,7 +78,7 @@ impl Into<proto::WriteToken> for WriteToken<ConcreteVdpf> {
     }
 }
 
-impl TryFrom<proto::WriteToken> for WriteToken<ConcreteVdpf> {
+impl TryFrom<proto::WriteToken> for WriteToken<BasicVdpf> {
     type Error = &'static str;
 
     fn try_from(token: proto::WriteToken) -> Result<Self, Self::Error> {
@@ -96,7 +96,7 @@ impl TryFrom<proto::WriteToken> for WriteToken<ConcreteVdpf> {
                 field.from_proto(proof_proto.bit.unwrap()).into(),
                 field.from_proto(proof_proto.seed.unwrap()).into(),
             );
-            Ok(WriteToken::<ConcreteVdpf>(dpf_key, proof_share))
+            Ok(WriteToken::<BasicVdpf>(dpf_key, proof_share))
         } else {
             Err("Invalid proto::WriteToken.")
         }
@@ -120,7 +120,7 @@ impl<V: VDPF> AuditShare<V> {
     }
 }
 
-impl Into<proto::AuditShare> for AuditShare<ConcreteVdpf> {
+impl Into<proto::AuditShare> for AuditShare<BasicVdpf> {
     fn into(self) -> proto::AuditShare {
         let bit = self.token.bit.value();
         let field = bit.field();
@@ -136,7 +136,7 @@ impl Into<proto::AuditShare> for AuditShare<ConcreteVdpf> {
     }
 }
 
-impl TryFrom<proto::AuditShare> for AuditShare<ConcreteVdpf> {
+impl TryFrom<proto::AuditShare> for AuditShare<BasicVdpf> {
     type Error = &'static str;
 
     fn try_from(share: proto::AuditShare) -> Result<Self, Self::Error> {
@@ -172,7 +172,7 @@ impl<V: VDPF> SecureProtocol<V> {
     #[allow(dead_code)]
     fn sample_keys(&self) -> Vec<ChannelKey<V>> {
         self.vdpf
-            .sample_keys()
+            .sample_access_keys()
             .into_iter()
             .enumerate()
             .map(|(idx, secret)| ChannelKey::<V>::new(idx, secret))
@@ -180,7 +180,7 @@ impl<V: VDPF> SecureProtocol<V> {
     }
 }
 
-impl SecureProtocol<ConcreteVdpf> {
+impl SecureProtocol<BasicVdpf> {
     pub fn with_aes_prg_dpf(sec_bits: u32, channels: usize, msg_size: usize) -> Self {
         let prime: Integer = (Integer::from(2) << sec_bits).next_prime_ref().into();
         let field = Field::from(prime);
@@ -283,13 +283,13 @@ pub mod tests {
         }
     }
 
-    impl Arbitrary for ChannelKey<ConcreteVdpf> {
+    impl Arbitrary for ChannelKey<BasicVdpf> {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             (
-                any::<ConcreteVdpf>(),
+                any::<BasicVdpf>(),
                 any::<prop::sample::Index>(),
                 any::<FieldElement>(),
             )
@@ -301,7 +301,7 @@ pub mod tests {
     proptest! {
         #[test]
         fn test_null_broadcast_passes_audit(
-            protocol in any::<SecureProtocol<ConcreteVdpf>>(),
+            protocol in any::<SecureProtocol<BasicVdpf>>(),
         ) {
             let keys = protocol.sample_keys();
             check_null_broadcast_passes_audit(protocol, keys);
@@ -309,7 +309,7 @@ pub mod tests {
 
         #[test]
         fn test_broadcast_passes_audit(
-            (protocol, msg) in any::<SecureProtocol<ConcreteVdpf>>().prop_flat_map(and_messages),
+            (protocol, msg) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_messages),
             idx in any::<prop::sample::Index>(),
         ) {
             let keys = protocol.sample_keys();
@@ -319,26 +319,26 @@ pub mod tests {
 
         #[test]
         fn test_broadcast_bad_key_fails_audit(
-            (protocol, msg) in any::<SecureProtocol<ConcreteVdpf>>().prop_flat_map(and_messages),
+            (protocol, msg) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_messages),
             idx in any::<prop::sample::Index>(),
         ) {
             prop_assume!(msg != Bytes::empty(msg.len()), "Broadcasting null message okay!");
             let keys = protocol.sample_keys();
-            let bad_key = ChannelKey::new(idx.index(keys.len()), protocol.vdpf.sample_key());
+            let bad_key = ChannelKey::new(idx.index(keys.len()), protocol.vdpf.sample_access_key());
             prop_assume!(!keys.contains(&bad_key));
             check_broadcast_bad_key_fails_audit(protocol, msg, keys, bad_key);
         }
 
         #[test]
         fn test_null_broadcast_messages_unchanged(
-            (protocol, accumulator) in any::<SecureProtocol<ConcreteVdpf>>().prop_flat_map(and_accumulators)
+            (protocol, accumulator) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_accumulators)
         ) {
             check_null_broadcast_messages_unchanged(protocol, accumulator);
         }
 
         #[test]
         fn test_broadcast_recovers_message(
-            (protocol, msg) in any::<SecureProtocol<ConcreteVdpf>>().prop_flat_map(and_messages),
+            (protocol, msg) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_messages),
             idx in any::<prop::sample::Index>(),
         ) {
             let keys = protocol.sample_keys();
@@ -378,13 +378,13 @@ pub mod tests {
 
     proptest! {
         #[test]
-        fn test_write_token_proto_roundtrip(token in any::<WriteToken<ConcreteVdpf>>()) {
+        fn test_write_token_proto_roundtrip(token in any::<WriteToken<BasicVdpf>>()) {
             let wrapped: proto::WriteToken = token.clone().into();
             assert_eq!(token, wrapped.try_into().unwrap());
         }
 
         #[test]
-        fn test_audit_share_proto_roundtrip(share in any::<AuditShare<ConcreteVdpf>>()) {
+        fn test_audit_share_proto_roundtrip(share in any::<AuditShare<BasicVdpf>>()) {
             let wrapped: proto::AuditShare = share.clone().into();
             assert_eq!(share, wrapped.try_into().unwrap());
         }
