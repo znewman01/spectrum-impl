@@ -22,18 +22,16 @@ pub trait DPF {
     fn combine(&self, parts: Vec<Vec<Self::Message>>) -> Vec<Self::Message>;
 }
 
-pub type BasicDPF<P> = two_server_dpf::Construction<P>;
-pub type MultiKeyDPF<P> = multi_key_dpf::Construction<P>;
+pub type BasicDPF<P> = two_key::Construction<P>;
+pub type MultiKeyDPF<P> = multi_key::Construction<P>;
 
 // 2-DPF (i.e. num_keys = 2) based on any PRG G(.).
-mod two_server_dpf {
+pub mod two_key {
     use super::*;
     use crate::crypto::prg::PRG;
-
     use derivative::Derivative;
     use rand::{thread_rng, Rng};
     use serde::{Deserialize, Serialize};
-
     use std::iter::repeat_with;
     use std::ops;
 
@@ -170,8 +168,9 @@ mod two_server_dpf {
     }
 
     #[cfg(test)]
-    mod two_server_dpf_tests {
+    pub mod tests {
         use super::*;
+        use crate::bytes::Bytes;
         use crate::crypto::dpf::prg_tests::*;
         use crate::crypto::prg::{aes::AESPRG, PRG};
         use proptest::prelude::*;
@@ -212,6 +211,18 @@ mod two_server_dpf {
             }
         }
 
+        pub fn data_with_dpf<D>() -> impl Strategy<Value = (Bytes, D)>
+        where
+            D: DPF<Message = Bytes> + Arbitrary + Clone,
+        {
+            any::<D>().prop_flat_map(|dpf| {
+                (
+                    any_with::<Bytes>(dpf.null_message().len().into()),
+                    Just(dpf),
+                )
+            })
+        }
+
         proptest! {
             #[test]
             fn test_prg_dpf(
@@ -233,7 +244,7 @@ mod two_server_dpf {
 }
 
 // s-DPF (i.e. num_keys = s > 2) based on any seed-homomorphic PRG G(.).
-mod multi_key_dpf {
+pub mod multi_key {
     use super::*;
     use crate::crypto::prg::SeedHomomorphicPRG;
     use crate::crypto::prg::PRG;
@@ -417,7 +428,7 @@ mod multi_key_dpf {
     }
 
     #[cfg(test)]
-    mod multi_key_dpf_tests {
+    pub mod tests {
         use super::*;
         use crate::crypto::dpf::prg_tests::*;
         use crate::crypto::prg::{group::ElementVector, group::GroupPRG, PRG};
@@ -431,9 +442,9 @@ mod multi_key_dpf {
             type Strategy = BoxedStrategy<Self>;
 
             fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-                (any::<P>(), 1..=MAX_NUM_KEYS, 1..=MAX_NUM_POINTS)
+                (any::<P>(), 2..=MAX_NUM_KEYS, 1..=MAX_NUM_POINTS)
                     .prop_map(move |(prg, num_keys, num_points)| {
-                        Construction::new(prg, num_keys, num_points)
+                        Construction::new(prg, num_points, num_keys)
                     })
                     .boxed()
             }
@@ -497,20 +508,6 @@ mod multi_key_dpf {
 #[cfg(test)]
 pub mod prg_tests {
     use super::*;
-    use crate::bytes::Bytes;
-    use proptest::prelude::*;
-
-    pub fn data_with_dpf<D>() -> impl Strategy<Value = (Bytes, D)>
-    where
-        D: DPF<Message = Bytes> + Arbitrary + Clone,
-    {
-        any::<D>().prop_flat_map(|dpf| {
-            (
-                any_with::<Bytes>(dpf.null_message().len().into()),
-                Just(dpf),
-            )
-        })
-    }
 
     pub(super) fn run_test_dpf<D>(dpf: D, data: D::Message, index: usize)
     where
