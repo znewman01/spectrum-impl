@@ -5,7 +5,7 @@ use rug::Integer;
 use spectrum_impl::{
     bytes::Bytes,
     crypto::{
-        dpf::{BasicDPF, DPF},
+        dpf::{BasicDPF, MultiKeyDPF, DPF},
         field::Field,
         group::Group,
         prg::{aes::AESSeed, aes::AESPRG, group::GroupPRG, PRG},
@@ -39,6 +39,26 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("DPF (AES) eval", |b| {
         let dpf = BasicDPF::new(AESPRG::new(16, EVAL_SIZE), num_points);
         let data = Bytes::empty(EVAL_SIZE);
+        let keys = dpf.gen(data, point_idx);
+        let key = &keys[0];
+        b.iter(|| dpf.eval(key))
+    });
+
+    let num_points = 1;
+    let point_idx = 0;
+    c.bench_function("DPF (Seed-Homomorhic) eval 3-keys", |b| {
+        let prg = GroupPRG::new(EVAL_SIZE, AESSeed::random(16));
+        let dpf = MultiKeyDPF::new(prg.clone(), num_points, 3);
+        let data = prg.eval(&prg.new_seed());
+        let keys = dpf.gen(data, point_idx);
+        let key = &keys[0];
+        b.iter(|| dpf.eval(key))
+    });
+
+    c.bench_function("DPF (Seed-Homomorhic) eval 10-keys", |b| {
+        let prg = GroupPRG::new(EVAL_SIZE, AESSeed::random(16));
+        let dpf = MultiKeyDPF::new(prg.clone(), num_points, 10);
+        let data = prg.eval(&prg.new_seed());
         let keys = dpf.gen(data, point_idx);
         let key = &keys[0];
         b.iter(|| dpf.eval(key))
