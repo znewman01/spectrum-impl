@@ -22,11 +22,11 @@ impl SecretShare {
         SecretShare { value, is_first }
     }
 
-    pub fn value(self) -> FieldElement {
-        self.value
+    pub fn value(&self) -> FieldElement {
+        self.value.clone()
     }
 
-    pub fn is_first(self) -> bool {
+    pub fn is_first(&self) -> bool {
         self.is_first
     }
 }
@@ -51,7 +51,7 @@ impl LSS {
         once(sum)
             .chain(values)
             .map(|value| {
-                let share = SecretShare::new(value, is_first.clone());
+                let share = SecretShare::new(value, is_first);
                 is_first = false;
                 share
             })

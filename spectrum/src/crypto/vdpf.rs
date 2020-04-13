@@ -293,9 +293,9 @@ pub mod multi_key {
             // sum together the seeds at [point_idx]
             // which *should be* the only non-zero coordinate in the DPF eval
             let field = access_key.field();
-        
+
             let mut seed_proof = field.zero();
-            for key in dpf_keys.into_iter() {
+            for key in dpf_keys.iter() {
                 seed_proof += access_key.clone()
                     * FieldElement::new(key.seeds[point_idx].clone(), field.clone());
             }
@@ -303,7 +303,7 @@ pub mod multi_key {
             let mut bit_proof = access_key.field().zero();
             for key in dpf_keys.iter() {
                 match key.bits[point_idx] {
-                    0 => {},
+                    0 => {}
                     1 => bit_proof += access_key.clone(),
                     _ => panic!("Bit must be 0 or 1"),
                 }
@@ -345,22 +345,22 @@ pub mod multi_key {
 
                 if is_first {
                     match *bit {
-                        0 => {},
+                        0 => {}
                         1 => bit_check -= access_key.clone(),
                         _ => panic!("Bit must be 0 or 1"),
                     }
                 } else {
                     match *bit {
-                        0 => {},
+                        0 => {}
                         1 => bit_check += access_key.clone(),
                         _ => panic!("Bit must be 0 or 1"),
                     }
                 }
             }
 
-            // TODO: (sss) avoid clone 
+            // TODO: (sss) avoid clone
             let msg_bytes: Bytes = dpf_key.encoded_msg.clone().into();
-            
+
             // TODO: switch to blake3 in parallel when input is ~1 Mbit or greater
             let mut hasher = blake3::Hasher::new();
             hasher.update(msg_bytes.as_ref());
