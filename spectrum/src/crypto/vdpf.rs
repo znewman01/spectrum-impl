@@ -20,8 +20,8 @@ pub trait VDPF: DPF {
     type ProofShare;
     type Token;
 
-    fn sample_access_key(&self) -> Self::AuthKey;
-    fn sample_access_keys(&self) -> Vec<Self::AuthKey>;
+    fn new_access_key(&self) -> Self::AuthKey;
+    fn new_access_keys(&self) -> Vec<Self::AuthKey>;
 
     fn gen_proofs(
         &self,
@@ -140,12 +140,12 @@ pub mod two_key {
         type ProofShare = FieldProofShare;
         type Token = FieldToken;
 
-        fn sample_access_key(&self) -> FieldElement {
+        fn new_access_key(&self) -> FieldElement {
             let mut rng = RandState::new();
             self.field.rand_element(&mut rng)
         }
 
-        fn sample_access_keys(&self) -> Vec<FieldElement> {
+        fn new_access_keys(&self) -> Vec<FieldElement> {
             let mut rng = RandState::new();
             repeat_with(|| self.field.rand_element(&mut rng))
                 .take(self.num_points())
@@ -244,18 +244,18 @@ pub mod two_key {
                 (data, vdpf) in two_key_dpf::tests::data_with_dpf::<BasicVdpf>(),
                 point_idx in any::<prop::sample::Index>(),
             ) {
-                let auth_keys = vdpf.sample_access_keys();
-                let point_idx = point_idx.index(auth_keys.len());
+                let access_keys = vdpf.new_access_keys();
+                let point_idx = point_idx.index(access_keys.len());
 
-                vdpf_tests::run_test_audit_check_correct(vdpf, &auth_keys, data, point_idx);
+                vdpf_tests::run_test_audit_check_correct(vdpf, &access_keys, data, point_idx);
             }
 
             #[test]
             fn test_audit_check_correct_for_noop(
                 vdpf in any::<BasicVdpf>(),
             ) {
-                let auth_keys = vdpf.sample_access_keys();
-                vdpf_tests::run_test_audit_check_correct_for_noop(vdpf, &auth_keys);
+                let access_keys = vdpf.new_access_keys();
+                vdpf_tests::run_test_audit_check_correct_for_noop(vdpf, &access_keys);
             }
 
         }
@@ -271,13 +271,13 @@ pub mod multi_key {
         type Token = FieldToken;
 
         /// samples a new access key for an index
-        fn sample_access_key(&self) -> FieldElement {
+        fn new_access_key(&self) -> FieldElement {
             let mut rng = RandState::new();
             self.field.rand_element(&mut rng)
         }
 
         /// samples a new set of access keys for range of indices
-        fn sample_access_keys(&self) -> Vec<FieldElement> {
+        fn new_access_keys(&self) -> Vec<FieldElement> {
             let mut rng = RandState::new();
             repeat_with(|| self.field.rand_element(&mut rng))
                 .take(self.num_points())
@@ -398,7 +398,7 @@ pub mod multi_key {
                 (data, vdpf) in multi_key_dpf::tests::data_with_dpf::<MultiKeyVdpf>(),
                 point_idx in any::<prop::sample::Index>(),
             ) {
-                let access_keys = vdpf.sample_access_keys();
+                let access_keys = vdpf.new_access_keys();
                 let point_idx = point_idx.index(access_keys.len());
 
                 vdpf_tests::run_test_audit_check_correct(vdpf, &access_keys, data, point_idx);
@@ -408,7 +408,7 @@ pub mod multi_key {
             fn test_audit_check_correct_for_noop(
                 vdpf in any::<MultiKeyVdpf>(),
             ) {
-                let access_keys = vdpf.sample_access_keys();
+                let access_keys = vdpf.new_access_keys();
                 vdpf_tests::run_test_audit_check_correct_for_noop(vdpf, &access_keys);
             }
 

@@ -172,7 +172,7 @@ impl<V: VDPF> SecureProtocol<V> {
     #[allow(dead_code)]
     fn sample_keys(&self) -> Vec<ChannelKey<V>> {
         self.vdpf
-            .sample_access_keys()
+            .new_access_keys()
             .into_iter()
             .enumerate()
             .map(|(idx, secret)| ChannelKey::<V>::new(idx, secret))
@@ -324,7 +324,7 @@ pub mod tests {
         ) {
             prop_assume!(msg != Bytes::empty(msg.len()), "Broadcasting null message okay!");
             let keys = protocol.sample_keys();
-            let bad_key = ChannelKey::new(idx.index(keys.len()), protocol.vdpf.sample_access_key());
+            let bad_key = ChannelKey::new(idx.index(keys.len()), protocol.vdpf.new_access_key());
             prop_assume!(!keys.contains(&bad_key));
             check_broadcast_bad_key_fails_audit(protocol, msg, keys, bad_key);
         }
