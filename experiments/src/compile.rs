@@ -175,15 +175,16 @@ fn build_spectrum(
     ssh.cmd(&format!("tar -xzf {}", SRC_ARCHIVE_NAME))?;
 
     // Run the build
+    let build_cmd = format!(
+        "cd $HOME/spectrum && $HOME/.cargo/bin/cargo build {} --bins",
+        profile.flag()
+    );
     trace!(
         log,
         "Running build (what takes the time)";
-        "profile" => profile.name()
+        "cmd" => &build_cmd
     );
-    ssh.cmd(&format!(
-        "cd $HOME/spectrum && $HOME/.cargo/bin/cargo build {} --bins",
-        profile.flag()
-    ))?;
+    ssh.cmd(&build_cmd)?;
     trace!(log, "Build done.");
 
     // Tar the binaries
