@@ -8,11 +8,15 @@ use crate::{
         ClientInfo,
     },
 };
+
 use config::store::Store;
 use futures::prelude::*;
 use log::{debug, info, trace};
+use tokio::time::delay_for;
+
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
+use std::time::Duration;
 
 type TokioError = Box<dyn std::error::Error + Sync + Send>;
 
@@ -46,6 +50,9 @@ where
     };
 
     delay_until(start_time).await;
+    const MAX_JITTER_MILLIS: u64 = 100;
+    let jitter = Duration::from_millis(rand::random::<u64>() % MAX_JITTER_MILLIS);
+    delay_for(jitter).await;
     debug!("Client detected start time ready.");
 
     for (client, write_token) in clients.iter_mut().zip(write_tokens) {
