@@ -15,21 +15,31 @@ fn ami_0fc20dd1da406780b() -> String {
     "ami-0fc20dd1da406780b".to_string()
 }
 
-fn _100() -> u16 {
-    100
+fn _250() -> u16 {
+    250
 }
 
 fn _1() -> u16 {
     1
 }
 
+fn _8() -> u16 {
+    8
+}
+
 fn _16() -> u16 {
     16
 }
 
-fn m5_large() -> MachineType {
+fn m5_xlarge() -> MachineType {
     MachineType {
-        instance_type: "m5.large".to_string(),
+        instance_type: "m5.xlarge".to_string(),
+    }
+}
+
+fn c5_24xlarge() -> MachineType {
+    MachineType {
+        instance_type: "c5.24xlarge".to_string(),
     }
 }
 
@@ -42,15 +52,15 @@ pub struct MachineType {
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct MachineTypeConfiguration {
     /// Machine type of the publisher/etcd machine
-    #[serde(default = "m5_large")]
+    #[serde(default = "m5_xlarge")]
     pub publisher: MachineType,
 
     /// Machine type of the server for running workers/leaders.
-    #[serde(default = "m5_large")]
+    #[serde(default = "c5_24xlarge")]
     pub worker: MachineType,
 
     /// Machine type of the server for simulating clients.
-    #[serde(default = "m5_large")]
+    #[serde(default = "m5_xlarge")]
     pub client: MachineType,
 }
 
@@ -74,6 +84,10 @@ pub struct Environment {
 
     /// Total number of worker machines
     pub worker_machines: u16,
+
+    /// Number of worker process to run on each machine
+    /// (Needs to be part of the environment as it relates to config setup).
+    pub workers_per_machine: u16,
 
     /// Amazon AMI ID to use as the base image for experiments.
     ///
@@ -107,6 +121,12 @@ pub enum Protocol {
     SeedHomomorphic { parties: u16 },
 }
 
+impl Default for Protocol {
+    fn default() -> Self {
+        Self::Symmetric { security: 16 }
+    }
+}
+
 impl Protocol {
     pub fn groups(&self) -> u16 {
         match self {
@@ -119,13 +139,14 @@ impl Protocol {
 
 /// A configuration for an experiment to run.
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct Experiment {
     /// The AWS instance types to use for each type of VM in the experiment.
     #[serde(default)]
     pub machine_types: MachineTypeConfiguration,
 
     /// Maximum number of clients a given machine should simulate
-    #[serde(default = "_100")]
+    #[serde(default = "_250")]
     pub clients_per_machine: u16,
 
     /// Amazon AMI ID to use as the base image for experiments.
@@ -135,9 +156,13 @@ pub struct Experiment {
     pub base_ami: String,
 
     // TODO: AWS region.
+    /// Number of worker processes to run on a given machine
+    #[serde(default = "_8")]
+    pub workers_per_machine: u16,
+
     /// Number of worker machines per group.
     #[serde(default = "_1")]
-    pub group_size: u16,
+    pub worker_machines_per_group: u16,
 
     // TODO(zjn): move the following to Experiment when we can change them at runtime.
     /// Number of clients to simulate.
@@ -152,6 +177,7 @@ pub struct Experiment {
     // The protocol to run.
     //
     // Note that this encapsulates the number of trust groups.
+    #[serde(default)]
     pub protocol: Protocol,
 }
 
@@ -177,6 +203,11 @@ impl Experiment {
         self.protocol.groups()
     }
 
+    // Total number of worker processes
+    pub fn group_size(&self) -> u16 {
+        self.worker_machines_per_group * self.workers_per_machine
+    }
+
     fn environment(&self) -> Environment {
         // The last machine may have fewer than clients_per_machine clients
         let client_machines = ((self.clients - 1) / (self.clients_per_machine as u32) + 1)
@@ -185,7 +216,8 @@ impl Experiment {
         Environment {
             client_machines,
             machine_types: self.machine_types.clone(),
-            worker_machines: self.group_size * self.groups(),
+            worker_machines: self.worker_machines_per_group * self.groups(),
+            workers_per_machine: self.workers_per_machine,
             base_ami: self.base_ami.clone(),
         }
     }

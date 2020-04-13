@@ -116,7 +116,7 @@ fn run_experiment(
             protocol = protocol_flag,
             channels = experiment.channels,
             clients = experiment.clients,
-            group_size = experiment.group_size,
+            group_size = experiment.group_size(),
             message_size = experiment.message_size,
         ))?;
         // TODO: download key files
@@ -124,19 +124,21 @@ fn run_experiment(
 
     let workers = vms.iter_mut().filter(|(l, _)| l.starts_with("worker-"));
     for (id, (_, worker)) in workers.enumerate() {
-        let group = id / (experiment.group_size as usize);
-        let idx = id % (experiment.group_size as usize);
+        let group = id / (experiment.worker_machines_per_group as usize);
+        let idx = id % (experiment.worker_machines_per_group as usize);
 
+        let start_idx = idx * (experiment.workers_per_machine as usize);
         let spectrum_conf = vec![
             etcd_env.clone(),
             format!("SPECTRUM_WORKER_GROUP={}", group + 1),
             format!("SPECTRUM_LEADER_GROUP={}", group + 1),
-            format!("SPECTRUM_WORKER_INDEX={}", idx + 1),
+            format!("SPECTRUM_WORKER_START_INDEX={}", start_idx),
         ]
         .join("\n");
+        let worker_range = format!("1..{}", experiment.workers_per_machine);
         slog::trace!(
-            &log, "Starting worker";
-            "group" => group, "index" => idx, "config" => &spectrum_conf
+            &log, "Starting workers: {} offset by {}", worker_range, start_idx;
+            "group" => group, "index" => idx, "config" => &spectrum_conf,
         );
         infrastructure::install_config_file(
             &log,
@@ -145,11 +147,8 @@ fn run_experiment(
             Path::new("/etc/spectrum.conf"),
         )?;
 
-        worker
-            .ssh
-            .as_ref()
-            .unwrap()
-            .cmd("sudo systemctl start spectrum-worker")?;
+        let worker_cmd = format!("sudo systemctl start spectrum-worker@{{{}}}", worker_range);
+        worker.ssh.as_ref().unwrap().cmd(&worker_cmd)?;
         if idx == 0 {
             slog::trace!(&log, "Starting leader too!"; "group" => group);
             worker
@@ -226,7 +225,7 @@ fn run_experiment(
     for (label, vm) in vms {
         let ssh = vm.ssh.as_ref().unwrap();
         ssh.cmd("sudo systemctl stop spectrum-leader")?;
-        ssh.cmd("sudo systemctl stop spectrum-worker")?;
+        ssh.cmd("sudo systemctl stop 'spectrum-worker@*'")?;
         if label == "publisher" {
             slog::trace!(&log, "Cleaning out etcd");
             ssh.cmd("ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix \"\"")?;
@@ -299,7 +298,7 @@ async fn main() -> Result<()> {
                 let mut millis: u64 = (experiment.clients as u64)
                     * (experiment.channels as u64)
                     * (experiment.message_size as u64)
-                    / (20000 * experiment.group_size as u64);
+                    / (20000 * experiment.group_size() as u64);
                 millis *= match experiment.protocol {
                     config::Protocol::SeedHomomorphic { .. } => 10,
                     config::Protocol::Symmetric { .. } => 2,

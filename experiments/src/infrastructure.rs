@@ -15,9 +15,9 @@
 ///!
 ///! We use the following default port values:
 ///! - etcd: 2379
-///! - worker: 6000
 ///! - leader: 6001
 ///! - publisher: 6002
+///! - worker: 6100--...
 // TODO: etcd security (fine for now because of intense AWS firewalling)
 // TODO: TLS (on Nginx)
 use crate::compile::{download_s3, install_aws_cli, install_rust};
@@ -86,6 +86,19 @@ fn install_systemd_service_unit(
     Ok(())
 }
 
+fn install_systemd_worker_unit(log: &Logger, ssh: &mut Session, hostname: String) -> Result<()> {
+    let vars = vec![("hostname".to_string(), hostname)]
+        .into_iter()
+        .collect();
+    let config = envsubst::substitute(include_str!("data/worker@.service.template"), &vars)?;
+    trace!(log, "Formatted systemd worker unit");
+    trace!(log, "{}", config);
+    let path = Path::new("/etc/systemd/system/spectrum-worker@.service");
+    install_config_file(log, ssh, config, &path)?;
+
+    Ok(())
+}
+
 /// Note that we can run many clients using the same unit file; see:
 /// https://serverfault.com/questions/730239/start-n-processes-with-one-systemd-service-file
 
@@ -113,7 +126,13 @@ fn install_nginx_conf(
     Ok(())
 }
 
-fn install_spectrum(log: &Logger, ssh: &mut Session, s3_object: &str) -> Result<()> {
+// TODO: break into separate methods for machine type
+fn install_spectrum(
+    log: &Logger,
+    ssh: &mut Session,
+    s3_object: &str,
+    worker_processes_per_machine: u16,
+) -> Result<()> {
     const ARCHIVE_NAME: &str = "spectrum.tar.gz";
 
     // not necessary to install all rust dependencies but probably sufficient
@@ -127,16 +146,20 @@ fn install_spectrum(log: &Logger, ssh: &mut Session, s3_object: &str) -> Result<
     let (hostname, _) = ssh.cmd("ec2metadata --local-hostname")?;
     let hostname = hostname.trim();
     trace!(log, "Got private hostname: {}", hostname);
-    for (service, port) in vec!["worker", "leader", "publisher"]
-        .into_iter()
-        .zip(6000..)
-    {
+    for (service, port) in vec!["leader", "publisher"].into_iter().zip(6000..6100) {
         let external_port = port - 1000; // skip NGINX
         install_nginx_conf(log, ssh, external_port, port)?;
         let public_addr = format!("{}:{}", hostname, external_port);
         let binary = Path::new("/home/ubuntu/spectrum").join(service);
         install_systemd_service_unit(log, ssh, service.to_string(), &binary, port, public_addr)?;
     }
+
+    for idx in 1..=worker_processes_per_machine {
+        let external_port = 5100 + idx;
+        let port = 6100 + idx;
+        install_nginx_conf(log, ssh, external_port, port)?;
+    }
+    install_systemd_worker_unit(log, ssh, hostname.to_string())?;
 
     install_config_file(
         log,
@@ -171,6 +194,7 @@ pub fn setup<H: std::hash::BuildHasher>(
     {
         let machine_type = machine_types.publisher.instance_type.clone();
         let s3_binary = s3_binaries[&machine_type].clone();
+        let workers_per_machine = environment.workers_per_machine;
         let base_ami = base_ami.clone();
         tsunami.add(
             "publisher",
@@ -180,7 +204,7 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .username("ubuntu")
                 .instance_type(machine_type)
                 .setup(move |ssh, log| {
-                    install_spectrum(log, ssh, &s3_binary)?;
+                    install_spectrum(log, ssh, &s3_binary, workers_per_machine)?;
                     ssh.cmd("sudo apt install -y etcd-server etcd-client")?;
                     let (hostname, _) = ssh.cmd("ec2metadata --local-hostname")?;
                     let hostname = hostname.trim();
@@ -201,6 +225,7 @@ pub fn setup<H: std::hash::BuildHasher>(
     {
         let machine_type = machine_types.worker.instance_type.clone();
         let s3_binary = s3_binaries[&machine_type].clone();
+        let workers_per_machine = environment.workers_per_machine;
         let base_ami = base_ami.clone();
         tsunami.add_multiple(
             environment.worker_machines.into(),
@@ -211,7 +236,7 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .username("ubuntu")
                 .instance_type(machine_type)
                 .setup(move |ssh, log| {
-                    install_spectrum(log, ssh, &s3_binary)?;
+                    install_spectrum(log, ssh, &s3_binary, workers_per_machine)?;
                     Ok(())
                 }),
         )?;
@@ -220,6 +245,7 @@ pub fn setup<H: std::hash::BuildHasher>(
     {
         let machine_type = machine_types.client.instance_type;
         let s3_binary = s3_binaries[&machine_type].clone();
+        let workers_per_machine = environment.workers_per_machine;
         tsunami.add_multiple(
             environment.client_machines.into(),
             "client",
@@ -229,7 +255,7 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .username("ubuntu")
                 .instance_type(machine_type)
                 .setup(move |ssh, log| {
-                    install_spectrum(log, ssh, &s3_binary)?;
+                    install_spectrum(log, ssh, &s3_binary, workers_per_machine)?;
                     Ok(())
                 }),
         )?;
