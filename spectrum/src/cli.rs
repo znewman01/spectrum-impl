@@ -49,7 +49,7 @@ impl LogArgs {
         let spectrum_logger: Box<dyn SharedLogger> =
             match TermLogger::new(self.log_level, config.clone(), TerminalMode::Stderr) {
                 Some(logger) => logger,
-                None => SimpleLogger::new(LevelFilter::Info, config),
+                None => SimpleLogger::new(self.log_level, config),
             };
 
         CombinedLogger::init(vec![spectrum_logger, other_logger])
