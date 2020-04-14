@@ -309,17 +309,7 @@ pub async fn compile(
 
     // Only compile machine types that aren't in the s3 cache already.
     // We format file names based on machine type and the git hash.
-    let hash = Command::new("git")
-        .args(&["rev-parse", "--short", "HEAD"])
-        .current_dir(&git_root)
-        .output()
-        .await?
-        .stdout;
-    let hash = String::from_utf8(hash)
-        .expect("git output should be ASCII")
-        .trim_end_matches('\n')
-        .to_string();
-    trace!(log, "Source tarball created"; "hash" => &hash);
+    trace!(log, "Source tarball created"; "hash" => &last_commit);
     let mut binaries = HashMap::<String, String>::new();
 
     let s3 = S3Client::new(Region::UsEast2);
@@ -339,7 +329,7 @@ pub async fn compile(
     let needs_build: Vec<String> = machine_types
         .into_iter()
         .filter(|machine_type| {
-            let object = format_binary(&hash, profile, machine_type);
+            let object = format_binary(&last_commit, profile, machine_type);
             if objects.contains(&object) {
                 slog::trace!(log, "Found {} in s3!", &object);
                 binaries.insert(machine_type.to_string(), object);
@@ -351,7 +341,15 @@ pub async fn compile(
         })
         .collect();
 
-    let new_binaries = spawn_and_compile(log, hash, src_archive, needs_build, profile, ami).await?;
+    let new_binaries = spawn_and_compile(
+        log,
+        last_commit.to_string(),
+        src_archive,
+        needs_build,
+        profile,
+        ami,
+    )
+    .await?;
     binaries.extend(new_binaries);
 
     Ok(binaries)
