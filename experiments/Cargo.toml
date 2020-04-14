@@ -11,6 +11,7 @@ clap = { git = "http://github.com/clap-rs/clap/", rev = "37889c661134e8286102f7d
 envsubst = "0.2.0"
 failure = "0.1.7"
 itertools = "0.9.0"
+rayon = "1.0.0"
 rusoto_core = "0.43.0"
 rusoto_s3 = "0.43.0"
 serde_json = "1.0"
