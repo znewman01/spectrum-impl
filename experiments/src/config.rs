@@ -15,8 +15,8 @@ fn ami_0fc20dd1da406780b() -> String {
     "ami-0fc20dd1da406780b".to_string()
 }
 
-fn _250() -> u16 {
-    250
+fn _500() -> u16 {
+    500
 }
 
 fn _1() -> u16 {
@@ -37,9 +37,9 @@ fn m5_xlarge() -> MachineType {
     }
 }
 
-fn c5_24xlarge() -> MachineType {
+fn m5_24xlarge() -> MachineType {
     MachineType {
-        instance_type: "c5.24xlarge".to_string(),
+        instance_type: "m5.24xlarge".to_string(),
     }
 }
 
@@ -56,7 +56,7 @@ pub struct MachineTypeConfiguration {
     pub publisher: MachineType,
 
     /// Machine type of the server for running workers/leaders.
-    #[serde(default = "c5_24xlarge")]
+    #[serde(default = "m5_24xlarge")]
     pub worker: MachineType,
 
     /// Machine type of the server for simulating clients.
@@ -146,7 +146,7 @@ pub struct Experiment {
     pub machine_types: MachineTypeConfiguration,
 
     /// Maximum number of clients a given machine should simulate
-    #[serde(default = "_250")]
+    #[serde(default = "_500")]
     pub clients_per_machine: u16,
 
     /// Amazon AMI ID to use as the base image for experiments.

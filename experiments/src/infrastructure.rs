@@ -92,7 +92,6 @@ fn install_systemd_worker_unit(log: &Logger, ssh: &mut Session, hostname: String
         .collect();
     let config = envsubst::substitute(include_str!("data/worker@.service.template"), &vars)?;
     trace!(log, "Formatted systemd worker unit");
-    trace!(log, "{}", config);
     let path = Path::new("/etc/systemd/system/spectrum-worker@.service");
     install_config_file(log, ssh, config, &path)?;
 
@@ -138,6 +137,19 @@ fn install_spectrum(
     // not necessary to install all rust dependencies but probably sufficient
     install_rust(log, ssh)?;
     ssh.cmd("sudo apt install -y nginx")?;
+    install_config_file(
+        log,
+        ssh,
+        include_str!("data/nginx.conf").to_string(),
+        &Path::new("/etc/nginx/nginx.conf"),
+    )?;
+    install_config_file(
+        log,
+        ssh,
+        include_str!("data/nginx.conf").to_string(),
+        &Path::new("/etc/sysctl.d/20-spectrum.conf"),
+    )?;
+    ssh.cmd("sudo sysctl --system")?;
 
     install_aws_cli(log, ssh)?;
     download_s3(log, ssh, Path::new(ARCHIVE_NAME), s3_object)?;
