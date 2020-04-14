@@ -10,7 +10,7 @@
 
         "base_ami": "ami_0fc20dd1da406780b",
 
-        "group_size": 1,
+        "worker_machines_per_group": 1,
 
         "clients": 1000,
 
