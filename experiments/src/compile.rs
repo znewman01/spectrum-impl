@@ -294,24 +294,9 @@ pub async fn compile(
     )?;
     let last_commit = last_commit.trim();
 
-    trace!(log, "Creating a tarball with current checked-in Git src"; "commit" => &last_commit);
-    let src_dir = tempfile::TempDir::new()?;
-    let src_archive = src_dir.path().join("spectrum-src.tar.gz");
-    Command::new("git")
-        .arg("archive")
-        .args(&["--format", "tar.gz"])
-        .args(&["--output", &src_archive.to_string_lossy()])
-        .args(&["--prefix", "spectrum/"])
-        .arg(&last_commit)
-        .current_dir(&git_root)
-        .spawn()?
-        .await?;
-
     // Only compile machine types that aren't in the s3 cache already.
     // We format file names based on machine type and the git hash.
-    trace!(log, "Source tarball created"; "hash" => &last_commit);
     let mut binaries = HashMap::<String, String>::new();
-
     let s3 = S3Client::new(Region::UsEast2);
     let request = rusoto_s3::ListObjectsRequest {
         bucket: PROJECT_S3_BUCKET.to_string(),
@@ -340,6 +325,24 @@ pub async fn compile(
             }
         })
         .collect();
+
+    if needs_build.is_empty() {
+        return Ok(binaries);
+    }
+
+    trace!(log, "Creating a tarball with current checked-in Git src"; "commit" => &last_commit);
+    let src_dir = tempfile::TempDir::new()?;
+    let src_archive = src_dir.path().join("spectrum-src.tar.gz");
+    Command::new("git")
+        .arg("archive")
+        .args(&["--format", "tar.gz"])
+        .args(&["--output", &src_archive.to_string_lossy()])
+        .args(&["--prefix", "spectrum/"])
+        .arg(&last_commit)
+        .current_dir(&git_root)
+        .spawn()?
+        .await?;
+    trace!(log, "Source tarball created"; "hash" => &last_commit);
 
     let new_binaries = spawn_and_compile(
         log,
