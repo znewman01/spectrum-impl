@@ -333,7 +333,6 @@ pub mod group {
     impl BitXor<ElementVector> for ElementVector {
         type Output = ElementVector;
 
-        // TODO(sss): any way around the clone here?
         // apply the group operation on each component in the vector
         fn bitxor(self, rhs: ElementVector) -> ElementVector {
             ElementVector(
@@ -347,15 +346,15 @@ pub mod group {
     }
 
     impl BitXorAssign<ElementVector> for ElementVector {
-        // TODO(sss): don't make a totally new elementvector here?
-        // apply the group operation on each component in the vector
+        /// Apply the group operation on each component in the vector.
+        // There's a mismatch between operations because we require that the PRG
+        // output be XOR-able (and some properties on that).
+        #[allow(clippy::suspicious_op_assign_impl)]
         fn bitxor_assign(&mut self, rhs: ElementVector) {
-            self.0 = self
-                .0
-                .iter()
+            self.0
+                .iter_mut()
                 .zip(rhs.0.iter())
-                .map(|(element1, element2)| element1 * element2)
-                .collect();
+                .for_each(|(element1, element2)| *element1 *= element2);
         }
     }
 

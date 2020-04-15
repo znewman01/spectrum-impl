@@ -328,7 +328,7 @@ pub mod multi_key {
             let mut bit_check = proof_share.bit.clone();
             let mut seed_check = proof_share.seed.clone();
 
-            let is_first = seed_check.clone().is_first();
+            let is_first = seed_check.is_first();
 
             for ((access_key, seed), bit) in access_keys
                 .iter()

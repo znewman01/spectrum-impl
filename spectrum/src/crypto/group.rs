@@ -206,8 +206,8 @@ mod tests {
         #[test]
         fn test_add_identity(element: GroupElement) {
             assert_eq!(element.clone() * Group::identity(), Group::identity() * element.clone());
-            assert_eq!(element.clone() * Group::identity(), element.clone());
-            assert_eq!(element.clone(), Group::identity() * element);
+            assert_eq!(element.clone() * Group::identity(), element);
+            assert_eq!(element, Group::identity() * element.clone());
 
         }
 
