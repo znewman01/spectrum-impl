@@ -23,7 +23,7 @@ use crate::{
 };
 
 use futures::prelude::*;
-use log::{debug, error, info, trace, warn};
+use log::{error, info, trace, warn};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::sync::Arc;
@@ -42,13 +42,17 @@ type Error = Box<dyn std::error::Error + Sync + Send>;
 
 struct WorkerState<P: Protocol> {
     audit_registry: AuditRegistry<P::AuditShare, P::WriteToken>,
-    accumulator: Accumulator<Vec<Bytes>>,
+    accumulator: Accumulator<Vec<P::Accumulator>>,
     experiment: Experiment,
     client_registry: ClientRegistry,
     protocol: P,
 }
 
-impl<P: Protocol> WorkerState<P> {
+impl<P> WorkerState<P>
+where
+    P: Protocol,
+    P::Accumulator: Clone,
+{
     fn from_experiment(experiment: Experiment, protocol: P) -> Self {
         WorkerState {
             audit_registry: AuditRegistry::new(experiment.clients(), experiment.groups()),
@@ -65,6 +69,7 @@ where
     P: Protocol + 'static + Sync + Send + Clone,
     P::WriteToken: Clone + Send + fmt::Debug,
     P::AuditShare: Send,
+    P::Accumulator: Send + Clone,
     P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
 {
@@ -86,7 +91,11 @@ where
             .expect("Generating audit should not panic.")
     }
 
-    async fn verify(&self, client: &ClientInfo, share: P::AuditShare) -> Option<Vec<Bytes>> {
+    async fn verify(
+        &self,
+        client: &ClientInfo,
+        share: P::AuditShare,
+    ) -> Option<Vec<P::Accumulator>> {
         trace!("verify() task for client_info: {:?}", client);
         let check_count = self.audit_registry.add(client, share).await;
         trace!(
@@ -111,26 +120,18 @@ where
         }
 
         let protocol = self.protocol.clone();
-        let data = spawn_blocking(move || protocol.to_accumulator(token))
+        let accumulator = spawn_blocking(move || protocol.to_accumulator(token))
             .await
             .expect("Accepting write token should never fail.");
 
-        if data.len() != self.protocol.num_channels() {
+        if accumulator.len() != self.protocol.num_channels() {
             error!(
-                "Invalid data len! {} != {}",
-                data.len(),
+                "Invalid number of accumulator channels! {} != {}",
+                accumulator.len(),
                 self.protocol.message_len()
             );
-        } else if data[0].len() != self.protocol.message_len() {
-            error!(
-                "Invalid data chunk len! {} != {}",
-                data.len(),
-                self.protocol.message_len()
-            );
-            debug!("Bad data: {:?}", data[0]);
         }
-
-        let accumulated_clients = self.accumulator.accumulate(data).await;
+        let accumulated_clients = self.accumulator.accumulate(accumulator).await;
         let total_clients = self.client_registry.num_clients().await;
         trace!("{}/{} clients", accumulated_clients, total_clients);
         if accumulated_clients == total_clients {
@@ -150,7 +151,11 @@ pub struct MyWorker<P: Protocol> {
     state: Arc<WorkerState<P>>,
 }
 
-impl<P: Protocol> MyWorker<P> {
+impl<P> MyWorker<P>
+where
+    P: Protocol,
+    P::Accumulator: Clone,
+{
     fn new(
         start_rx: watch::Receiver<bool>,
         services: ServiceRegistry,
@@ -197,6 +202,7 @@ where
     <P::AuditShare as TryFrom<proto::AuditShare>>::Error: fmt::Debug,
     P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
+    P::Accumulator: Sync + Send + Clone,
 {
     async fn upload(
         &self,
@@ -246,9 +252,9 @@ where
 
         spawn(async move {
             if let Some(share) = state.verify(&client_info, share).await {
+                let share: Vec<Bytes> = share.into_iter().map(Into::into).collect();
                 let share: Vec<Vec<u8>> = share.into_iter().map(Into::into).collect();
                 info!("Forwarding to leader.");
-                // trace!("Share: {:?}", share);
                 let req = Request::new(AggregateWorkerRequest {
                     share: Some(Share { data: share }),
                 });
@@ -293,6 +299,7 @@ where
     <P::AuditShare as TryFrom<proto::AuditShare>>::Error: fmt::Debug,
     P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
+    P::Accumulator: Clone + Sync + Send,
 {
     info!("Worker starting up.");
 

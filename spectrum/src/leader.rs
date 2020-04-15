@@ -29,14 +29,18 @@ use tonic::{transport::Channel, Request, Response, Status};
 
 type SharedPublisherClient = Arc<Mutex<PublisherClient<Channel>>>;
 
-pub struct MyLeader {
-    accumulator: Arc<Accumulator<Vec<Bytes>>>,
+pub struct MyLeader<P: Protocol> {
+    accumulator: Arc<Accumulator<Vec<P::Accumulator>>>,
     total_workers: usize,
     publisher_client: watch::Receiver<Option<SharedPublisherClient>>,
 }
 
-impl MyLeader {
-    fn from_protocol<P: Protocol>(
+impl<P> MyLeader<P>
+where
+    P: Protocol,
+    P::Accumulator: Clone,
+{
+    fn from_protocol(
         protocol: P,
         workers_per_group: u16,
         publisher_client: watch::Receiver<Option<SharedPublisherClient>>,
@@ -50,7 +54,11 @@ impl MyLeader {
 }
 
 #[tonic::async_trait]
-impl Leader for MyLeader {
+impl<P> Leader for MyLeader<P>
+where
+    P: Protocol + 'static,
+    P::Accumulator: Clone + Sync + Send + From<Bytes>,
+{
     async fn aggregate_worker(
         &self,
         request: Request<AggregateWorkerRequest>,
@@ -69,7 +77,11 @@ impl Leader for MyLeader {
 
         spawn(async move {
             // TODO: spawn_blocking for heavy computation?
-            let data: Vec<Bytes> = data.into_iter().map(Into::into).collect();
+            let data: Vec<_> = data
+                .into_iter()
+                .map(Bytes::from)
+                .map(P::Accumulator::from)
+                .collect();
             let worker_count = accumulator.accumulate(data).await;
             if worker_count < total_workers {
                 trace!("Leader receieved {}/{} shares", worker_count, total_workers);
@@ -84,6 +96,7 @@ impl Leader for MyLeader {
             }
 
             let share = accumulator.get().await;
+            let share: Vec<Bytes> = share.into_iter().map(Into::into).collect();
             let share: Vec<Vec<u8>> = share.into_iter().map(Into::into).collect();
             // trace!("Leader final shares: {:?}", share);
             let req = Request::new(AggregateGroupRequest {
@@ -107,7 +120,8 @@ async fn inner_run<C, F, P>(
 where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
-    P: Protocol,
+    P: Protocol + 'static,
+    P::Accumulator: Sync + Send + Clone + From<Bytes>,
 {
     let (tx, rx) = watch::channel(None);
     let state = MyLeader::from_protocol(protocol, experiment.group_size(), rx);

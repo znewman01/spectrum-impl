@@ -199,6 +199,7 @@ where
     type ChannelKey = ChannelKey<V>; // channel number, password
     type WriteToken = WriteToken<V>; // message, index, maybe a key
     type AuditShare = AuditShare<V>;
+    type Accumulator = Bytes;
 
     fn num_parties(&self) -> usize {
         self.vdpf.num_keys()
@@ -243,6 +244,10 @@ where
         assert_eq!(tokens.len(), self.num_parties());
         let tokens = tokens.into_iter().map(|t| t.token).collect();
         self.vdpf.check_audit(tokens)
+    }
+
+    fn new_accumulator(&self) -> Vec<Self::Accumulator> {
+        vec![Bytes::empty(self.message_len()); self.num_channels()]
     }
 
     fn to_accumulator(&self, token: WriteToken<V>) -> Vec<Bytes> {

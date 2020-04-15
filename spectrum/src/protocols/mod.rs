@@ -4,13 +4,13 @@ pub mod secure;
 pub mod wrapper;
 
 use crate::bytes::Bytes;
-
-type Accumulator = Vec<Bytes>;
+use accumulator::Accumulatable;
 
 pub trait Protocol {
     type ChannelKey;
     type WriteToken;
     type AuditShare;
+    type Accumulator: Accumulatable + Into<Bytes>;
 
     // General protocol properties
     fn num_parties(&self) -> usize;
@@ -29,11 +29,9 @@ pub trait Protocol {
     ) -> Vec<Self::AuditShare>;
     fn check_audit(&self, tokens: Vec<Self::AuditShare>) -> bool;
 
-    fn new_accumulator(&self) -> Accumulator {
-        vec![Bytes::empty(self.message_len()); self.num_channels()]
-    }
+    fn new_accumulator(&self) -> Vec<Self::Accumulator>;
 
-    fn to_accumulator(&self, token: Self::WriteToken) -> Accumulator;
+    fn to_accumulator(&self, token: Self::WriteToken) -> Vec<Self::Accumulator>;
 }
 
 #[cfg(test)]
@@ -138,9 +136,12 @@ pub mod tests {
         }
     }
 
-    pub fn check_null_broadcast_messages_unchanged<P>(protocol: P, mut accumulator: Vec<Bytes>)
-    where
+    pub fn check_null_broadcast_messages_unchanged<P>(
+        protocol: P,
+        mut accumulator: Vec<P::Accumulator>,
+    ) where
         P: Protocol,
+        P::Accumulator: Clone + Eq + Debug,
     {
         let before_msgs = accumulator.clone();
         assert_eq!(before_msgs.len(), protocol.num_channels());
@@ -162,6 +163,7 @@ pub mod tests {
         P: Protocol,
         P::AuditShare: Clone,
         P::ChannelKey: Clone,
+        P::Accumulator: Debug + Clone + Eq,
     {
         let good_key = keys[key_idx].clone();
 
@@ -174,9 +176,9 @@ pub mod tests {
         assert_eq!(recovered_msgs.len(), protocol.num_channels());
         for (msg_idx, actual_msg) in recovered_msgs.into_iter().enumerate() {
             if msg_idx == key_idx {
-                assert_eq!(actual_msg, msg);
+                assert_eq!(actual_msg.into(), msg);
             } else {
-                assert_eq!(actual_msg, Bytes::empty(protocol.message_len()))
+                assert_eq!(actual_msg.into(), Bytes::empty(protocol.message_len()))
             }
         }
     }

@@ -107,6 +107,7 @@ impl Protocol for InsecureProtocol {
     type ChannelKey = ChannelKey; // channel number, password
     type WriteToken = WriteToken; // message, index, maybe a key
     type AuditShare = AuditShare;
+    type Accumulator = Bytes;
 
     fn num_parties(&self) -> usize {
         self.parties
@@ -147,6 +148,10 @@ impl Protocol for InsecureProtocol {
     fn check_audit(&self, tokens: Vec<AuditShare>) -> bool {
         assert_eq!(tokens.len(), self.parties);
         tokens.into_iter().all(|x| x.0)
+    }
+
+    fn new_accumulator(&self) -> Vec<Self::Accumulator> {
+        vec![Bytes::empty(self.message_len()); self.num_channels()]
     }
 
     fn to_accumulator(&self, token: WriteToken) -> Vec<Bytes> {

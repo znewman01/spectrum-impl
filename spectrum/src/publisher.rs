@@ -39,14 +39,23 @@ impl Remote for NoopRemote {
     async fn done(&self) {}
 }
 
-pub struct MyPublisher<R: Remote> {
-    accumulator: Arc<Accumulator<Vec<Bytes>>>,
+pub struct MyPublisher<R, P>
+where
+    R: Remote,
+    P: Protocol,
+{
+    accumulator: Arc<Accumulator<Vec<P::Accumulator>>>,
     total_groups: usize,
     remote: R,
 }
 
-impl<R: Remote> MyPublisher<R> {
-    fn from_protocol<P: Protocol>(protocol: P, remote: R) -> Self {
+impl<R, P> MyPublisher<R, P>
+where
+    R: Remote,
+    P: Protocol,
+    P::Accumulator: Clone,
+{
+    fn from_protocol(protocol: P, remote: R) -> Self {
         MyPublisher {
             accumulator: Arc::new(Accumulator::new(protocol.new_accumulator())),
             total_groups: protocol.num_parties(),
@@ -56,7 +65,12 @@ impl<R: Remote> MyPublisher<R> {
 }
 
 #[tonic::async_trait]
-impl<R: Remote + 'static> Publisher for MyPublisher<R> {
+impl<R, P> Publisher for MyPublisher<R, P>
+where
+    R: Remote + 'static,
+    P: Protocol + 'static,
+    P::Accumulator: Clone + Sync + Send + From<Bytes>,
+{
     async fn aggregate_group(
         &self,
         request: Request<AggregateGroupRequest>,
@@ -72,6 +86,7 @@ impl<R: Remote + 'static> Publisher for MyPublisher<R> {
         spawn(async move {
             // TODO: spawn_blocking for heavy computation?
             let data: Vec<Bytes> = data.into_iter().map(Into::into).collect();
+            let data: Vec<P::Accumulator> = data.into_iter().map(Into::into).collect();
             let group_count = accumulator.accumulate(data).await;
             if group_count < total_groups {
                 trace!(
@@ -111,7 +126,8 @@ where
     C: Store + Sync + Send,
     R: Remote + 'static,
     F: Future<Output = ()> + Send + 'static,
-    P: Protocol,
+    P: Protocol + 'static,
+    P::Accumulator: Clone + Sync + Send + From<Bytes>,
 {
     let state = MyPublisher::from_protocol(protocol, remote.clone());
     info!("Publisher starting up.");
