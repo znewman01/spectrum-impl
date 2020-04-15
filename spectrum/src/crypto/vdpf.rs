@@ -106,6 +106,10 @@ impl<D: DPF> DPF for FieldVDPF<D> {
         self.dpf.num_keys()
     }
 
+    fn msg_size(&self) -> usize {
+        self.dpf.msg_size()
+    }
+
     fn null_message(&self) -> Self::Message {
         self.dpf.null_message()
     }

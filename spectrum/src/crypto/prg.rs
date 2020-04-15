@@ -14,6 +14,7 @@ pub trait PRG {
     type Output;
 
     fn new_seed(&self) -> Self::Seed;
+    fn output_size(&self) -> usize;
     fn eval(&self, seed: &Self::Seed) -> Self::Output;
     fn null_output(&self) -> Self::Output;
 }
@@ -155,6 +156,10 @@ pub mod aes {
             AESSeed::random(self.seed_size)
         }
 
+        fn output_size(&self) -> usize {
+            self.eval_size
+        }
+
         /// evaluates the PRG on the given seed
         fn eval(&self, seed: &AESSeed) -> Self::Output {
             // nonce set to zero: PRG eval should be deterministic
@@ -259,12 +264,16 @@ pub mod group {
     }
 
     impl GroupPRG {
-        pub fn new(eval_size: usize, generator_seed: AESSeed) -> Self {
-            let generators = GroupPRG::compute_generators(eval_size, &generator_seed);
+        pub fn new(eval_size: usize, generators: ElementVector) -> Self {
             GroupPRG {
                 generators,
                 eval_size,
             }
+        }
+
+        pub fn from_aes_seed(eval_size: usize, generator_seed: AESSeed) -> Self {
+            let generators = GroupPRG::compute_generators(eval_size, &generator_seed);
+            GroupPRG::new(eval_size, generators)
         }
 
         fn compute_generators(eval_size: usize, seed: &AESSeed) -> ElementVector {
@@ -295,6 +304,10 @@ pub mod group {
                     .take(self.generators.0.len())
                     .collect(),
             )
+        }
+
+        fn output_size(&self) -> usize {
+            self.eval_size
         }
     }
 
@@ -379,10 +392,10 @@ pub mod group {
 
             fn arbitrary_with(params: Self::Parameters) -> Self::Strategy {
                 match params {
-                    Some(params) => Just(GroupPRG::new(params.0, params.1)).boxed(),
+                    Some(params) => Just(GroupPRG::from_aes_seed(params.0, params.1)).boxed(),
                     None => (GROUP_PRG_EVAL_SIZES, any::<AESSeed>())
                         .prop_flat_map(move |(output_size, generator_seed)| {
-                            Just(GroupPRG::new(output_size, generator_seed))
+                            Just(GroupPRG::from_aes_seed(output_size, generator_seed))
                         })
                         .boxed(),
                 }

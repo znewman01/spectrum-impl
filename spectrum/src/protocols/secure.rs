@@ -160,13 +160,12 @@ impl TryFrom<proto::AuditShare> for AuditShare<BasicVdpf> {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct SecureProtocol<V> {
-    msg_size: usize,
     pub(in crate) vdpf: V,
 }
 
 impl<V: VDPF> SecureProtocol<V> {
-    pub fn new(vdpf: V, msg_size: usize) -> SecureProtocol<V> {
-        SecureProtocol { msg_size, vdpf }
+    pub fn new(vdpf: V) -> SecureProtocol<V> {
+        SecureProtocol { vdpf }
     }
 
     #[allow(dead_code)]
@@ -185,7 +184,7 @@ impl SecureProtocol<BasicVdpf> {
         let prime: Integer = (Integer::from(2) << sec_bits).next_prime_ref().into();
         let field = Field::from(prime);
         let vdpf = FieldVDPF::new(BasicDPF::new(AESPRG::new(16, msg_size), channels), field);
-        SecureProtocol::new(vdpf, msg_size)
+        SecureProtocol::new(vdpf)
     }
 }
 
@@ -210,7 +209,7 @@ where
     }
 
     fn message_len(&self) -> usize {
-        self.msg_size
+        self.vdpf.msg_size()
     }
 
     fn broadcast(&self, message: Bytes, key: ChannelKey<V>) -> Vec<WriteToken<V>> {
@@ -264,24 +263,6 @@ pub mod tests {
 
     use crate::crypto::field::FieldElement;
     use crate::protocols::tests::*;
-
-    impl<V> Arbitrary for SecureProtocol<V>
-    where
-        V: VDPF<Message = Bytes> + Arbitrary,
-        <V as Arbitrary>::Strategy: 'static,
-    {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            any::<V>()
-                .prop_map(|vdpf| {
-                    let msg_size = vdpf.null_message().len();
-                    SecureProtocol::new(vdpf, msg_size)
-                })
-                .boxed()
-        }
-    }
 
     impl Arbitrary for ChannelKey<BasicVdpf> {
         type Parameters = ();
@@ -373,6 +354,18 @@ pub mod tests {
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             any::<V::Token>().prop_map(AuditShare::new).boxed()
+        }
+    }
+
+    impl<V> Arbitrary for SecureProtocol<V>
+    where
+        V: VDPF + Arbitrary + 'static,
+    {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            any::<V>().prop_map(SecureProtocol::new).boxed()
         }
     }
 

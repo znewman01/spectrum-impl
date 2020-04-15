@@ -23,7 +23,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     c.bench_function("group PRG eval", |b| {
-        let prg = GroupPRG::new(EVAL_SIZE, AESSeed::random(16));
+        let prg = GroupPRG::from_aes_seed(EVAL_SIZE, AESSeed::random(16));
         let seed = prg.new_seed();
         b.iter(|| prg.eval(&seed))
     });
@@ -47,7 +47,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let num_points = 1;
     let point_idx = 0;
     c.bench_function("DPF (Seed-Homomorhic) eval 3-keys", |b| {
-        let prg = GroupPRG::new(EVAL_SIZE, AESSeed::random(16));
+        let prg = GroupPRG::from_aes_seed(EVAL_SIZE, AESSeed::random(16));
         let dpf = MultiKeyDPF::new(prg.clone(), num_points, 3);
         let data = prg.eval(&prg.new_seed());
         let keys = dpf.gen(data, point_idx);
@@ -56,7 +56,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     c.bench_function("DPF (Seed-Homomorhic) eval 10-keys", |b| {
-        let prg = GroupPRG::new(EVAL_SIZE, AESSeed::random(16));
+        let prg = GroupPRG::from_aes_seed(EVAL_SIZE, AESSeed::random(16));
         let dpf = MultiKeyDPF::new(prg.clone(), num_points, 10);
         let data = prg.eval(&prg.new_seed());
         let keys = dpf.gen(data, point_idx);

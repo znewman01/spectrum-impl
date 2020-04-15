@@ -14,6 +14,7 @@ pub trait DPF {
     fn num_points(&self) -> usize;
     fn num_keys(&self) -> usize;
     fn null_message(&self) -> Self::Message;
+    fn msg_size(&self) -> usize;
 
     /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
     fn gen(&self, msg: Self::Message, idx: usize) -> Vec<Self::Key>;
@@ -96,6 +97,10 @@ pub mod two_key {
 
         fn num_keys(&self) -> usize {
             2 // this construction only works for s = 2
+        }
+
+        fn msg_size(&self) -> usize {
+            self.prg.output_size()
         }
 
         fn null_message(&self) -> Self::Message {
@@ -321,6 +326,10 @@ pub mod multi_key {
 
         fn num_keys(&self) -> usize {
             self.num_keys
+        }
+
+        fn msg_size(&self) -> usize {
+            self.prg.output_size()
         }
 
         fn null_message(&self) -> Self::Message {
