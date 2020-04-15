@@ -251,10 +251,27 @@ pub mod aes {
 pub mod group {
     use super::aes::AESSeed;
     use super::*;
+    use itertools::Itertools;
     use std::ops::{BitXor, BitXorAssign};
 
     #[derive(Default, Clone, PartialEq, Eq, Hash, Debug)]
     pub struct ElementVector(pub Vec<GroupElement>);
+
+    impl From<Bytes> for ElementVector {
+        fn from(bytes: Bytes) -> Self {
+            ElementVector(
+                bytes
+                    .into_iter()
+                    .chunks(Group::order_size_in_bytes())
+                    .into_iter()
+                    .map(|data| {
+                        let data: Vec<u8> = data.collect();
+                        Group::element_from_bytes(Bytes::from(data))
+                    })
+                    .collect(),
+            )
+        }
+    }
 
     // Implementation of a group-based PRG
     #[derive(Clone, PartialEq, Debug)]
@@ -509,6 +526,15 @@ pub mod group {
             #[test]
             fn test_group_prg_null_combine(prg: GroupPRG, seed in seed()) {
                 prg_tests::run_test_prg_null_combine(prg, seed);
+            }
+        }
+
+        proptest! {
+            fn test_element_vec_bytes_roundtrip(elements: ElementVector) {
+                assert_eq!(
+                    elements,
+                    Into::<Bytes>::into(elements.clone()).into()
+                );
             }
         }
     }

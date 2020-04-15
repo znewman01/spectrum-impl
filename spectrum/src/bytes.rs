@@ -67,6 +67,15 @@ impl FromIterator<u8> for Bytes {
     }
 }
 
+impl IntoIterator for Bytes {
+    type Item = u8;
+    type IntoIter = std::vec::IntoIter<u8>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 impl ops::BitOr<&Bytes> for Bytes {
     type Output = Bytes;
 
