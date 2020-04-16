@@ -169,7 +169,7 @@ pub mod tests {
     #[test]
     fn test_security_default() {
         let args = ExperimentArgs::try_parse_from(&["binary"]).unwrap();
-        assert_eq!(args.security_bytes(), Some(40));
+        assert_eq!(args.security_bytes(), Some(16));
     }
 
     #[test]

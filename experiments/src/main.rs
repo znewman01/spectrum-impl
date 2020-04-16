@@ -100,25 +100,29 @@ fn run_experiment(
         let protocol_flag = match experiment.protocol {
             config::Protocol::Symmetric { security } => format!("--security {}", security),
             config::Protocol::Insecure { .. } => "--no-security".to_string(),
-            config::Protocol::SeedHomomorphic { .. } => unimplemented!(),
+            config::Protocol::SeedHomomorphic { .. } => "--security-multi-key 16".to_string(),
         };
-        publisher.ssh.as_ref().unwrap().cmd(&format!(
+        let setup_cmd = format!(
             "\
-                    {etcd_env} \
-                    $HOME/spectrum/setup \
-                        {protocol} \
-                        --channels {channels} \
-                        --clients {clients} \
-                        --group-size {group_size} \
-                        --message-size {message_size}\
-                    ",
+            {etcd_env} \
+            $HOME/spectrum/setup \
+            {protocol} \
+            --channels {channels} \
+            --clients {clients} \
+            --group-size {group_size} \
+            --groups {groups} \
+            --message-size {message_size}\
+            ",
             etcd_env = &etcd_env,
             protocol = protocol_flag,
             channels = experiment.channels,
             clients = experiment.clients,
             group_size = experiment.group_size(),
+            groups = experiment.groups(),
             message_size = experiment.message_size,
-        ))?;
+        );
+        slog::trace!(&log, "setup cmd: {}", setup_cmd);
+        publisher.ssh.as_ref().unwrap().cmd(&setup_cmd)?;
         // TODO: download key files
     }
 
