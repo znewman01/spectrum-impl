@@ -4,6 +4,7 @@ use crate::proto::{
     AggregateGroupRequest, AggregateGroupResponse,
 };
 use crate::{
+    bytes::Bytes,
     config::store::Store,
     experiment,
     net::Config as NetConfig,
@@ -68,7 +69,7 @@ impl<R, P> Publisher for MyPublisher<R, P>
 where
     R: Remote + 'static,
     P: Protocol + 'static,
-    P::Accumulator: Clone + Sync + Send + From<Vec<u8>>,
+    P::Accumulator: Clone + Sync + Send + From<Vec<u8>> + Into<Bytes>,
 {
     async fn aggregate_group(
         &self,
@@ -103,6 +104,10 @@ where
             }
 
             let share = accumulator.get().await;
+            // in seed-homomorphic case this is expensive, so it needs to happen
+            // before we call remote.done(). we log the length so the into()
+            // call won't get optimized away!
+            let share: Vec<Bytes> = share.into_iter().map(Into::into).collect();
             info!("Publisher finished!");
             trace!("Recovered value len: {:?}", share.len());
             remote.done().await;
