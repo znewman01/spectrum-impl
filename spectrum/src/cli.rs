@@ -133,7 +133,7 @@ pub struct ExperimentArgs {
 impl ExperimentArgs {
     fn security_bytes(&self) -> Option<u32> {
         if self.no_security {
-            return None;
+            None
         } else if let Some(bytes) = self.security_multi_key_bytes {
             Some(bytes)
         } else {

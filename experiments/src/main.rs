@@ -16,6 +16,14 @@ use std::time::Duration;
 
 const BASE_AMI: &str = "ami-0fc20dd1da406780b";
 
+// useful for debugging without it tearing everything down
+#[allow(dead_code)]
+fn pause() {
+    use std::io::BufRead;
+    eprintln!("hit enter to continue: ");
+    io::stdin().lock().lines().next().unwrap().unwrap();
+}
+
 type Result<T> = std::result::Result<T, Error>;
 
 /// Spectrum -- driver for cloud-based experiments.

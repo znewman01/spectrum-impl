@@ -570,7 +570,7 @@ pub mod group {
             fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
                 (0..1000)
                     .prop_map(Integer::from)
-                    .prop_map(GroupPrgSeed)
+                    .prop_map(GroupPrgSeed::new)
                     .boxed()
             }
         }
