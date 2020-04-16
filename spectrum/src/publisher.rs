@@ -4,7 +4,6 @@ use crate::proto::{
     AggregateGroupRequest, AggregateGroupResponse,
 };
 use crate::{
-    bytes::Bytes,
     config::store::Store,
     experiment,
     net::Config as NetConfig,
@@ -69,7 +68,7 @@ impl<R, P> Publisher for MyPublisher<R, P>
 where
     R: Remote + 'static,
     P: Protocol + 'static,
-    P::Accumulator: Clone + Sync + Send + From<Bytes>,
+    P::Accumulator: Clone + Sync + Send + From<Vec<u8>>,
 {
     async fn aggregate_group(
         &self,
@@ -85,7 +84,6 @@ where
         // TODO: factor out?
         spawn(async move {
             // TODO: spawn_blocking for heavy computation?
-            let data: Vec<Bytes> = data.into_iter().map(Into::into).collect();
             let data: Vec<P::Accumulator> = data.into_iter().map(Into::into).collect();
             let group_count = accumulator.accumulate(data).await;
             if group_count < total_groups {
@@ -127,7 +125,7 @@ where
     R: Remote + 'static,
     F: Future<Output = ()> + Send + 'static,
     P: Protocol + 'static,
-    P::Accumulator: Clone + Sync + Send + From<Bytes>,
+    P::Accumulator: Clone + Sync + Send + From<Vec<u8>>,
 {
     let state = MyPublisher::from_protocol(protocol, remote.clone());
     info!("Publisher starting up.");

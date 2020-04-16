@@ -57,7 +57,7 @@ where
 impl<P> Leader for MyLeader<P>
 where
     P: Protocol + 'static,
-    P::Accumulator: Clone + Sync + Send + From<Bytes>,
+    P::Accumulator: Clone + Sync + Send + From<Vec<u8>> + Into<Vec<u8>>,
 {
     async fn aggregate_worker(
         &self,
@@ -77,11 +77,7 @@ where
 
         spawn(async move {
             // TODO: spawn_blocking for heavy computation?
-            let data: Vec<_> = data
-                .into_iter()
-                .map(Bytes::from)
-                .map(P::Accumulator::from)
-                .collect();
+            let data: Vec<_> = data.into_iter().map(P::Accumulator::from).collect();
             let worker_count = accumulator.accumulate(data).await;
             if worker_count < total_workers {
                 trace!("Leader receieved {}/{} shares", worker_count, total_workers);
@@ -96,8 +92,7 @@ where
             }
 
             let share = accumulator.get().await;
-            let share: Vec<Bytes> = share.into_iter().map(Into::into).collect();
-            let share: Vec<Vec<u8>> = share.into_iter().map(Into::into).collect();
+            let share: Vec<Vec<u8>> = share.into_iter().map(Into::<Vec<u8>>::into).collect();
             // trace!("Leader final shares: {:?}", share);
             let req = Request::new(AggregateGroupRequest {
                 share: Some(Share { data: share }),
@@ -121,7 +116,7 @@ where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
     P: Protocol + 'static,
-    P::Accumulator: Sync + Send + Clone + From<Bytes>,
+    P::Accumulator: Sync + Send + Clone + From<Bytes> + From<Vec<u8>> + Into<Vec<u8>>,
 {
     let (tx, rx) = watch::channel(None);
     let state = MyLeader::from_protocol(protocol, experiment.group_size(), rx);

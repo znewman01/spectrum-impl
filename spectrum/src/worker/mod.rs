@@ -5,7 +5,6 @@ use crate::proto::{
     UploadResponse, VerifyRequest, VerifyResponse,
 };
 use crate::{
-    bytes::Bytes,
     config::store::Store,
     experiment::Experiment,
     net::Config as NetConfig,
@@ -202,7 +201,7 @@ where
     <P::AuditShare as TryFrom<proto::AuditShare>>::Error: fmt::Debug,
     P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
-    P::Accumulator: Sync + Send + Clone,
+    P::Accumulator: Sync + Send + Clone + Into<Vec<u8>>,
 {
     async fn upload(
         &self,
@@ -252,8 +251,7 @@ where
 
         spawn(async move {
             if let Some(share) = state.verify(&client_info, share).await {
-                let share: Vec<Bytes> = share.into_iter().map(Into::into).collect();
-                let share: Vec<Vec<u8>> = share.into_iter().map(Into::into).collect();
+                let share: Vec<Vec<u8>> = share.into_iter().map(Into::<Vec<u8>>::into).collect();
                 info!("Forwarding to leader.");
                 let req = Request::new(AggregateWorkerRequest {
                     share: Some(Share { data: share }),
@@ -299,7 +297,7 @@ where
     <P::AuditShare as TryFrom<proto::AuditShare>>::Error: fmt::Debug,
     P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
-    P::Accumulator: Clone + Sync + Send,
+    P::Accumulator: Clone + Sync + Send + Into<Vec<u8>>,
 {
     info!("Worker starting up.");
 
