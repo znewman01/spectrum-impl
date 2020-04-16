@@ -4,20 +4,23 @@ use crate::proto;
 use crate::{
     bytes::Bytes,
     crypto::{
-        dpf::{BasicDPF, MultiKeyDPF, DPF},
+        dpf::{self, BasicDPF, MultiKeyDPF, DPF},
         field::Field,
         prg::{
             aes::{AESSeed, AESPRG},
             group::GroupPRG,
+            PRG,
         },
-        vdpf::{FieldProofShare, FieldToken, FieldVDPF, VDPF},
+        vdpf::{self, FieldProofShare, FieldToken, FieldVDPF, VDPF},
     },
     protocols::{accumulator::Accumulatable, Protocol},
 };
+
 use derivative::Derivative;
 use rug::Integer;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
+
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::iter::repeat;
 use std::sync::Arc;
@@ -57,12 +60,23 @@ impl<V: VDPF> WriteToken<V> {
     }
 }
 
-impl Into<proto::WriteToken> for WriteToken<BasicVdpf> {
+impl<D, P> Into<proto::WriteToken> for WriteToken<FieldVDPF<D>>
+where
+    FieldVDPF<D>: VDPF<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare>,
+    P: PRG,
+    P::Seed: Into<Vec<u8>>,
+    P::Output: Into<Vec<u8>>,
+{
     fn into(self) -> proto::WriteToken {
         let dpf_key_proto = proto::secure_write_token::DpfKey {
             encoded_msg: self.0.encoded_msg.into(),
             bits: self.0.bits,
-            seeds: self.0.seeds.into_iter().map(|s| s.into()).collect(),
+            seeds: self
+                .0
+                .seeds
+                .into_iter()
+                .map(Into::<Vec<u8>>::into)
+                .collect(),
         };
         let bit = self.1.bit.value();
         let modulus: proto::Integer = bit.field().into();
@@ -81,14 +95,21 @@ impl Into<proto::WriteToken> for WriteToken<BasicVdpf> {
     }
 }
 
-impl TryFrom<proto::WriteToken> for WriteToken<BasicVdpf> {
+impl<D, P> TryFrom<proto::WriteToken> for WriteToken<FieldVDPF<D>>
+where
+    FieldVDPF<D>: VDPF<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare>,
+    P: PRG,
+    P::Seed: From<Vec<u8>>,
+    P::Output: TryFrom<Vec<u8>>,
+    <P::Output as TryFrom<Vec<u8>>>::Error: std::fmt::Debug,
+{
     type Error = &'static str;
 
     fn try_from(token: proto::WriteToken) -> Result<Self, Self::Error> {
         if let proto::write_token::Inner::Secure(inner) = token.inner.unwrap() {
             let key_proto = inner.key.unwrap();
-            let dpf_key = <BasicDPF<AESPRG> as DPF>::Key::new(
-                key_proto.encoded_msg.into(),
+            let dpf_key = <FieldVDPF<D> as DPF>::Key::new(
+                key_proto.encoded_msg.try_into().unwrap(),
                 key_proto.bits,
                 key_proto.seeds.into_iter().map(|s| s.into()).collect(),
             );
@@ -99,7 +120,7 @@ impl TryFrom<proto::WriteToken> for WriteToken<BasicVdpf> {
                 field.from_proto(proof_proto.bit.unwrap()).into(),
                 field.from_proto(proof_proto.seed.unwrap()).into(),
             );
-            Ok(WriteToken::<BasicVdpf>(dpf_key, proof_share))
+            Ok(WriteToken::<FieldVDPF<D>>(dpf_key, proof_share))
         } else {
             Err("Invalid proto::WriteToken.")
         }
@@ -123,7 +144,10 @@ impl<V: VDPF> AuditShare<V> {
     }
 }
 
-impl Into<proto::AuditShare> for AuditShare<BasicVdpf> {
+impl<V> Into<proto::AuditShare> for AuditShare<V>
+where
+    V: VDPF<Token = vdpf::FieldToken>,
+{
     fn into(self) -> proto::AuditShare {
         let bit = self.token.bit.value();
         let field = bit.field();
@@ -139,7 +163,10 @@ impl Into<proto::AuditShare> for AuditShare<BasicVdpf> {
     }
 }
 
-impl TryFrom<proto::AuditShare> for AuditShare<BasicVdpf> {
+impl<V> TryFrom<proto::AuditShare> for AuditShare<V>
+where
+    V: VDPF<Token = vdpf::FieldToken>,
+{
     type Error = &'static str;
 
     fn try_from(share: proto::AuditShare) -> Result<Self, Self::Error> {

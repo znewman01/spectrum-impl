@@ -1,8 +1,9 @@
 use crate::{
     crypto::field::FieldElement,
+    crypto::vdpf::VDPF,
     protocols::{
         insecure,
-        secure::{self, BasicVdpf},
+        secure::{self, BasicVdpf, MultiKeyVdpf},
         Protocol,
     },
 };
@@ -18,19 +19,25 @@ pub enum ChannelKeyWrapper {
     Secure(usize, FieldElement),
 }
 
-impl TryFrom<ChannelKeyWrapper> for secure::ChannelKey<BasicVdpf> {
+impl<V> TryFrom<ChannelKeyWrapper> for secure::ChannelKey<V>
+where
+    V: VDPF<AuthKey = FieldElement>,
+{
     type Error = &'static str;
 
     fn try_from(wrapper: ChannelKeyWrapper) -> Result<Self, Self::Error> {
         if let ChannelKeyWrapper::Secure(idx, secret) = wrapper {
-            Ok(secure::ChannelKey::<BasicVdpf>::new(idx, secret))
+            Ok(secure::ChannelKey::<V>::new(idx, secret))
         } else {
             Err("Invalid channel key")
         }
     }
 }
 
-impl Into<ChannelKeyWrapper> for secure::ChannelKey<BasicVdpf> {
+impl<V> Into<ChannelKeyWrapper> for secure::ChannelKey<V>
+where
+    V: VDPF<AuthKey = FieldElement>,
+{
     fn into(self) -> ChannelKeyWrapper {
         ChannelKeyWrapper::Secure(self.idx, self.secret)
     }
@@ -58,6 +65,7 @@ impl Into<ChannelKeyWrapper> for insecure::ChannelKey {
 pub enum ProtocolWrapper {
     Secure(secure::SecureProtocol<BasicVdpf>),
     Insecure(insecure::InsecureProtocol),
+    SecureMultiKey(secure::SecureProtocol<MultiKeyVdpf>),
 }
 
 impl From<insecure::InsecureProtocol> for ProtocolWrapper {
@@ -69,6 +77,12 @@ impl From<insecure::InsecureProtocol> for ProtocolWrapper {
 impl From<secure::SecureProtocol<BasicVdpf>> for ProtocolWrapper {
     fn from(protocol: secure::SecureProtocol<BasicVdpf>) -> Self {
         Self::Secure(protocol)
+    }
+}
+
+impl From<secure::SecureProtocol<MultiKeyVdpf>> for ProtocolWrapper {
+    fn from(protocol: secure::SecureProtocol<MultiKeyVdpf>) -> Self {
+        Self::SecureMultiKey(protocol)
     }
 }
 
@@ -86,6 +100,7 @@ impl ProtocolWrapper {
     pub fn num_parties(&self) -> usize {
         match self {
             Self::Secure(protocol) => protocol.num_parties(),
+            Self::SecureMultiKey(protocol) => protocol.num_parties(),
             Self::Insecure(protocol) => protocol.num_parties(),
         }
     }
@@ -93,6 +108,7 @@ impl ProtocolWrapper {
     pub fn num_channels(&self) -> usize {
         match self {
             Self::Secure(protocol) => protocol.num_channels(),
+            Self::SecureMultiKey(protocol) => protocol.num_channels(),
             Self::Insecure(protocol) => protocol.num_channels(),
         }
     }
@@ -100,6 +116,7 @@ impl ProtocolWrapper {
     pub fn message_len(&self) -> usize {
         match self {
             Self::Secure(protocol) => protocol.message_len(),
+            Self::SecureMultiKey(protocol) => protocol.message_len(),
             Self::Insecure(protocol) => protocol.message_len(),
         }
     }

@@ -257,9 +257,9 @@ pub mod group {
 
     use itertools::Itertools;
 
-    use std::ops::{BitXor, BitXorAssign};
+    use std::ops::{self, BitXor, BitXorAssign};
 
-    #[derive(Default, Clone, PartialEq, Eq, Hash, Debug)]
+    #[derive(Default, Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
     pub struct ElementVector(pub Vec<GroupElement>);
 
     impl ElementVector {
@@ -302,9 +302,52 @@ pub mod group {
     }
 
     // Implementation of a group-based PRG
-    #[derive(Clone, PartialEq, Debug)]
+    #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
     pub struct GroupPRG {
         generators: ElementVector,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    pub struct GroupPrgSeed(pub Integer);
+
+    impl ops::Sub for GroupPrgSeed {
+        type Output = Self;
+
+        fn sub(self, other: Self) -> Self {
+            GroupPrgSeed(Integer::from(self.0 - other.0))
+        }
+    }
+
+    impl ops::SubAssign for GroupPrgSeed {
+        fn sub_assign(&mut self, other: Self) {
+            self.0 -= other.0
+        }
+    }
+
+    impl ops::Add for GroupPrgSeed {
+        type Output = Self;
+
+        fn add(self, other: Self) -> Self {
+            GroupPrgSeed(Integer::from(self.0 + other.0))
+        }
+    }
+
+    impl ops::AddAssign for GroupPrgSeed {
+        fn add_assign(&mut self, other: Self) {
+            self.0 += other.0
+        }
+    }
+
+    impl Into<Vec<u8>> for GroupPrgSeed {
+        fn into(self) -> Vec<u8> {
+            self.0.to_digits(rug::integer::Order::LsfBe)
+        }
+    }
+
+    impl From<Vec<u8>> for GroupPrgSeed {
+        fn from(data: Vec<u8>) -> Self {
+            GroupPrgSeed(Integer::from_digits(&data, rug::integer::Order::LsfBe))
+        }
     }
 
     impl GroupPRG {
@@ -323,19 +366,19 @@ pub mod group {
     }
 
     impl PRG for GroupPRG {
-        type Seed = Integer;
+        type Seed = GroupPrgSeed;
         type Output = ElementVector;
 
         /// generates a new (random) seed for the given PRG
-        fn new_seed(&self) -> Integer {
+        fn new_seed(&self) -> Self::Seed {
             let mut rand_bytes = vec![0; Group::order_size_in_bytes()];
             thread_rng().fill_bytes(&mut rand_bytes);
-            Integer::from_digits(&rand_bytes.as_ref(), Order::LsfLe)
+            GroupPrgSeed(Integer::from_digits(&rand_bytes.as_ref(), Order::LsfLe))
         }
 
         /// evaluates the PRG on the given seed
-        fn eval(&self, seed: &Integer) -> Self::Output {
-            ElementVector(self.generators.0.iter().map(|g| g.pow(seed)).collect())
+        fn eval(&self, seed: &Self::Seed) -> Self::Output {
+            ElementVector(self.generators.0.iter().map(|g| g.pow(&seed.0)).collect())
         }
 
         fn null_output(&self) -> Self::Output {
@@ -352,12 +395,13 @@ pub mod group {
     }
 
     impl SeedHomomorphicPRG for GroupPRG {
-        fn null_seed(&self) -> Integer {
-            0.into()
+        fn null_seed(&self) -> Self::Seed {
+            GroupPrgSeed(0.into())
         }
 
-        fn combine_seeds(&self, seeds: Vec<Integer>) -> Integer {
-            Integer::from(Integer::sum(seeds.iter())) % Group::order()
+        fn combine_seeds(&self, seeds: Vec<GroupPrgSeed>) -> GroupPrgSeed {
+            let seeds: Vec<Integer> = seeds.into_iter().map(|s| s.0).collect();
+            GroupPrgSeed(Integer::from(Integer::sum(seeds.iter())) % Group::order())
         }
 
         fn combine_outputs(&self, outputs: Vec<ElementVector>) -> ElementVector {
@@ -371,6 +415,7 @@ pub mod group {
         }
     }
 
+    // TODO: should be try_into()
     impl Into<Bytes> for ElementVector {
         fn into(self) -> Bytes {
             let chunk_size = Group::order_size_in_bytes() - 1;
@@ -400,6 +445,34 @@ pub mod group {
                     .map(|(element1, element2)| element1 * element2)
                     .collect(),
             )
+        }
+    }
+
+    impl Into<Vec<u8>> for ElementVector {
+        fn into(self) -> Vec<u8> {
+            let chunk_size = Group::order_size_in_bytes();
+            // outputs all the elements in the vector concatenated as a sequence of bytes
+            // assumes that every element is < 2^(8*31)
+            let mut all_bytes = Vec::with_capacity(chunk_size * self.0.len());
+            for element in self.0.into_iter() {
+                let bytes: Bytes = element.into();
+                let bytes: Vec<u8> = bytes.into();
+                all_bytes.append(&mut bytes.into());
+            }
+            all_bytes
+        }
+    }
+
+    impl From<Vec<u8>> for ElementVector {
+        fn from(bytes: Vec<u8>) -> Self {
+            let chunk_size = Group::order_size_in_bytes();
+            // outputs all the elements in the vector concatenated as a sequence of bytes
+            let mut elements = vec![];
+            for chunk in bytes.into_iter().chunks(chunk_size).into_iter() {
+                elements
+                    .push(GroupElement::try_from(Bytes::from(chunk.collect::<Vec<u8>>())).unwrap());
+            }
+            ElementVector(elements)
         }
     }
 
@@ -458,11 +531,11 @@ pub mod group {
             }
         }
 
-        fn seed() -> impl Strategy<Value = Integer> {
-            (0..1000).prop_map(Integer::from)
+        fn seed() -> impl Strategy<Value = GroupPrgSeed> {
+            (0..1000).prop_map(Integer::from).prop_map(GroupPrgSeed)
         }
 
-        pub fn seeds() -> impl Strategy<Value = Vec<Integer>> {
+        pub fn seeds() -> impl Strategy<Value = Vec<GroupPrgSeed>> {
             prop::collection::vec(seed(), 1..100)
         }
 

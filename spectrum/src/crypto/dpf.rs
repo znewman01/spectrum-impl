@@ -2,6 +2,10 @@
 #![allow(clippy::unknown_clippy_lints)] // below issue triggers only on clippy beta/nightly
 #![allow(clippy::match_single_binding)] // https://github.com/mcarton/rust-derivative/issues/58
 
+use crate::crypto::prg::PRG;
+
+use derivative::Derivative;
+
 use std::fmt::Debug;
 
 /// Distributed Point Function
@@ -26,11 +30,38 @@ pub trait DPF {
 pub type BasicDPF<P> = two_key::Construction<P>;
 pub type MultiKeyDPF<P> = multi_key::Construction<P>;
 
+#[derive(Derivative)]
+#[derivative(
+    Debug(bound = "P::Seed: Debug, P::Output: Debug"),
+    PartialEq(bound = "P::Seed: PartialEq, P::Output: PartialEq"),
+    Eq(bound = "P::Seed: Eq, P::Output: Eq"),
+    Clone(bound = "P::Seed: Clone, P::Output: Clone")
+)]
+pub struct Key<P: PRG> {
+    pub encoded_msg: P::Output,
+    pub bits: Vec<u8>,
+    pub seeds: Vec<<P as PRG>::Seed>,
+}
+
+impl<P: PRG> Key<P> {
+    // generates a new DPF key with the necessary parameters needed for evaluation
+    pub fn new(encoded_msg: P::Output, bits: Vec<u8>, seeds: Vec<P::Seed>) -> Key<P> {
+        assert_eq!(bits.len(), seeds.len());
+        assert!(
+            bits.iter().all(|b| *b == 0 || *b == 1),
+            "All bits must be 0 or 1"
+        );
+        Key {
+            encoded_msg,
+            bits,
+            seeds,
+        }
+    }
+}
+
 // 2-DPF (i.e. num_keys = 2) based on any PRG G(.).
 pub mod two_key {
     use super::*;
-    use crate::crypto::prg::PRG;
-    use derivative::Derivative;
     use rand::{thread_rng, Rng};
     use serde::{Deserialize, Serialize};
     use std::iter::repeat_with;
@@ -48,35 +79,6 @@ pub mod two_key {
         }
     }
 
-    #[derive(Derivative)]
-    #[derivative(
-        Debug(bound = "P::Seed: Debug, P::Output: Debug"),
-        PartialEq(bound = "P::Seed: PartialEq, P::Output: PartialEq"),
-        Eq(bound = "P::Seed: Eq, P::Output: Eq"),
-        Clone(bound = "P::Seed: Clone, P::Output: Clone")
-    )]
-    pub struct Key<P: PRG> {
-        pub encoded_msg: P::Output,
-        pub bits: Vec<u8>,
-        pub seeds: Vec<<P as PRG>::Seed>,
-    }
-
-    impl<P: PRG> Key<P> {
-        // generates a new DPF key with the necessary parameters needed for evaluation
-        pub fn new(encoded_msg: P::Output, bits: Vec<u8>, seeds: Vec<P::Seed>) -> Key<P> {
-            assert_eq!(bits.len(), seeds.len());
-            assert!(
-                bits.iter().all(|b| *b == 0 || *b == 1),
-                "All bits must be 0 or 1"
-            );
-            Key {
-                encoded_msg,
-                bits,
-                seeds,
-            }
-        }
-    }
-
     impl<P> DPF for Construction<P>
     where
         P: PRG + Clone,
@@ -88,7 +90,7 @@ pub mod two_key {
             + ops::BitXor<P::Output, Output = P::Output>
             + ops::BitXorAssign<P::Output>,
     {
-        type Key = Key<P>;
+        type Key = super::Key<P>;
         type Message = P::Output;
 
         fn num_points(&self) -> usize {
@@ -108,7 +110,7 @@ pub mod two_key {
         }
 
         /// generate new instance of PRG based DPF with two DPF keys
-        fn gen(&self, msg: Self::Message, point_idx: usize) -> Vec<Key<P>> {
+        fn gen(&self, msg: Self::Message, point_idx: usize) -> Vec<Self::Key> {
             let seeds_a: Vec<_> = repeat_with(|| self.prg.new_seed())
                 .take(self.num_points)
                 .collect();
@@ -126,12 +128,12 @@ pub mod two_key {
                 self.prg.eval(&seeds_a[point_idx]) ^ self.prg.eval(&seeds_b[point_idx]) ^ msg;
 
             vec![
-                Key::new(encoded_msg.clone(), bits_a, seeds_a),
-                Key::new(encoded_msg, bits_b, seeds_b),
+                Self::Key::new(encoded_msg.clone(), bits_a, seeds_a),
+                Self::Key::new(encoded_msg, bits_b, seeds_b),
             ]
         }
 
-        fn gen_empty(&self) -> Vec<Key<P>> {
+        fn gen_empty(&self) -> Vec<Self::Key> {
             let seeds: Vec<_> = repeat_with(|| self.prg.new_seed())
                 .take(self.num_points)
                 .collect();
@@ -140,11 +142,11 @@ pub mod two_key {
                 .collect();
             let encoded_msg = self.prg.eval(&self.prg.new_seed()); // random message
 
-            vec![Key::new(encoded_msg, bits, seeds); 2]
+            vec![Self::Key::new(encoded_msg, bits, seeds); 2]
         }
 
         /// evaluates the DPF on a given PRGKey and outputs the resulting data
-        fn eval(&self, key: &Key<P>) -> Vec<P::Output> {
+        fn eval(&self, key: &Self::Key) -> Vec<P::Output> {
             key.seeds
                 .iter()
                 .zip(key.bits.iter())
@@ -177,7 +179,7 @@ pub mod two_key {
         use super::*;
         use crate::bytes::Bytes;
         use crate::crypto::dpf::prg_tests::*;
-        use crate::crypto::prg::{aes::AESPRG, PRG};
+        use crate::crypto::prg::aes::AESPRG;
         use proptest::prelude::*;
 
         const MAX_NUM_POINTS: usize = 10;
@@ -189,29 +191,6 @@ pub mod two_key {
             fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
                 (any::<P>(), 1..=MAX_NUM_POINTS)
                     .prop_map(move |(prg, num_points)| Construction::new(prg, num_points))
-                    .boxed()
-            }
-        }
-
-        impl<P> Arbitrary for Key<P>
-        where
-            P: PRG,
-            P::Seed: Arbitrary,
-            P::Output: Arbitrary,
-        {
-            type Parameters = ();
-            type Strategy = BoxedStrategy<Self>;
-
-            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-                (1..10usize)
-                    .prop_flat_map(|num_keys| {
-                        (
-                            any::<P::Output>(),
-                            prop::collection::vec(0..1u8, num_keys),
-                            prop::collection::vec(any::<P::Seed>(), num_keys),
-                        )
-                            .prop_map(|(msg, bits, seeds)| Self::new(msg, bits, seeds))
-                    })
                     .boxed()
             }
         }
@@ -253,7 +232,6 @@ pub mod multi_key {
     use super::*;
     use crate::crypto::prg::SeedHomomorphicPRG;
     use crate::crypto::prg::PRG;
-    use derivative::Derivative;
     use serde::{Deserialize, Serialize};
     use std::iter::repeat_with;
     use std::ops;
@@ -271,35 +249,6 @@ pub mod multi_key {
                 prg,
                 num_points,
                 num_keys,
-            }
-        }
-    }
-
-    #[derive(Derivative)]
-    #[derivative(
-        Debug(bound = "P::Seed: Debug, P::Output: Debug"),
-        PartialEq(bound = "P::Seed: PartialEq, P::Output: PartialEq"),
-        Eq(bound = "P::Seed: Eq, P::Output: Eq"),
-        Clone(bound = "P::Seed: Clone, P::Output: Clone")
-    )]
-    pub struct Key<P: SeedHomomorphicPRG> {
-        pub encoded_msg: P::Output,
-        pub bits: Vec<u8>,
-        pub seeds: Vec<<P as PRG>::Seed>,
-    }
-
-    impl<P: SeedHomomorphicPRG> Key<P> {
-        // generates a new DPF key with the necessary parameters needed for evaluation
-        pub fn new(encoded_msg: P::Output, bits: Vec<u8>, seeds: Vec<P::Seed>) -> Key<P> {
-            assert_eq!(bits.len(), seeds.len());
-            assert!(
-                bits.iter().all(|b| *b == 0 || *b == 1),
-                "All bits must be 0 or 1"
-            );
-            Key {
-                encoded_msg,
-                bits,
-                seeds,
             }
         }
     }
@@ -440,7 +389,7 @@ pub mod multi_key {
     pub mod tests {
         use super::*;
         use crate::crypto::dpf::prg_tests::*;
-        use crate::crypto::prg::{group::ElementVector, group::GroupPRG, PRG};
+        use crate::crypto::prg::{group::ElementVector, group::GroupPRG};
         use proptest::prelude::*;
 
         const MAX_NUM_POINTS: usize = 10;
@@ -454,29 +403,6 @@ pub mod multi_key {
                 (any::<P>(), 2..=MAX_NUM_KEYS, 1..=MAX_NUM_POINTS)
                     .prop_map(move |(prg, num_keys, num_points)| {
                         Construction::new(prg, num_points, num_keys)
-                    })
-                    .boxed()
-            }
-        }
-
-        impl<P> Arbitrary for Key<P>
-        where
-            P: PRG + SeedHomomorphicPRG,
-            P::Seed: Arbitrary,
-            P::Output: Arbitrary,
-        {
-            type Parameters = ();
-            type Strategy = BoxedStrategy<Self>;
-
-            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-                (1..10usize)
-                    .prop_flat_map(|num_keys| {
-                        (
-                            any::<P::Output>(),
-                            prop::collection::vec(0..1u8, num_keys),
-                            prop::collection::vec(any::<P::Seed>(), num_keys),
-                        )
-                            .prop_map(|(msg, bits, seeds)| Self::new(msg, bits, seeds))
                     })
                     .boxed()
             }
@@ -517,6 +443,30 @@ pub mod multi_key {
 #[cfg(test)]
 pub mod prg_tests {
     use super::*;
+    use proptest::prelude::*;
+
+    impl<P> Arbitrary for Key<P>
+    where
+        P: PRG,
+        P::Seed: Arbitrary,
+        P::Output: Arbitrary,
+    {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (1..10usize)
+                .prop_flat_map(|num_keys| {
+                    (
+                        any::<P::Output>(),
+                        prop::collection::vec(0..1u8, num_keys),
+                        prop::collection::vec(any::<P::Seed>(), num_keys),
+                    )
+                        .prop_map(|(msg, bits, seeds)| Self::new(msg, bits, seeds))
+                })
+                .boxed()
+        }
+    }
 
     pub(super) fn run_test_dpf<D>(dpf: D, data: D::Message, index: usize)
     where

@@ -99,6 +99,13 @@ impl Experiment {
                     secure::ChannelKey::<secure::BasicVdpf>::new(idx, secret).into()
                 })
                 .collect(),
+            ProtocolWrapper::SecureMultiKey(protocol) => channels
+                .map(|idx: usize| {
+                    // TODO: sample randomly (keep an Option<Key> in Self).
+                    let secret = protocol.vdpf.field.new_element(idx.into());
+                    secure::ChannelKey::<secure::BasicVdpf>::new(idx, secret).into()
+                })
+                .collect(),
             ProtocolWrapper::Insecure(_) => channels
                 .map(|idx| {
                     let password = format!("password{}", idx);

@@ -5,6 +5,7 @@ use crate::crypto::prg::{aes::AESSeed, aes::AESPRG, PRG};
 use jubjub::Fr as ECFieldElement; // elliptic curve field
 use rand::prelude::*;
 use rug::{integer::Order, Integer};
+use serde::{de, ser::Serializer, Deserialize, Serialize};
 
 use std::cmp::Ordering;
 use std::convert::TryFrom;
@@ -34,9 +35,32 @@ const JUBJUB_MODULUS_BYTES: usize = 32;
 #[derive(Default, Clone, Eq, PartialEq, Debug)]
 pub struct Group(ECFieldElement); // generator for the multiplicative group
 
+fn serialize_field_element<S>(x: &ECFieldElement, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    s.serialize_bytes(&x.to_bytes())
+}
+
+fn deserialize_field_element<'de, D>(deserializer: D) -> Result<ECFieldElement, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    use std::convert::TryInto;
+    let bytes: &[u8] = de::Deserialize::deserialize(deserializer)?;
+    let bytes: &[u8; 32] = bytes.try_into().unwrap();
+    Ok(ECFieldElement::from_bytes(bytes).unwrap())
+}
+
 /// element within a group
-#[derive(Clone, Eq, Debug)]
-pub struct GroupElement(ECFieldElement);
+#[derive(Clone, Eq, Debug, Serialize, Deserialize)]
+pub struct GroupElement(
+    #[serde(
+        serialize_with = "serialize_field_element",
+        deserialize_with = "deserialize_field_element"
+    )]
+    ECFieldElement,
+);
 
 impl Group {
     /// identity element in the elliptic curve field
