@@ -301,7 +301,7 @@ pub mod multi_key {
             let mut seed_proof = field.zero();
             for key in dpf_keys.iter() {
                 seed_proof += access_key.clone()
-                    * FieldElement::new(key.seeds[point_idx].clone().0, field.clone());
+                    * FieldElement::new(key.seeds[point_idx].clone().value(), field.clone());
             }
 
             let mut bit_proof = access_key.field().zero();
@@ -341,10 +341,10 @@ pub mod multi_key {
             {
                 if is_first {
                     seed_check -=
-                        access_key.clone() * FieldElement::new(seed.clone().0, field.clone());
+                        access_key.clone() * FieldElement::new(seed.clone().value(), field.clone());
                 } else {
                     seed_check +=
-                        access_key.clone() * FieldElement::new(seed.clone().0, field.clone());
+                        access_key.clone() * FieldElement::new(seed.clone().value(), field.clone());
                 }
 
                 if is_first {

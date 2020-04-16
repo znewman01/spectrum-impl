@@ -308,19 +308,41 @@ pub mod group {
     }
 
     #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-    pub struct GroupPrgSeed(pub Integer);
+    pub struct GroupPrgSeed {
+        value: Integer,
+    }
+
+    impl GroupPrgSeed {
+        pub fn new(value: Integer) -> Self {
+            let mut value = value;
+            while value < 0 {
+                value += Group::order();
+            }
+            if value >= Group::order() {
+                value = (value % Group::order()).into();
+            }
+            GroupPrgSeed { value }
+        }
+
+        pub fn value(self) -> Integer {
+            self.value
+        }
+    }
 
     impl ops::Sub for GroupPrgSeed {
         type Output = Self;
 
         fn sub(self, other: Self) -> Self {
-            GroupPrgSeed(Integer::from(self.0 - other.0))
+            GroupPrgSeed::new(Integer::from(self.value - other.value))
         }
     }
 
     impl ops::SubAssign for GroupPrgSeed {
         fn sub_assign(&mut self, other: Self) {
-            self.0 -= other.0
+            self.value -= other.value;
+            if self.value < 0 {
+                self.value += Group::order();
+            }
         }
     }
 
@@ -328,25 +350,29 @@ pub mod group {
         type Output = Self;
 
         fn add(self, other: Self) -> Self {
-            GroupPrgSeed(Integer::from(self.0 + other.0))
+            GroupPrgSeed::new(Integer::from(self.value + other.value))
         }
     }
 
     impl ops::AddAssign for GroupPrgSeed {
         fn add_assign(&mut self, other: Self) {
-            self.0 += other.0
+            self.value += other.value;
+            if self.value >= Group::order() {
+                self.value -= Group::order();
+            }
         }
     }
 
     impl Into<Vec<u8>> for GroupPrgSeed {
         fn into(self) -> Vec<u8> {
-            self.0.to_digits(rug::integer::Order::LsfBe)
+            self.value.to_string_radix(10).into_bytes()
         }
     }
 
     impl From<Vec<u8>> for GroupPrgSeed {
         fn from(data: Vec<u8>) -> Self {
-            GroupPrgSeed(Integer::from_digits(&data, rug::integer::Order::LsfBe))
+            let data = String::from_utf8(data).unwrap();
+            GroupPrgSeed::new(Integer::parse_radix(&data, 10).unwrap().into())
         }
     }
 
@@ -373,12 +399,18 @@ pub mod group {
         fn new_seed(&self) -> Self::Seed {
             let mut rand_bytes = vec![0; Group::order_size_in_bytes()];
             thread_rng().fill_bytes(&mut rand_bytes);
-            GroupPrgSeed(Integer::from_digits(&rand_bytes.as_ref(), Order::LsfLe))
+            GroupPrgSeed::new(Integer::from_digits(&rand_bytes.as_ref(), Order::LsfLe))
         }
 
         /// evaluates the PRG on the given seed
         fn eval(&self, seed: &Self::Seed) -> Self::Output {
-            ElementVector(self.generators.0.iter().map(|g| g.pow(&seed.0)).collect())
+            ElementVector(
+                self.generators
+                    .0
+                    .iter()
+                    .map(|g| g.pow(&seed.clone().value()))
+                    .collect(),
+            )
         }
 
         fn null_output(&self) -> Self::Output {
@@ -396,12 +428,12 @@ pub mod group {
 
     impl SeedHomomorphicPRG for GroupPRG {
         fn null_seed(&self) -> Self::Seed {
-            GroupPrgSeed(0.into())
+            GroupPrgSeed::new(0.into())
         }
 
         fn combine_seeds(&self, seeds: Vec<GroupPrgSeed>) -> GroupPrgSeed {
-            let seeds: Vec<Integer> = seeds.into_iter().map(|s| s.0).collect();
-            GroupPrgSeed(Integer::from(Integer::sum(seeds.iter())) % Group::order())
+            let seeds: Vec<Integer> = seeds.into_iter().map(|s| s.value()).collect();
+            GroupPrgSeed::new(Integer::from(Integer::sum(seeds.iter())) % Group::order())
         }
 
         fn combine_outputs(&self, outputs: Vec<ElementVector>) -> ElementVector {
@@ -531,12 +563,20 @@ pub mod group {
             }
         }
 
-        fn seed() -> impl Strategy<Value = GroupPrgSeed> {
-            (0..1000).prop_map(Integer::from).prop_map(GroupPrgSeed)
+        impl Arbitrary for GroupPrgSeed {
+            type Parameters = ();
+            type Strategy = BoxedStrategy<Self>;
+
+            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+                (0..1000)
+                    .prop_map(Integer::from)
+                    .prop_map(GroupPrgSeed)
+                    .boxed()
+            }
         }
 
         pub fn seeds() -> impl Strategy<Value = Vec<GroupPrgSeed>> {
-            prop::collection::vec(seed(), 1..100)
+            prop::collection::vec(any::<GroupPrgSeed>(), 1..100)
         }
 
         /// tests for seed-homomorphism: G(s1) ^ G(s2) = G(s1 * s2)
@@ -586,8 +626,8 @@ pub mod group {
             }
 
             #[test]
-            fn test_group_prg_eval_deterministic(prg: GroupPRG, seed in seed())
-             {
+            fn test_group_prg_eval_deterministic(prg: GroupPRG, seed: GroupPrgSeed)
+            {
                 prg_tests::run_test_prg_eval_deterministic(prg, seed);
             }
 
@@ -625,7 +665,7 @@ pub mod group {
             }
 
             #[test]
-            fn test_group_prg_null_combine(prg: GroupPRG, seed in seed()) {
+            fn test_group_prg_null_combine(prg: GroupPRG, seed: GroupPrgSeed) {
                 prg_tests::run_test_prg_null_combine(prg, seed);
             }
         }

@@ -31,12 +31,6 @@ impl SecretShare {
     }
 }
 
-impl From<FieldElement> for SecretShare {
-    fn from(element: FieldElement) -> Self {
-        Self::new(element, false)
-    }
-}
-
 impl LSS {
     /// shares the value such that summing all the shares recovers the value
     pub fn share(value: FieldElement, n: usize, rng: &mut RandState) -> Vec<SecretShare> {

@@ -49,6 +49,7 @@ message SecureWriteToken {
   message ProofShare {
     Integer bit = 1;
     Integer seed = 2;
+    bool is_first = 3;
   }
 
   DpfKey key = 1;
@@ -63,6 +64,7 @@ message SecureAuditShare {
   bytes data = 3;
   // TODO(zjn): loosen From/Into requirements on ProtocolWrapper so this doesn't get repeated
   Integer modulus = 4;
+  bool is_first = 5;
 }
 
 

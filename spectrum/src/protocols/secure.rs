@@ -6,6 +6,7 @@ use crate::{
     crypto::{
         dpf::{self, BasicDPF, MultiKeyDPF, DPF},
         field::Field,
+        lss::SecretShare,
         prg::{
             aes::{AESSeed, AESPRG},
             group::GroupPRG,
@@ -78,11 +79,14 @@ where
                 .map(Into::<Vec<u8>>::into)
                 .collect(),
         };
+        let is_first = self.1.bit.is_first();
+        assert_eq!(is_first, self.1.seed.is_first());
         let bit = self.1.bit.value();
         let modulus: proto::Integer = bit.field().into();
         let proof = proto::secure_write_token::ProofShare {
             bit: Some(bit.into()),
             seed: Some(self.1.seed.value().into()),
+            is_first,
         };
         let inner = proto::SecureWriteToken {
             key: Some(dpf_key_proto),
@@ -111,14 +115,20 @@ where
             let dpf_key = <FieldVDPF<D> as DPF>::Key::new(
                 key_proto.encoded_msg.try_into().unwrap(),
                 key_proto.bits,
-                key_proto.seeds.into_iter().map(|s| s.into()).collect(),
+                key_proto.seeds.into_iter().map(Into::into).collect(),
             );
             let modulus: proto::Integer = inner.modulus.unwrap();
             let field = Arc::new(Field::from(modulus));
             let proof_proto = inner.proof.unwrap();
             let proof_share = FieldProofShare::new(
-                field.from_proto(proof_proto.bit.unwrap()).into(),
-                field.from_proto(proof_proto.seed.unwrap()).into(),
+                SecretShare::new(
+                    field.from_proto(proof_proto.bit.unwrap()),
+                    proof_proto.is_first,
+                ),
+                SecretShare::new(
+                    field.from_proto(proof_proto.seed.unwrap()),
+                    proof_proto.is_first,
+                ),
             );
             Ok(WriteToken::<FieldVDPF<D>>(dpf_key, proof_share))
         } else {
@@ -152,10 +162,13 @@ where
         let bit = self.token.bit.value();
         let field = bit.field();
         let modulus: proto::Integer = field.into();
+        let is_first = self.token.bit.is_first();
+        assert_eq!(is_first, self.token.seed.is_first());
 
         let inner = proto::audit_share::Inner::Secure(proto::SecureAuditShare {
             bit: Some(bit.into()),
             seed: Some(self.token.seed.value().into()),
+            is_first,
             data: self.token.data.into(),
             modulus: Some(modulus),
         });
@@ -178,8 +191,8 @@ where
             let seed = field.from_proto(inner.seed.unwrap());
 
             Ok(Self::new(FieldToken::new(
-                bit.into(),
-                seed.into(),
+                SecretShare::new(bit, inner.is_first),
+                SecretShare::new(seed, inner.is_first),
                 inner.data.into(),
             )))
         } else {
@@ -487,6 +500,20 @@ pub mod tests {
 
         #[test]
         fn test_audit_share_proto_roundtrip(share in any::<AuditShare<BasicVdpf>>()) {
+            let wrapped: proto::AuditShare = share.clone().into();
+            assert_eq!(share, wrapped.try_into().unwrap());
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_multi_key_write_token_proto_roundtrip(token in any::<WriteToken<MultiKeyVdpf>>()) {
+            let wrapped: proto::WriteToken = token.clone().into();
+            assert_eq!(token, wrapped.try_into().unwrap());
+        }
+
+        #[test]
+        fn test_multi_key_audit_share_proto_roundtrip(share in any::<AuditShare<MultiKeyVdpf>>()) {
             let wrapped: proto::AuditShare = share.clone().into();
             assert_eq!(share, wrapped.try_into().unwrap());
         }
