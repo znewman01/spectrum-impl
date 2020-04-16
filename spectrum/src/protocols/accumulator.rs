@@ -2,6 +2,7 @@ use std::ops::{Deref, DerefMut};
 use tokio::sync::RwLock;
 
 use crate::bytes::Bytes;
+use crate::crypto::prg::group::ElementVector;
 
 pub trait Accumulatable: Default {
     // TODO: other should be a reference?
@@ -11,6 +12,12 @@ pub trait Accumulatable: Default {
 impl Accumulatable for Bytes {
     fn combine(&mut self, other: Bytes) {
         *self ^= &other;
+    }
+}
+
+impl Accumulatable for ElementVector {
+    fn combine(&mut self, other: ElementVector) {
+        *self ^= other;
     }
 }
 

@@ -362,18 +362,11 @@ pub mod multi_key {
                 }
             }
 
-            // TODO: (sss) avoid clone
-            let msg_bytes: Bytes = dpf_key.encoded_msg.clone().into();
-
-            // TODO: switch to blake3 in parallel when input is ~1 Mbit or greater
-            let mut hasher = blake3::Hasher::new();
-            hasher.update(msg_bytes.as_ref());
-            let data: [u8; 32] = hasher.finalize().into();
-
+            let msg_hash: Bytes = dpf_key.encoded_msg.clone().hash_all();
             FieldToken {
                 bit: bit_check,
                 seed: seed_check,
-                data: Bytes::from(data.to_vec()),
+                data: msg_hash,
             }
         }
 

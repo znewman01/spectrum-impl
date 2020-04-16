@@ -2,10 +2,13 @@
 use crate::bytes::Bytes;
 use crate::crypto::field::{Field, FieldElement};
 use crate::crypto::group::{Group, GroupElement};
+
 use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;
 use rug::{integer::Order, Integer};
 use serde::{Deserialize, Serialize};
+
+use std::convert::TryFrom;
 use std::hash::Hash;
 use std::iter::repeat;
 
@@ -251,22 +254,47 @@ pub mod aes {
 pub mod group {
     use super::aes::AESSeed;
     use super::*;
+
     use itertools::Itertools;
+
     use std::ops::{BitXor, BitXorAssign};
 
     #[derive(Default, Clone, PartialEq, Eq, Hash, Debug)]
     pub struct ElementVector(pub Vec<GroupElement>);
 
+    impl ElementVector {
+        pub fn hash_all(self) -> Bytes {
+            let mut hasher = blake3::Hasher::new();
+            for element in self.0 {
+                let chunk: Bytes = element.into();
+                let chunk: Vec<u8> = chunk.into();
+                hasher.update(&chunk);
+            }
+            let data: [u8; 32] = hasher.finalize().into();
+            data.to_vec().into()
+        }
+    }
+
     impl From<Bytes> for ElementVector {
         fn from(bytes: Bytes) -> Self {
+            // Turns out the group can't represent a lot of 32-byte values
+            // because its modulus is < 2^32.
+            // We use (very unnatural) 31-byte chunks so that
+            // element_from_bytes() succeeds.
+            let chunk_size = Group::order_size_in_bytes() - 1;
             ElementVector(
                 bytes
                     .into_iter()
-                    .chunks(Group::order_size_in_bytes())
+                    .chunks(chunk_size)
                     .into_iter()
                     .map(|data| {
-                        let data: Vec<u8> = data.collect();
-                        Group::element_from_bytes(Bytes::from(data))
+                        let mut data: Vec<u8> = data.collect();
+                        while data.len() < Group::order_size_in_bytes() {
+                            data.push(0);
+                        }
+                        let data = Bytes::from(data);
+                        GroupElement::try_from(data)
+                            .expect("chunk size chosen s.t. this never fails")
                     })
                     .collect(),
             )
@@ -277,24 +305,19 @@ pub mod group {
     #[derive(Clone, PartialEq, Debug)]
     pub struct GroupPRG {
         generators: ElementVector,
-        eval_size: usize,
     }
 
     impl GroupPRG {
-        pub fn new(eval_size: usize, generators: ElementVector) -> Self {
-            GroupPRG {
-                generators,
-                eval_size,
-            }
+        pub fn new(generators: ElementVector) -> Self {
+            GroupPRG { generators }
         }
 
-        pub fn from_aes_seed(eval_size: usize, generator_seed: AESSeed) -> Self {
-            let generators = GroupPRG::compute_generators(eval_size, &generator_seed);
-            GroupPRG::new(eval_size, generators)
+        pub fn from_aes_seed(num_elements: usize, generator_seed: AESSeed) -> Self {
+            let generators = GroupPRG::compute_generators(num_elements, &generator_seed);
+            GroupPRG::new(generators)
         }
 
-        fn compute_generators(eval_size: usize, seed: &AESSeed) -> ElementVector {
-            let num_elements: usize = eval_size / Group::order_size_in_bytes(); // prg eval size (# group elements needed)
+        fn compute_generators(num_elements: usize, seed: &AESSeed) -> ElementVector {
             ElementVector(Group::generators(num_elements, seed))
         }
     }
@@ -324,7 +347,7 @@ pub mod group {
         }
 
         fn output_size(&self) -> usize {
-            self.eval_size
+            self.generators.0.len() * (Group::order_size_in_bytes() - 1)
         }
     }
 
@@ -350,10 +373,15 @@ pub mod group {
 
     impl Into<Bytes> for ElementVector {
         fn into(self) -> Bytes {
+            let chunk_size = Group::order_size_in_bytes() - 1;
             // outputs all the elements in the vector concatenated as a sequence of bytes
-            let mut all_bytes = vec![0u8; Group::order_size_in_bytes() * self.0.len()];
+            // assumes that every element is < 2^(8*31)
+            let mut all_bytes = Vec::with_capacity(chunk_size * self.0.len());
             for element in self.0.into_iter() {
                 let bytes: Bytes = element.into();
+                let bytes: Vec<u8> = bytes.into();
+                assert_eq!(bytes.clone()[31], 0);
+                let bytes = Bytes::from(bytes[0..31].to_vec());
                 all_bytes.append(&mut bytes.into());
             }
             Bytes::from(all_bytes)
@@ -401,7 +429,7 @@ pub mod group {
         use std::ops;
         use std::ops::Range;
 
-        const GROUP_PRG_EVAL_SIZES: Range<usize> = 64..1000; // in bytes
+        const GROUP_PRG_NUM_SEEDS: Range<usize> = 1..10; // # group elements
 
         impl Arbitrary for GroupPRG {
             type Parameters = Option<(usize, AESSeed)>;
@@ -410,7 +438,7 @@ pub mod group {
             fn arbitrary_with(params: Self::Parameters) -> Self::Strategy {
                 match params {
                     Some(params) => Just(GroupPRG::from_aes_seed(params.0, params.1)).boxed(),
-                    None => (GROUP_PRG_EVAL_SIZES, any::<AESSeed>())
+                    None => (GROUP_PRG_NUM_SEEDS, any::<AESSeed>())
                         .prop_flat_map(move |(output_size, generator_seed)| {
                             Just(GroupPRG::from_aes_seed(output_size, generator_seed))
                         })
@@ -420,7 +448,7 @@ pub mod group {
         }
 
         impl Arbitrary for ElementVector {
-            type Parameters = usize;
+            type Parameters = prop::collection::SizeRange;
             type Strategy = BoxedStrategy<Self>;
 
             fn arbitrary_with(num_elements: Self::Parameters) -> Self::Strategy {
@@ -530,10 +558,16 @@ pub mod group {
         }
 
         proptest! {
-            fn test_element_vec_bytes_roundtrip(elements: ElementVector) {
-                assert_eq!(
-                    elements,
-                    Into::<Bytes>::into(elements.clone()).into()
+            #[test]
+            fn test_bytes_element_vec_roundtrip(data: Bytes) {
+                let mut data:Vec<u8> = data.into();
+                while data.len() % 31 != 0 {
+                    data.push(0);
+                }
+                let data = Bytes::from(data);
+                prop_assert_eq!(
+                    data.clone(),
+                    ElementVector::from(data).into()
                 );
             }
         }

@@ -1,5 +1,6 @@
 pub mod accumulator;
 pub mod insecure;
+// pub mod multi_key;
 pub mod secure;
 pub mod wrapper;
 
@@ -56,15 +57,16 @@ pub mod tests {
         (Just(protocol), any_with::<Bytes>(size.into()))
     }
 
-    pub fn and_accumulators<P>(protocol: P) -> impl Strategy<Value = (P, Vec<Bytes>)>
+    pub fn and_accumulators<P>(protocol: P) -> impl Strategy<Value = (P, Vec<P::Accumulator>)>
     where
         P: Protocol + Debug + Clone,
+        P::Accumulator: Arbitrary<Parameters = prop::collection::SizeRange>,
     {
         let channels = protocol.num_channels();
         let size = protocol.message_len();
         (
             Just(protocol),
-            prop::collection::vec(any_with::<Bytes>(size.into()), channels),
+            prop::collection::vec(any_with::<P::Accumulator>(size.into()), channels),
         )
     }
 
@@ -171,14 +173,18 @@ pub mod tests {
         for write_token in protocol.broadcast(msg.clone(), good_key) {
             accumulator.combine(protocol.to_accumulator(write_token));
         }
-        let recovered_msgs = accumulator;
 
+        let recovered_msgs = accumulator;
         assert_eq!(recovered_msgs.len(), protocol.num_channels());
         for (msg_idx, actual_msg) in recovered_msgs.into_iter().enumerate() {
             if msg_idx == key_idx {
-                assert_eq!(actual_msg.into(), msg);
+                assert_eq!(actual_msg.into(), msg, "Channel was incorrect");
             } else {
-                assert_eq!(actual_msg.into(), Bytes::empty(protocol.message_len()))
+                assert_eq!(
+                    actual_msg.into(),
+                    Bytes::empty(protocol.message_len()),
+                    "Channel was non-null"
+                )
             }
         }
     }

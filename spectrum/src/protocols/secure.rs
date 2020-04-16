@@ -4,12 +4,15 @@ use crate::proto;
 use crate::{
     bytes::Bytes,
     crypto::{
-        dpf::{BasicDPF, DPF},
+        dpf::{BasicDPF, MultiKeyDPF, DPF},
         field::Field,
-        prg::aes::AESPRG,
+        prg::{
+            aes::{AESSeed, AESPRG},
+            group::GroupPRG,
+        },
         vdpf::{FieldProofShare, FieldToken, FieldVDPF, VDPF},
     },
-    protocols::Protocol,
+    protocols::{accumulator::Accumulatable, Protocol},
 };
 use derivative::Derivative;
 use rug::Integer;
@@ -19,7 +22,7 @@ use std::fmt;
 use std::iter::repeat;
 use std::sync::Arc;
 
-pub use crate::crypto::vdpf::BasicVdpf;
+pub use crate::crypto::vdpf::{BasicVdpf, MultiKeyVdpf};
 
 #[derive(Derivative)]
 #[derivative(
@@ -179,11 +182,32 @@ impl<V: VDPF> SecureProtocol<V> {
     }
 }
 
+fn field_with_security(sec_bits: u32) -> Field {
+    Field::from(Integer::from(
+        (Integer::from(2) << sec_bits).next_prime_ref(),
+    ))
+}
+
 impl SecureProtocol<BasicVdpf> {
     pub fn with_aes_prg_dpf(sec_bits: u32, channels: usize, msg_size: usize) -> Self {
-        let prime: Integer = (Integer::from(2) << sec_bits).next_prime_ref().into();
-        let field = Field::from(prime);
+        let field = field_with_security(sec_bits);
         let vdpf = FieldVDPF::new(BasicDPF::new(AESPRG::new(16, msg_size), channels), field);
+        SecureProtocol::new(vdpf)
+    }
+}
+
+impl SecureProtocol<MultiKeyVdpf> {
+    fn with_group_prg_dpf(
+        sec_bits: u32,
+        channels: usize,
+        groups: usize,
+        msg_size: usize,
+        seed: AESSeed,
+    ) -> Self {
+        let prg: GroupPRG = GroupPRG::from_aes_seed(msg_size, seed);
+        let dpf: MultiKeyDPF<GroupPRG> = MultiKeyDPF::new(prg, channels, groups);
+        let field = field_with_security(sec_bits);
+        let vdpf = FieldVDPF::new(dpf, field);
         SecureProtocol::new(vdpf)
     }
 }
@@ -192,14 +216,14 @@ impl<V> Protocol for SecureProtocol<V>
 where
     V: VDPF,
     <V as DPF>::Key: fmt::Debug,
-    <V as DPF>::Message: From<Bytes> + Into<Bytes>,
+    <V as DPF>::Message: From<Bytes> + Into<Bytes> + Accumulatable + Clone,
     V::Token: Clone,
     V::AuthKey: Clone,
 {
     type ChannelKey = ChannelKey<V>; // channel number, password
     type WriteToken = WriteToken<V>; // message, index, maybe a key
     type AuditShare = AuditShare<V>;
-    type Accumulator = Bytes;
+    type Accumulator = <V as DPF>::Message;
 
     fn num_parties(&self) -> usize {
         self.vdpf.num_keys()
@@ -247,15 +271,11 @@ where
     }
 
     fn new_accumulator(&self) -> Vec<Self::Accumulator> {
-        vec![Bytes::empty(self.message_len()); self.num_channels()]
+        vec![self.vdpf.null_message(); self.num_channels()]
     }
 
-    fn to_accumulator(&self, token: WriteToken<V>) -> Vec<Bytes> {
-        self.vdpf
-            .eval(&token.0)
-            .into_iter()
-            .map(Into::into)
-            .collect()
+    fn to_accumulator(&self, token: WriteToken<V>) -> Vec<Self::Accumulator> {
+        self.vdpf.eval(&token.0)
     }
 }
 
@@ -284,52 +304,109 @@ pub mod tests {
         }
     }
 
-    proptest! {
-        #[test]
-        fn test_null_broadcast_passes_audit(
-            protocol in any::<SecureProtocol<BasicVdpf>>(),
-        ) {
-            let keys = protocol.sample_keys();
-            check_null_broadcast_passes_audit(protocol, keys);
-        }
+    mod two_key {
+        use super::*;
 
-        #[test]
-        fn test_broadcast_passes_audit(
-            (protocol, msg) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_messages),
-            idx in any::<prop::sample::Index>(),
-        ) {
-            let keys = protocol.sample_keys();
-            let idx = idx.index(keys.len());
-            check_broadcast_passes_audit(protocol, msg, keys, idx);
-        }
+        proptest! {
+            #[test]
+            fn test_null_broadcast_passes_audit(
+                protocol in any::<SecureProtocol<BasicVdpf>>(),
+            ) {
+                let keys = protocol.sample_keys();
+                check_null_broadcast_passes_audit(protocol, keys);
+            }
 
-        #[test]
-        fn test_broadcast_bad_key_fails_audit(
-            (protocol, msg) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_messages),
-            idx in any::<prop::sample::Index>(),
-        ) {
-            prop_assume!(msg != Bytes::empty(msg.len()), "Broadcasting null message okay!");
-            let keys = protocol.sample_keys();
-            let bad_key = ChannelKey::new(idx.index(keys.len()), protocol.vdpf.new_access_key());
-            prop_assume!(!keys.contains(&bad_key));
-            check_broadcast_bad_key_fails_audit(protocol, msg, keys, bad_key);
-        }
+            #[test]
+            fn test_broadcast_passes_audit(
+                (protocol, msg) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_messages),
+                idx in any::<prop::sample::Index>(),
+            ) {
+                let keys = protocol.sample_keys();
+                let idx = idx.index(keys.len());
+                check_broadcast_passes_audit(protocol, msg, keys, idx);
+            }
 
-        #[test]
-        fn test_null_broadcast_messages_unchanged(
-            (protocol, accumulator) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_accumulators)
-        ) {
-            check_null_broadcast_messages_unchanged(protocol, accumulator);
-        }
+            #[test]
+            fn test_broadcast_bad_key_fails_audit(
+                (protocol, msg) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_messages),
+                idx in any::<prop::sample::Index>(),
+            ) {
+                prop_assume!(msg != Bytes::empty(msg.len()), "Broadcasting null message okay!");
+                let keys = protocol.sample_keys();
+                let bad_key = ChannelKey::new(idx.index(keys.len()), protocol.vdpf.new_access_key());
+                prop_assume!(!keys.contains(&bad_key));
+                check_broadcast_bad_key_fails_audit(protocol, msg, keys, bad_key);
+            }
 
-        #[test]
-        fn test_broadcast_recovers_message(
-            (protocol, msg) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_messages),
-            idx in any::<prop::sample::Index>(),
-        ) {
-            let keys = protocol.sample_keys();
-            let idx = idx.index(keys.len());
-            check_broadcast_recovers_message(protocol, msg, keys, idx);
+            #[test]
+            fn test_null_broadcast_messages_unchanged(
+                (protocol, accumulator) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_accumulators)
+            ) {
+                check_null_broadcast_messages_unchanged(protocol, accumulator);
+            }
+
+            #[test]
+            fn test_broadcast_recovers_message(
+                (protocol, msg) in any::<SecureProtocol<BasicVdpf>>().prop_flat_map(and_messages),
+                idx in any::<prop::sample::Index>(),
+            ) {
+                let keys = protocol.sample_keys();
+                let idx = idx.index(keys.len());
+                check_broadcast_recovers_message(protocol, msg, keys, idx);
+            }
+        }
+    }
+
+    mod multi_key {
+        use super::*;
+
+        proptest! {
+            #[test]
+            fn test_null_broadcast_passes_audit(
+                protocol in any::<SecureProtocol<MultiKeyVdpf>>(),
+            ) {
+                let keys = protocol.sample_keys();
+                check_null_broadcast_passes_audit(protocol, keys);
+            }
+
+            #[test]
+            fn test_broadcast_passes_audit(
+                (protocol, msg) in any::<SecureProtocol<MultiKeyVdpf>>().prop_flat_map(and_messages),
+                idx in any::<prop::sample::Index>(),
+            ) {
+                let keys = protocol.sample_keys();
+                let idx = idx.index(keys.len());
+                check_broadcast_passes_audit(protocol, msg, keys, idx);
+            }
+
+            #[test]
+            fn test_broadcast_bad_key_fails_audit(
+                (protocol, msg) in any::<SecureProtocol<MultiKeyVdpf>>().prop_flat_map(and_messages),
+                idx in any::<prop::sample::Index>(),
+            ) {
+                prop_assume!(msg != Bytes::empty(msg.len()), "Broadcasting null message okay!");
+                let keys = protocol.sample_keys();
+                let bad_key = ChannelKey::new(idx.index(keys.len()), protocol.vdpf.new_access_key());
+                prop_assume!(!keys.contains(&bad_key));
+                check_broadcast_bad_key_fails_audit(protocol, msg, keys, bad_key);
+            }
+
+            #[test]
+            fn test_null_broadcast_messages_unchanged(
+                (protocol, accumulator) in any::<SecureProtocol<MultiKeyVdpf>>().prop_flat_map(and_accumulators)
+            ) {
+                check_null_broadcast_messages_unchanged(protocol, accumulator);
+            }
+
+            #[test]
+            fn test_broadcast_recovers_message(
+                (protocol, msg) in any::<SecureProtocol<MultiKeyVdpf>>().prop_flat_map(and_messages),
+                idx in any::<prop::sample::Index>(),
+            ) {
+                let keys = protocol.sample_keys();
+                let idx = idx.index(keys.len());
+                check_broadcast_recovers_message(protocol, msg, keys, idx);
+            }
         }
     }
 

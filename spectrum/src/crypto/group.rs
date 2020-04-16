@@ -1,10 +1,13 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
 use crate::crypto::prg::{aes::AESSeed, aes::AESPRG, PRG};
-use core::cmp::Ordering;
+
 use jubjub::Fr as ECFieldElement; // elliptic curve field
 use rand::prelude::*;
 use rug::{integer::Order, Integer};
+
+use std::cmp::Ordering;
+use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -25,10 +28,9 @@ const JUBJUB_MODULUS: [u64; 4] = [
 // size of group elements in jubjbu
 const JUBJUB_MODULUS_BYTES: usize = 32;
 
-// max number of bytes that can be cast to a jubjub group element
-const JUBJUB_MAX_CONVERT_BYTES: usize = 64;
-
 /// mathematical group object
+// there's a lot of mess around conversion to/from bytes
+// probably insecure..look into using e.g. curve25519
 #[derive(Default, Clone, Eq, PartialEq, Debug)]
 pub struct Group(ECFieldElement); // generator for the multiplicative group
 
@@ -55,35 +57,31 @@ impl Group {
         GroupElement(ECFieldElement::from_bytes(&digits).unwrap())
     }
 
-    /// new element from little endian bytes
-    pub fn element_from_bytes(bytes: Bytes) -> GroupElement {
-        let mut bytes_arr: [u8; JUBJUB_MAX_CONVERT_BYTES] = [0; JUBJUB_MAX_CONVERT_BYTES];
-        bytes_arr.copy_from_slice(bytes.as_ref());
-        GroupElement(ECFieldElement::from_bytes_wide(&bytes_arr))
-    }
-
     /// generates a new random group element
     pub fn rand_element() -> GroupElement {
         // generate enough random bytes to create a random element in the group
-        let mut bytes = vec![0; JUBJUB_MAX_CONVERT_BYTES];
+        let mut bytes = vec![0; JUBJUB_MODULUS_BYTES - 1];
         thread_rng().fill_bytes(&mut bytes);
-        Self::element_from_bytes(bytes.into())
+        GroupElement::try_from(Bytes::from(bytes))
+            .expect("chunk size chosen s.t. always valid element")
     }
 
     /// generates a set of field elements in the elliptic curve field
     /// which are generators for the group (given that the group is of prime order)
     /// takes as input a random seed which deterministically generates [num] field elements
     pub fn generators(num: usize, seed: &AESSeed) -> Vec<GroupElement> {
-        let prg = AESPRG::new(16, JUBJUB_MAX_CONVERT_BYTES * num);
+        let prg = AESPRG::new(16, (JUBJUB_MODULUS_BYTES - 1) * num);
         let rand_bytes: Vec<u8> = prg.eval(seed).into();
 
         //TODO: maybe use itertools::Itertools chunks?
         (0..num)
             .map(|i| {
-                let chunk = rand_bytes
-                    [i * JUBJUB_MAX_CONVERT_BYTES..(i + 1) * JUBJUB_MAX_CONVERT_BYTES]
+                let mut chunk = rand_bytes
+                    [i * (JUBJUB_MODULUS_BYTES - 1)..(i + 1) * (JUBJUB_MODULUS_BYTES - 1)]
                     .to_vec();
-                Group::element_from_bytes(Bytes::from(chunk))
+                chunk.push(0);
+                GroupElement::try_from(Bytes::from(chunk))
+                    .expect("chunk size chosen s.t. always valid element")
             })
             .collect()
     }
@@ -108,6 +106,22 @@ impl GroupElement {
 impl Into<Bytes> for GroupElement {
     fn into(self) -> Bytes {
         Bytes::from(self.0.to_bytes().to_vec())
+    }
+}
+
+impl TryFrom<Bytes> for GroupElement {
+    type Error = &'static str;
+
+    fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
+        assert_eq!(bytes.len(), JUBJUB_MODULUS_BYTES, "uh oh");
+        let mut bytes_arr: [u8; JUBJUB_MODULUS_BYTES] = [0; JUBJUB_MODULUS_BYTES];
+        bytes_arr.copy_from_slice(bytes.as_ref());
+        let result = ECFieldElement::from_bytes(&bytes_arr);
+        if result.is_some().into() {
+            Ok(GroupElement(result.unwrap()))
+        } else {
+            Err("convering to bytes failed")
+        }
     }
 }
 
@@ -167,8 +181,10 @@ impl PartialEq for GroupElement {
 mod tests {
     use super::*;
     use crate::bytes::Bytes;
+
     use proptest::prelude::*;
     use rug::integer::IsPrime;
+
     use std::ops::Range;
 
     const NUM_GROUP_GENERATORS: Range<usize> = 1..500;
@@ -176,7 +192,7 @@ mod tests {
     // need to generate 512-bit integers to ensure all operations
     // "wrap around" the group order during testing
     fn integer_512_bits() -> impl Strategy<Value = Integer> {
-        any_with::<Bytes>(JUBJUB_MAX_CONVERT_BYTES.into())
+        any_with::<Bytes>(JUBJUB_MODULUS_BYTES.into())
             .prop_map(|bytes| Integer::from_digits(&bytes.as_ref(), BYTE_ORDER))
     }
 
@@ -194,6 +210,14 @@ mod tests {
     #[test]
     fn group_is_of_prime_order() {
         assert_ne!(Group::order().is_probably_prime(15), IsPrime::No)
+    }
+
+    fn valid_group_bytes() -> impl Strategy<Value = Bytes> {
+        any_with::<Bytes>(32.into()).prop_map(|data| {
+            let mut data: Vec<u8> = data.into();
+            data[31] &= 0x0d;
+            data.into()
+        })
     }
 
     proptest! {
@@ -246,6 +270,19 @@ mod tests {
         ) {
             prop_assume!(seed1 != seed2, "Different generators only for different seeds");
             assert_ne!(Group::generators(num, &seed1), Group::generators(num, &seed2));
+        }
+
+        #[test]
+        fn test_element_bytes_roundtrip(x: GroupElement) {
+            prop_assert_eq!(Ok(x.clone()), GroupElement::try_from(Into::<Bytes>::into(x)));
+        }
+
+        #[test]
+        fn test_bytes_element_roundtrip(before in valid_group_bytes()) {
+            prop_assert_eq!(
+                before.clone(),
+                GroupElement::try_from(before).unwrap().into()
+            );
         }
     }
 }

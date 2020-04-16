@@ -443,7 +443,7 @@ pub mod multi_key {
         use crate::crypto::prg::{group::ElementVector, group::GroupPRG, PRG};
         use proptest::prelude::*;
 
-        const MAX_NUM_POINTS: usize = 100;
+        const MAX_NUM_POINTS: usize = 10;
         const MAX_NUM_KEYS: usize = 10;
 
         impl<P: Arbitrary + 'static> Arbitrary for Construction<P> {
@@ -488,7 +488,7 @@ pub mod multi_key {
         {
             any::<D>().prop_flat_map(|dpf| {
                 (
-                    any_with::<ElementVector>(dpf.null_message().0.len()),
+                    any_with::<ElementVector>(dpf.null_message().0.len().into()),
                     Just(dpf),
                 )
             })
