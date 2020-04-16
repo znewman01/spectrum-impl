@@ -32,7 +32,7 @@ where
     P: Protocol,
     P::ChannelKey: TryFrom<ChannelKeyWrapper>,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
-    P::WriteToken: Into<proto::WriteToken>,
+    P::WriteToken: Into<proto::WriteToken> + fmt::Debug,
 {
     info!("Client starting");
     let start_time = wait_for_start_time_set(&config).await?;

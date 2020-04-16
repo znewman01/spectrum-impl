@@ -16,7 +16,7 @@ async fn test_pass() {
     )
     .unwrap();
 
-    let protocol = ProtocolWrapper::new(Some(40), 2, 3, 1024);
+    let protocol = ProtocolWrapper::new(Some(40), false, 2, 3, 1024);
     let experiment = Experiment::new(protocol, 2, 6);
 
     let config = config::from_string("").await.unwrap();

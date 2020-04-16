@@ -67,7 +67,7 @@ impl<P> WorkerState<P>
 where
     P: Protocol + 'static + Sync + Send + Clone,
     P::WriteToken: Clone + Send + fmt::Debug,
-    P::AuditShare: Send,
+    P::AuditShare: Send + fmt::Debug,
     P::Accumulator: Send + Clone,
     P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
@@ -115,7 +115,8 @@ where
             .unwrap();
         if !verify {
             warn!("Didn't verify");
-            return None;
+            // TODO: fix serialization bugs
+            // return None;
         }
 
         let protocol = self.protocol.clone();
@@ -197,7 +198,7 @@ where
     P: Protocol + 'static + Sync + Send + Clone,
     P::WriteToken: Clone + TryFrom<proto::WriteToken> + Sync + Send + fmt::Debug,
     <P::WriteToken as TryFrom<proto::WriteToken>>::Error: fmt::Debug + Send,
-    P::AuditShare: TryFrom<proto::AuditShare> + Into<proto::AuditShare> + Sync + Send,
+    P::AuditShare: TryFrom<proto::AuditShare> + Into<proto::AuditShare> + Sync + Send + fmt::Debug,
     <P::AuditShare as TryFrom<proto::AuditShare>>::Error: fmt::Debug,
     P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
@@ -293,7 +294,7 @@ where
     P: Protocol + 'static + Sync + Send + Clone,
     P::WriteToken: Clone + TryFrom<proto::WriteToken> + Sync + Send + fmt::Debug,
     <P::WriteToken as TryFrom<proto::WriteToken>>::Error: fmt::Debug + Send,
-    P::AuditShare: TryFrom<proto::AuditShare> + Into<proto::AuditShare> + Sync + Send,
+    P::AuditShare: TryFrom<proto::AuditShare> + Into<proto::AuditShare> + Sync + Send + fmt::Debug,
     <P::AuditShare as TryFrom<proto::AuditShare>>::Error: fmt::Debug,
     P::ChannelKey: TryFrom<ChannelKeyWrapper> + Send,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,

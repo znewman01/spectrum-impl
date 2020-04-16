@@ -80,6 +80,7 @@ impl From<InputRecord> for Experiment {
     fn from(record: InputRecord) -> Experiment {
         let protocol = ProtocolWrapper::new(
             record.security_bits,
+            false, // TODO: allow multi key experiments
             record.groups,
             record.channels,
             record.msg_size,

@@ -87,11 +87,28 @@ impl From<secure::SecureProtocol<MultiKeyVdpf>> for ProtocolWrapper {
 }
 
 impl ProtocolWrapper {
-    pub fn new(security: Option<u32>, groups: usize, channels: usize, msg_size: usize) -> Self {
-        match security {
-            Some(security_bits) => {
-                assert_eq!(groups, 2);
-                secure::SecureProtocol::with_aes_prg_dpf(security_bits, channels, msg_size).into()
+    pub fn new(
+        security_bytes: Option<u32>,
+        multi_key: bool,
+        groups: usize,
+        channels: usize,
+        msg_size: usize,
+    ) -> Self {
+        match security_bytes {
+            Some(security_bytes) => {
+                if multi_key {
+                    secure::SecureProtocol::with_group_prg_dpf(
+                        security_bytes,
+                        channels,
+                        groups,
+                        msg_size,
+                    )
+                    .into()
+                } else {
+                    assert_eq!(groups, 2);
+                    secure::SecureProtocol::with_aes_prg_dpf(security_bytes, channels, msg_size)
+                        .into()
+                }
             }
             None => insecure::InsecureProtocol::new(groups, channels, msg_size).into(),
         }

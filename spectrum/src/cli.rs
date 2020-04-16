@@ -100,6 +100,12 @@ pub struct ExperimentArgs {
     #[clap(long, default_value = "3")]
     channels: usize,
 
+    /// Number of groups to simulate.
+    ///
+    /// Must be exactly 2 for the default protocol.
+    #[clap(long, default_value = "2")]
+    groups: usize,
+
     /// Size (in bytes) of each message.
     #[clap(long = "message-size", default_value = "1024")]
     msg_size: usize,
@@ -108,10 +114,15 @@ pub struct ExperimentArgs {
     // https://github.com/TeXitoi/structopt/issues/104
     /// Size (in bytes) to use for the secure protocol.
     ///
-    /// At most one of {--security, --no-security} may be set.
-    /// [default: 40]
+    /// At most one of {--security, --no-security, --security-multi-key} may be set.
+    /// [default: 16]
     #[clap(long = "security", group = "security")]
     security_bytes: Option<u32>,
+
+    /// Size (in bytes) to use for the secure protocol.
+    #[clap(long = "security-multi-key", group = "security")]
+    security_multi_key_bytes: Option<u32>,
+
     /// Run the insecure protocol.
     ///
     /// At most one of {--security, --no-security} may be set.
@@ -122,17 +133,24 @@ pub struct ExperimentArgs {
 impl ExperimentArgs {
     fn security_bytes(&self) -> Option<u32> {
         if self.no_security {
-            None
+            return None;
+        } else if let Some(bytes) = self.security_multi_key_bytes {
+            Some(bytes)
         } else {
-            self.security_bytes.or(Some(40))
+            self.security_bytes.or(Some(16))
         }
     }
 }
 
 impl From<ExperimentArgs> for ProtocolWrapper {
     fn from(args: ExperimentArgs) -> Self {
-        let groups = 2; // hard-coded for now
-        ProtocolWrapper::new(args.security_bytes(), groups, args.channels, args.msg_size)
+        ProtocolWrapper::new(
+            args.security_bytes(),
+            args.security_multi_key_bytes.is_some(),
+            args.groups,
+            args.channels,
+            args.msg_size,
+        )
     }
 }
 

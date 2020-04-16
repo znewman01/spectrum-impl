@@ -47,7 +47,8 @@ where
     D: de::Deserializer<'de>,
 {
     use std::convert::TryInto;
-    let bytes: &[u8] = de::Deserialize::deserialize(deserializer)?;
+    let bytes: Vec<u8> = de::Deserialize::deserialize(deserializer)?;
+    let bytes: &[u8] = bytes.as_ref();
     let bytes: &[u8; 32] = bytes.try_into().unwrap();
     Ok(ECFieldElement::from_bytes(bytes).unwrap())
 }
@@ -306,6 +307,15 @@ mod tests {
             prop_assert_eq!(
                 before.clone(),
                 GroupElement::try_from(before).unwrap().into()
+            );
+        }
+
+        #[test]
+        fn test_element_serialize_roundtrip(x: GroupElement) {
+            let json_string = serde_json::to_string(&x).unwrap();
+            assert_eq!(
+                serde_json::from_str::<GroupElement>(&json_string).unwrap(),
+                x
             );
         }
     }
