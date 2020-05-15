@@ -249,7 +249,7 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .instance_type(machine_type)
                 .setup(move |ssh, log| {
                     install_spectrum(log, ssh, &s3_binary, workers_per_machine)?;
-                    ssh.cmd("sudo tc qdisc add dev ens5 root netem delay 20ms")?;
+                    // ssh.cmd("sudo tc qdisc add dev ens5 root netem delay 20ms")?;
                     Ok(())
                 }),
         )?;
@@ -269,7 +269,7 @@ pub fn setup<H: std::hash::BuildHasher>(
                 .instance_type(machine_type)
                 .setup(move |ssh, log| {
                     install_spectrum(log, ssh, &s3_binary, workers_per_machine)?;
-                    ssh.cmd("sudo tc qdisc add dev ens5 root netem delay 100ms")?;
+                    // ssh.cmd("sudo tc qdisc add dev ens5 root netem delay 100ms")?;
                     Ok(())
                 }),
         )?;
