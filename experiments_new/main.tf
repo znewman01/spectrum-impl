@@ -6,6 +6,10 @@ variable "region" {
   type = string
 }
 
+variable "instance_type" {
+  type = string
+}
+
 provider "aws" {
   profile = "default"
   region  = var.region
@@ -40,7 +44,7 @@ resource "aws_security_group" "allow_ssh" {
 
 resource "aws_instance" "example" {
   ami             = var.ami
-  instance_type   = "t2.micro"
+  instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
 }

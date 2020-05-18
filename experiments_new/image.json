@@ -2,19 +2,23 @@
   "variables": {
     "aws_access_key": "{{env `AWS_ACCESS_KEY_ID`}}",
     "aws_secret_key": "{{env `AWS_SECRET_ACCESS_KEY`}}",
-    "region": "us-east-1"
+    "region": "us-east-2",
+    "instance_type": "m4.large",
+    "src_archive": "",
+    "profile": "debug"
   },
+
   "builders": [
     {
       "access_key": "{{user `aws_access_key`}}",
-      "ami_name": "packer-linux-aws-demo-{{timestamp}}",
-      "instance_type": "t2.micro",
+      "ami_name": "zjn-spectrum-{{timestamp}}",
+      "instance_type": "{{user `instance_type`}}",
       "region": "{{user `region`}}",
       "secret_key": "{{user `aws_secret_key`}}",
       "source_ami_filter": {
         "filters": {
           "virtualization-type": "hvm",
-          "name": "ubuntu/images/*ubuntu-xenial-16.04-amd64-server-*",
+          "name": "ubuntu/images/*ubuntu-bionic-18.04-amd64-server-*",
           "root-device-type": "ebs"
         },
         "owners": ["099720109477"],
@@ -24,6 +28,7 @@
       "type": "amazon-ebs"
     }
   ],
+
   "provisioners": [
     {
       "type": "shell",
@@ -32,23 +37,35 @@
       ]
     },
     {
+      "type": "shell",
+      "script": "./install.sh"
+    },
+    {
       "type": "file",
-      "source": "./welcome.txt",
-      "destination": "/home/ubuntu/"
+      "source": "{{user `src_archive`}}",
+      "destination": "/home/ubuntu/spectrum-src.tar.gz"
     },
     {
       "type": "shell",
-      "inline": ["ls -al /home/ubuntu", "cat /home/ubuntu/welcome.txt"]
-    },
-    {
-      "type": "shell",
-      "script": "./example.sh"
+      "script": "./compile.sh",
+      "environment_vars": [
+        "AWS_ACCESS_KEY_ID={{user `aws_access_key`}}",
+        "AWS_SECRET_ACCESS_KEY={{user `aws_secret_key`}}",
+        "SRC_SHA={{user `sha`}}",
+        "INSTANCE_TYPE={{user `instance_type`}}",
+        "PROFILE={{user `profile`}}"
+      ]
     }
   ],
+
   "post-processors": [
     {
       "type": "manifest",
-      "output": "manifest.json"
+      "output": "manifest.json",
+      "custom_data": {
+        "instance_type": "{{user `instance_type`}}",
+        "sha": "{{user `sha`}}"
+      }
     }
   ]
 }
