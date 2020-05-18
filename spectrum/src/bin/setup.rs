@@ -15,11 +15,14 @@ use std::fs::File;
 struct Args {
     #[clap(flatten)]
     experiment: cli::ExperimentArgs,
+    #[clap(flatten)]
+    logs: cli::LogArgs,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let args = Args::parse();
+    args.logs.init();
 
     let experiment = Experiment::from(args.experiment);
     let config = config::from_env().await?;
