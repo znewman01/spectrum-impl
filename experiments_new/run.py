@@ -13,6 +13,8 @@ from pathlib import Path
 
 import asyncssh
 
+from tqdm import tqdm
+
 
 @dataclass
 class Machine:
@@ -181,7 +183,7 @@ async def _execute_experiment(publisher, etcd_env):
 async def run_experiment(publisher, workers, clients):
     # TODO: progress bars using tqdm
     # https://stackoverflow.com/questions/37901292/asyncio-aiohttp-progress-bar-with-tqdm
-    print("Starting etcd...")
+    tqdm.write("Starting etcd...")
     await publisher.ssh.run(
         "envsubst '$HOSTNAME' "
         '    < "$HOME/config/etcd.template" '
@@ -191,10 +193,10 @@ async def run_experiment(publisher, workers, clients):
     await publisher.ssh.run("sudo systemctl start etcd")
     etcd_url = f"etcd://{publisher.hostname}:2379"
     etcd_env = {"SPECTRUM_CONFIG_SERVER": etcd_url}
-    print("etcd started.")
+    tqdm.write("etcd started.")
 
     try:
-        print("Setting up experiment...")
+        tqdm.write("Setting up experiment...")
         # can't use ssh.run(env=...) because the SSH server doesn't like it.
         await publisher.ssh.run(
             f"SPECTRUM_CONFIG_SERVER={etcd_url} "
@@ -206,9 +208,9 @@ async def run_experiment(publisher, workers, clients):
             "    --groups 2"
             "    --message-size 1024"
         )
-        print("Experiment set up.")
+        tqdm.write("Experiment set up.")
 
-        print("Preparing workers...")
+        tqdm.write("Preparing workers...")
         # TODO: fix for multiple machines per group etc.
         await asyncio.gather(
             *[
@@ -216,18 +218,18 @@ async def run_experiment(publisher, workers, clients):
                 for idx, worker in enumerate(workers)
             ]
         )
-        print("Workers prepared.")
+        tqdm.write("Workers prepared.")
 
-        print("Preparing clients...")
+        tqdm.write("Preparing clients...")
         await asyncio.gather(*[_prepare_client(client, etcd_env) for client in clients])
-        print("Clients prepared.")
+        tqdm.write("Clients prepared.")
 
-        print("Executing experiment...")
+        tqdm.write("Executing experiment...")
         result = await _execute_experiment(publisher, etcd_env)
-        print("Experiment executed.")
+        tqdm.write("Experiment executed.")
         return result
     finally:
-        print("Shutting everything down...")
+        tqdm.write("Shutting everything down...")
         shutdowns = []
         shutdowns.append(
             publisher.ssh.run(
@@ -239,7 +241,7 @@ async def run_experiment(publisher, workers, clients):
             shutdowns.append(worker.ssh.run("sudo systemctl stop 'spectrum-worker@*'"))
         shutdowns.append(publisher.ssh.run("sudo systemctl stop spectrum-publisher"))
         await asyncio.gather(*shutdowns)
-        print("Everything shut down.")
+        tqdm.write("Everything shut down.")
 
 
 async def main(args):
@@ -251,8 +253,10 @@ async def main(args):
         workers = machines.pop("workers")
         clients = machines.pop("clients")
 
-        for _ in range(5):
-            print("RESULT: " + str(await run_experiment(publisher, workers, clients)))
+        for _ in tqdm(range(5)):
+            tqdm.write(
+                "RESULT: " + str(await run_experiment(publisher, workers, clients))
+            )
 
 
 if __name__ == "__main__":
