@@ -25,12 +25,21 @@ resource "aws_key_pair" "key" {
 }
 
 resource "aws_security_group" "allow_ssh" {
+
   ingress {
     description = "SSH from internet"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "All traffic within group"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    self        = true
   }
 
   egress {
@@ -74,7 +83,7 @@ output "workers" {
 }
 
 output "clients" {
-  value = "${aws_instance.worker.*.public_dns}"
+  value = "${aws_instance.client.*.public_dns}"
 }
 
 output "private_key" {

@@ -26,7 +26,7 @@ sudo cp "$HOME/config/sysctl.conf" /etc/sysctl.d/20-spectrum.conf
 
 # Nginx pass-throughs
 # This will probably not work when we want to run on multiple servers
-externals=(6000 5001 5100 5101 5102 5103)
+externals=(5000 5001 5100 5101 5102 5103)
 internals=(6000 6001 6100 6101 6102 6103)
 for (( i=0; i<${#internals[*]}; ++i)); do
     export internal=${internals[$i]}
