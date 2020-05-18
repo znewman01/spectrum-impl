@@ -1,15 +1,23 @@
 import asyncio
+import contextlib
 import json
 import operator
 import sys
 
 from contextlib import contextmanager, asynccontextmanager
+from dataclasses import dataclass
 from functools import reduce
 from subprocess import check_call, check_output
 from tempfile import TemporaryDirectory
 from pathlib import Path
 
 import asyncssh
+
+
+@dataclass
+class Machine:
+    ssh: asyncssh.SSHClientConnection
+    hostname: str
 
 
 def _format_var_args(var_dict):
@@ -21,7 +29,8 @@ def terraform(tf_vars, cleanup=False):
     tf_vars = _format_var_args(tf_vars)
     check_call(["terraform", "apply", "-auto-approve"] + tf_vars)
 
-    yield
+    data = json.loads(check_output(["terraform", "output", "-json"]))
+    yield {k: v["value"] for k, v in data.items()}
 
     if cleanup:
         check_call(["terraform", "destroy", "-auto-approve"] + tf_vars)
@@ -77,24 +86,60 @@ async def infra(force_rebuild=False, cleanup=False):
     instance_type = build["custom_data"]["instance_type"]
 
     tf_vars = {"ami": ami, "region": region, "instance_type": instance_type}
-    with terraform(tf_vars, cleanup=cleanup):
-        hostname = (
-            check_output(["terraform", "output", "hostname"]).decode("ascii").strip()
+    with terraform(tf_vars, cleanup=cleanup) as data:
+        publisher = data["publisher"]
+        workers = data["workers"]
+        clients = data["clients"]
+        ssh_key = asyncssh.import_private_key(data["private_key"])
+
+        conns = []
+        conns.append(
+            asyncssh.connect(
+                publisher, known_hosts=None, client_keys=[ssh_key], username="ubuntu"
+            )
         )
-        ssh_key = asyncssh.import_private_key(
-            check_output(["terraform", "output", "private_key"]).decode("ascii")
-        )
-        yield await asyncssh.connect(
-            hostname, known_hosts=None, client_keys=[ssh_key], username="ubuntu"
-        )
+        for worker in workers:
+            conn = asyncssh.connect(
+                worker, known_hosts=None, client_keys=[ssh_key], username="ubuntu"
+            )
+            conns.append(conn)
+        for client in clients:
+            conn = asyncssh.connect(
+                client, known_hosts=None, client_keys=[ssh_key], username="ubuntu"
+            )
+            conns.append(conn)
+
+        async with contextlib.AsyncExitStack() as stack:
+            conns = [
+                await stack.enter_async_context(ctx)
+                for ctx in await asyncio.gather(*conns)
+            ]
+            publisher_machine = Machine(ssh=conns.pop(0), hostname=publisher)
+            worker_machines = []
+            for worker in workers:
+                worker_machines.append(Machine(ssh=conns.pop(0), hostname=worker))
+            client_machines = []
+            for client in clients:
+                client_machines.append(Machine(ssh=conns.pop(0), hostname=client))
+
+            yield {
+                "publisher": publisher_machine,
+                "workers": worker_machines,
+                "clients": client_machines,
+            }
 
 
 async def main(args):
     force_rebuild = "--force-rebuild" in args
     cleanup = "--cleanup" in args
 
-    async with infra(force_rebuild, cleanup) as ssh:
-        print(await ssh.run("whoami"))
+    async with infra(force_rebuild, cleanup) as machines:
+        publisher = machines.pop("publisher")
+        workers = machines.pop("workers")
+        clients = machines.pop("clients")
+
+        actual_hostname = await publisher.ssh.run("hostname")
+        print(f"{publisher.hostname}: {actual_hostname}")
 
 
 if __name__ == "__main__":

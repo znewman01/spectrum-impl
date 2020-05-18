@@ -42,15 +42,39 @@ resource "aws_security_group" "allow_ssh" {
   }
 }
 
-resource "aws_instance" "example" {
+resource "aws_instance" "publisher" {
   ami             = var.ami
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
 }
 
-output "hostname" {
-  value = aws_instance.example.public_dns
+resource "aws_instance" "worker" {
+  ami             = var.ami
+  count           = 2
+  instance_type   = var.instance_type
+  key_name        = aws_key_pair.key.key_name
+  security_groups = [aws_security_group.allow_ssh.name]
+}
+
+resource "aws_instance" "client" {
+  ami             = var.ami
+  count           = 1
+  instance_type   = var.instance_type
+  key_name        = aws_key_pair.key.key_name
+  security_groups = [aws_security_group.allow_ssh.name]
+}
+
+output "publisher" {
+  value = aws_instance.publisher.public_dns
+}
+
+output "workers" {
+  value = "${aws_instance.worker.*.public_dns}"
+}
+
+output "clients" {
+  value = "${aws_instance.worker.*.public_dns}"
 }
 
 output "private_key" {
