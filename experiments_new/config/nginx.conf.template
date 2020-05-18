@@ -1,0 +1,8 @@
+server {
+    listen ${external} http2;
+
+    location / {
+        client_max_body_size 0;  # yolo
+        grpc_pass grpc://localhost:${internal};
+    }
+}

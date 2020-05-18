@@ -3,7 +3,7 @@
     "aws_access_key": "{{env `AWS_ACCESS_KEY_ID`}}",
     "aws_secret_key": "{{env `AWS_SECRET_ACCESS_KEY`}}",
     "region": "us-east-2",
-    "instance_type": "m4.large",
+    "instance_type": "c5.9xlarge",
     "src_archive": "",
     "profile": "debug"
   },
@@ -35,6 +35,11 @@
       "inline": [
         "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do echo 'Waiting for cloud-init...'; sleep 1; done"
       ]
+    },
+    {
+      "type": "file",
+      "source": "config",
+      "destination": "/home/ubuntu"
     },
     {
       "type": "shell",

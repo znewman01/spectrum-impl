@@ -1,0 +1,15 @@
+[Unit]
+Description=Spectrum ${service}
+
+[Service]
+ExecStart=/bin/bash -c "${binary} --local-port ${internal} --public-port $(hostname):${external} ${extraflag} --log-level trace"
+Type=simple
+Restart=no
+EnvironmentFile=/etc/spectrum.conf
+Environment="RUST_BACKTRACE=1"
+LimitNOFILE=64000
+LimitFSIZE=infinity
+LimitCPU=infinity
+LimitAS=infinity
+LimitMEMLOCK=infinity
+LimitNPROC=64000
