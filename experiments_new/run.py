@@ -8,7 +8,7 @@ from contextlib import contextmanager, asynccontextmanager
 from dataclasses import dataclass
 from functools import reduce
 from subprocess import check_call, check_output
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, NamedTemporaryFile
 from pathlib import Path
 
 import asyncssh
@@ -110,6 +110,7 @@ async def infra(force_rebuild=False, cleanup=False):
             conns.append(conn)
 
         async with contextlib.AsyncExitStack() as stack:
+            # TODO: this doesn't always work
             conns = [
                 await stack.enter_async_context(ctx)
                 for ctx in await asyncio.gather(*conns)
@@ -129,6 +130,118 @@ async def infra(force_rebuild=False, cleanup=False):
             }
 
 
+async def _install_spectrum_conf(machine, spectrum_conf):
+    spectrum_conf = "\n".join([f"{k}={v}" for k, v in spectrum_conf.items()])
+    with NamedTemporaryFile() as tmp:
+        tmp.write(spectrum_conf.encode("utf8"))
+        tmp.flush()
+        await asyncssh.scp(tmp.name, (machine.ssh, "/tmp/spectrum.conf"))
+    await machine.ssh.run("sudo install -m 644 /tmp/spectrum.conf /etc/spectrum.conf")
+
+
+async def _prepare_worker(machine, group, etcd_env):
+    # TODO: WORKER_START_INDEX for multiple machines per group
+    spectrum_conf = {
+        "SPECTRUM_WORKER_GROUP": group,
+        "SPECTRUM_LEADER_GROUP": group,
+        "SPECTRUM_WORKER_START_INDEX": 0,
+        **etcd_env,
+    }
+    await _install_spectrum_conf(machine, spectrum_conf)
+
+    await machine.ssh.run("sudo systemctl start spectrum-worker@1")
+    await machine.ssh.run("sudo systemctl start spectrum-leader")
+
+
+async def _prepare_client(machine, etcd_env):
+    await _install_spectrum_conf(machine, etcd_env)
+
+    # TODO: fix client ranges
+    await machine.ssh.run("sudo systemctl start viewer@{1..100}")
+
+
+async def _execute_experiment(publisher, etcd_env):
+    await _install_spectrum_conf(publisher, etcd_env)
+    await publisher.ssh.run("sudo systemctl start spectrum-publisher --wait")
+
+    result = await publisher.ssh.run(
+        "journalctl --unit spectrum-publisher "
+        "    | grep -o 'Elapsed time: .*' "
+        "    | sed 's/Elapsed time: \\(.*\\)ms/\\1/'"
+    )
+    result = int(result.stdout.strip())
+
+    # don't let this same output confuse us if we run on this machine again
+    await publisher.ssh.run("sudo journalctl --rotate")
+    await publisher.ssh.run("sudo journalctl --vacuum-time=1s")
+
+    return result
+
+
+async def run_experiment(publisher, workers, clients):
+    # TODO: progress bars using tqdm
+    # https://stackoverflow.com/questions/37901292/asyncio-aiohttp-progress-bar-with-tqdm
+    print("Starting etcd...")
+    await publisher.ssh.run(
+        "envsubst '$HOSTNAME' "
+        '    < "$HOME/config/etcd.template" '
+        "    | sudo tee /etc/default/etcd "
+        "    > /dev/null"
+    )
+    await publisher.ssh.run("sudo systemctl start etcd")
+    etcd_url = f"etcd://{publisher.hostname}:2379"
+    etcd_env = {"SPECTRUM_CONFIG_SERVER": etcd_url}
+    print("etcd started.")
+
+    try:
+        print("Setting up experiment...")
+        # can't use ssh.run(env=...) because the SSH server doesn't like it.
+        await publisher.ssh.run(
+            f"SPECTRUM_CONFIG_SERVER={etcd_url} "
+            "/home/ubuntu/spectrum/setup"
+            "    --security 16"
+            "    --channels 10"
+            "    --clients 100"
+            "    --group-size 1"
+            "    --groups 2"
+            "    --message-size 1024"
+        )
+        print("Experiment set up.")
+
+        print("Preparing workers...")
+        # TODO: fix for multiple machines per group etc.
+        await asyncio.gather(
+            *[
+                _prepare_worker(worker, idx + 1, etcd_env)
+                for idx, worker in enumerate(workers)
+            ]
+        )
+        print("Workers prepared.")
+
+        print("Preparing clients...")
+        await asyncio.gather(*[_prepare_client(client, etcd_env) for client in clients])
+        print("Clients prepared.")
+
+        print("Executing experiment...")
+        result = await _execute_experiment(publisher, etcd_env)
+        print("Experiment executed.")
+        return result
+    finally:
+        print("Shutting everything down...")
+        shutdowns = []
+        shutdowns.append(
+            publisher.ssh.run(
+                "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''"
+            )
+        )
+        for worker in workers:
+            shutdowns.append(worker.ssh.run("sudo systemctl stop spectrum-leader"))
+            shutdowns.append(worker.ssh.run("sudo systemctl stop 'spectrum-worker@*'"))
+        shutdowns.append(publisher.ssh.run("sudo systemctl stop spectrum-publisher"))
+        await asyncio.gather(*shutdowns)
+        print("Everything shut down.")
+
+
 async def main(args):
     force_rebuild = "--force-rebuild" in args
     cleanup = "--cleanup" in args
@@ -138,10 +251,12 @@ async def main(args):
         workers = machines.pop("workers")
         clients = machines.pop("clients")
 
-        actual_hostname = await publisher.ssh.run("hostname")
-        print(f"{publisher.hostname}: {actual_hostname}")
+        for _ in range(5):
+            print("RESULT: " + str(await run_experiment(publisher, workers, clients)))
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(sys.argv))
+    try:
+        asyncio.run(main(sys.argv))
+    except KeyboardInterrupt:
+        pass
