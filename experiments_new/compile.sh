@@ -15,9 +15,7 @@ ARCHIVE_NAME="spectrum-${SRC_SHA}-${INSTANCE_TYPE}-${PROFILE}"
 S3_OBJECT="s3://${S3_BUCKET}/${ARCHIVE_NAME}"
 
 object_exists=$(aws s3api head-object --bucket $S3_BUCKET --key $ARCHIVE_NAME || true)
-if [[ -z object_exists ]]; then
-    aws s3 cp "$S3_OBJECT" spectrum-bin.tar.gz
-else
+if [[ -z "$object_exists" ]]; then
     tar -xzf spectrum-src.tar.gz
     cd $HOME/spectrum
 
@@ -28,12 +26,18 @@ else
     fi
     $HOME/.cargo/bin/cargo build --bins $RELEASE_FLAG
 
-    cd $HOME/spectrum/target && \
-        tar -czf $HOME/spectrum-bin.tar.gz \
-            --transform "s/${PROFILE}/spectrum/" \
-            "${PROFILE}/{publisher,worker,leader,viewer,broadcaster,setup}"
+    cd $HOME/spectrum/target
+    tar -czf $HOME/spectrum-bin.tar.gz \
+        --transform "s/${PROFILE}/spectrum/" \
+        "${PROFILE}"/{publisher,worker,leader,viewer,broadcaster,setup}
 
-    aws s3 cp spectrum-bin.tar.gz "$S3_OBJECT"
+    cd $HOME
+    rm -rf spectrum/  # save 3GB, at least in debug mode
+
+    aws s3 cp "$HOME/spectrum-bin.tar.gz" "$S3_OBJECT"
+else
+    aws s3 cp "$S3_OBJECT" "$HOME/spectrum-bin.tar.gz"
 fi
 
+cd $HOME
 tar -xzf spectrum-bin.tar.gz
