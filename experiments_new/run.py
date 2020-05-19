@@ -14,6 +14,19 @@ from pathlib import Path
 import asyncssh
 
 from tqdm import tqdm
+from tqdm.contrib import DummyTqdmFile
+from halo import Halo
+
+
+# To use Halo + tqdm together
+@contextmanager
+def std_out_err_redirect_tqdm():
+    old = sys.stdout, sys.stderr
+    try:
+        sys.stdout, sys.stderr = map(DummyTqdmFile, old)
+        yield old[0]
+    finally:
+        sys.stdout, sys.stderr = old
 
 
 @dataclass
@@ -183,65 +196,64 @@ async def _execute_experiment(publisher, etcd_env):
 async def run_experiment(publisher, workers, clients):
     # TODO: progress bars using tqdm
     # https://stackoverflow.com/questions/37901292/asyncio-aiohttp-progress-bar-with-tqdm
-    tqdm.write("Starting etcd...")
-    await publisher.ssh.run(
-        "envsubst '$HOSTNAME' "
-        '    < "$HOME/config/etcd.template" '
-        "    | sudo tee /etc/default/etcd "
-        "    > /dev/null"
-    )
-    await publisher.ssh.run("sudo systemctl start etcd")
+    with Halo(text="Starting etcd"):
+        await publisher.ssh.run(
+            "envsubst '$HOSTNAME' "
+            '    < "$HOME/config/etcd.template" '
+            "    | sudo tee /etc/default/etcd "
+            "    > /dev/null"
+        )
+        await publisher.ssh.run("sudo systemctl start etcd")
     etcd_url = f"etcd://{publisher.hostname}:2379"
     etcd_env = {"SPECTRUM_CONFIG_SERVER": etcd_url}
-    tqdm.write("etcd started.")
 
     try:
-        tqdm.write("Setting up experiment...")
-        # can't use ssh.run(env=...) because the SSH server doesn't like it.
-        await publisher.ssh.run(
-            f"SPECTRUM_CONFIG_SERVER={etcd_url} "
-            "/home/ubuntu/spectrum/setup"
-            "    --security 16"
-            "    --channels 10"
-            "    --clients 100"
-            "    --group-size 1"
-            "    --groups 2"
-            "    --message-size 1024"
-        )
-        tqdm.write("Experiment set up.")
-
-        tqdm.write("Preparing workers...")
-        # TODO: fix for multiple machines per group etc.
-        await asyncio.gather(
-            *[
-                _prepare_worker(worker, idx + 1, etcd_env)
-                for idx, worker in enumerate(workers)
-            ]
-        )
-        tqdm.write("Workers prepared.")
-
-        tqdm.write("Preparing clients...")
-        await asyncio.gather(*[_prepare_client(client, etcd_env) for client in clients])
-        tqdm.write("Clients prepared.")
-
-        tqdm.write("Executing experiment...")
-        result = await _execute_experiment(publisher, etcd_env)
-        tqdm.write("Experiment executed.")
-        return result
-    finally:
-        tqdm.write("Shutting everything down...")
-        shutdowns = []
-        shutdowns.append(
-            publisher.ssh.run(
-                "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''"
+        with Halo(text="Preparing"):
+            # can't use ssh.run(env=...) because the SSH server doesn't like it.
+            await publisher.ssh.run(
+                f"SPECTRUM_CONFIG_SERVER={etcd_url} "
+                "/home/ubuntu/spectrum/setup"
+                "    --security 16"
+                "    --channels 10"
+                "    --clients 100"
+                "    --group-size 1"
+                "    --groups 2"
+                "    --message-size 1024"
             )
-        )
-        for worker in workers:
-            shutdowns.append(worker.ssh.run("sudo systemctl stop spectrum-leader"))
-            shutdowns.append(worker.ssh.run("sudo systemctl stop 'spectrum-worker@*'"))
-        shutdowns.append(publisher.ssh.run("sudo systemctl stop spectrum-publisher"))
-        await asyncio.gather(*shutdowns)
-        tqdm.write("Everything shut down.")
+
+            # TODO: fix for multiple machines per group etc.
+            await asyncio.gather(
+                *[
+                    _prepare_worker(worker, idx + 1, etcd_env)
+                    for idx, worker in enumerate(workers)
+                ]
+            )
+
+            await asyncio.gather(
+                *[_prepare_client(client, etcd_env) for client in clients]
+            )
+
+        with Halo(text="Executing experiment") as spinner:
+            result = await _execute_experiment(publisher, etcd_env)
+            spinner.succeed(f"Experiment time: {result}ms")
+            return result
+    finally:
+        with Halo(text="Shutting everything down"):
+            shutdowns = []
+            shutdowns.append(
+                publisher.ssh.run(
+                    "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''"
+                )
+            )
+            for worker in workers:
+                shutdowns.append(worker.ssh.run("sudo systemctl stop spectrum-leader"))
+                shutdowns.append(
+                    worker.ssh.run("sudo systemctl stop 'spectrum-worker@*'")
+                )
+            shutdowns.append(
+                publisher.ssh.run("sudo systemctl stop spectrum-publisher")
+            )
+            await asyncio.gather(*shutdowns)
 
 
 async def main(args):
@@ -254,9 +266,8 @@ async def main(args):
         clients = machines.pop("clients")
 
         for _ in tqdm(range(5)):
-            tqdm.write(
-                "RESULT: " + str(await run_experiment(publisher, workers, clients))
-            )
+            with std_out_err_redirect_tqdm():
+                await run_experiment(publisher, workers, clients)
 
 
 if __name__ == "__main__":
