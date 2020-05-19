@@ -1,14 +1,21 @@
+from __future__ import annotations
+
+import argparse
 import asyncio
 import contextlib
+import itertools
 import json
+import math
 import operator
 import sys
 
 from contextlib import contextmanager, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from functools import reduce
 from subprocess import check_call, check_output
 from tempfile import TemporaryDirectory, NamedTemporaryFile
+from typing import Dict, Union, List
 from pathlib import Path
 
 import asyncssh
@@ -29,10 +36,122 @@ def std_out_err_redirect_tqdm():
         sys.stdout, sys.stderr = old
 
 
-@dataclass
+@dataclass(frozen=True)
 class Machine:
     ssh: asyncssh.SSHClientConnection
     hostname: str
+
+
+@dataclass(frozen=True)
+class Symmetric:
+    security: int = field(default=16)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Symmetric:
+        return cls(**data)
+
+
+@dataclass(frozen=True)
+class Insecure:
+    parties: int = field(default=2)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Insecure:
+        return cls(**data)
+
+
+@dataclass(frozen=True)
+class SeedHomomorphic:
+    parties: int
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> SeedHomomorphic:
+        return cls(**data)
+
+
+def protocol_from_dict(
+    data: Dict[str, Any]
+) -> Union[Symmetric, Insecure, SeedHomomorphic]:
+    keys = set(data.keys())
+    assert len(keys) == 1
+    key = keys.pop()
+    if key == "Symmetric":
+        return Symmetric.from_dict(data[key])
+    if key == "Insecure":
+        return Insecure.from_dict(data[key])
+    if key == "SeedHomomorphci":
+        return SeedHomomorphic.from_dict(data[key])
+    raise ValueError(f"Invalid protocol {data}")
+
+
+@dataclass(order=True, frozen=True)
+class Environment:
+    machine_type: str
+    client_machines: int
+    worker_machines: int
+    workers_per_machine: int  # TODO: move out of environment (just have some max allowed value)
+
+
+@dataclass(frozen=True)
+class Experiment:
+    # TODO: should just be one machine type?
+    clients: int
+    channels: int
+    message_size: int
+    machine_types: Dict[str, str] = field(default_factory=lambda: {"all": "c5.9xlarge"})
+    clients_per_machine: int = field(default=250)
+    workers_per_machine: int = field(default=1)
+    worker_machines_per_group: int = field(default=1)
+    protocol: Union[Symmetric, Insecure, SeedHomomorphic] = field(default=Symmetric())
+
+    def groups(self) -> int:
+        if isinstance(self.protocol, Symmetric):
+            return 2
+        elif isinstance(self.protocol, Insecure):
+            return self.protocol.parties
+        elif isinstance(self.protocol, SeedHomomorphic):
+            return self.protocol.parties
+        else:
+            raise TypeError(
+                f"Invalid protocol {self.protocol}. "
+                "Expected one of Symmetric, Insecure, SeedHomomorphic"
+            )
+
+    def group_size(self) -> int:
+        return self.workers_per_machine * self.worker_machines_per_group
+
+    @property
+    def machine_type(self) -> str:
+        all_machine_types = set(self.machine_types.values())
+        assert (
+            len(all_machine_types) == 1
+        ), f"Expected all identical machine types. Got {self.machine_types}"
+        return all_machine_types.pop()
+
+    def to_environment(self) -> Environment:
+        client_machines = math.ceil(self.clients / self.clients_per_machine)
+        worker_machines = self.worker_machines_per_group * self.groups()
+        return Environment(
+            machine_type=self.machine_type,
+            worker_machines=worker_machines,
+            client_machines=client_machines,
+            workers_per_machine=self.workers_per_machine,
+        )
+
+    @classmethod
+    def from_dict(cls, data) -> Experiment:
+        protocol = data.pop("protocol", None)
+        if protocol is not None:
+            data["protocol"] = protocol_from_dict(protocol)
+        return cls(**data)
+
+
+def experiments_by_environment(
+    experiments: List[Experiment]
+) -> Dict[Environment, List[Experiment]]:
+    experiments = sorted(experiments, key=Experiment.to_environment)
+    by_environment = itertools.groupby(experiments, Experiment.to_environment)
+    return {k: list(v) for k, v in by_environment}
 
 
 def _format_var_args(var_dict):
@@ -94,7 +213,14 @@ def build_ami(force_rebuild=False):
 
 
 @asynccontextmanager
-async def infra(force_rebuild=False, cleanup=False):
+async def infra(
+    environment: Environment, force_rebuild: bool = False, cleanup: bool = False
+):
+    assert environment.worker_machines == 2
+    assert environment.workers_per_machine == 1
+    assert environment.client_machines == 1
+    assert environment.machine_type == "c5.9xlarge"
+
     build = build_ami(force_rebuild=force_rebuild)
 
     (region, _, ami) = build["artifact_id"].partition(":")
@@ -193,7 +319,22 @@ async def _execute_experiment(publisher, etcd_env):
     return result
 
 
-async def run_experiment(publisher, workers, clients):
+async def run_experiment(
+    experiment: Experiment,
+    publisher: Machine,
+    workers: List[Machine],
+    clients: List[Machine],
+):
+    assert experiment.clients == 100
+    assert experiment.channels == 10
+    assert experiment.message_size == 1024
+    assert experiment.clients <= experiment.clients_per_machine
+    assert experiment.workers_per_machine == 1
+    assert experiment.worker_machines_per_group == 1
+    assert experiment.protocol == Symmetric(security=16)
+    assert experiment.groups() == 2
+    assert experiment.group_size() == 1
+
     # TODO: progress bars using tqdm
     # https://stackoverflow.com/questions/37901292/asyncio-aiohttp-progress-bar-with-tqdm
     with Halo(text="Starting etcd"):
@@ -208,7 +349,7 @@ async def run_experiment(publisher, workers, clients):
     etcd_env = {"SPECTRUM_CONFIG_SERVER": etcd_url}
 
     try:
-        with Halo(text="Preparing"):
+        with Halo(text="Preparing experiment"):
             # can't use ssh.run(env=...) because the SSH server doesn't like it.
             await publisher.ssh.run(
                 f"SPECTRUM_CONFIG_SERVER={etcd_url} "
@@ -233,7 +374,7 @@ async def run_experiment(publisher, workers, clients):
                 *[_prepare_client(client, etcd_env) for client in clients]
             )
 
-        with Halo(text="Executing experiment") as spinner:
+        with Halo(text="Running experiment") as spinner:
             result = await _execute_experiment(publisher, etcd_env)
             spinner.succeed(f"Experiment time: {result}ms")
             return result
@@ -257,17 +398,24 @@ async def run_experiment(publisher, workers, clients):
 
 
 async def main(args):
-    force_rebuild = "--force-rebuild" in args
-    cleanup = "--cleanup" in args
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--force-rebuild", action="store_true")
+    parser.add_argument("--no-cleanup", action="store_false", dest="cleanup")
+    parser.add_argument(
+        "experiments_file", metavar="EXPERIMENTS_FILE", type=argparse.FileType("r")
+    )
+    args = parser.parse_args(args[1:])
 
-    async with infra(force_rebuild, cleanup) as machines:
-        publisher = machines.pop("publisher")
-        workers = machines.pop("workers")
-        clients = machines.pop("clients")
+    all_experiments = map(Experiment.from_dict, json.load(args.experiments_file))
+    for environment, experiments in experiments_by_environment(all_experiments).items():
+        async with infra(environment, args.force_rebuild, args.cleanup) as machines:
+            publisher = machines.pop("publisher")
+            workers = machines.pop("workers")
+            clients = machines.pop("clients")
 
-        for _ in tqdm(range(5)):
-            with std_out_err_redirect_tqdm():
-                await run_experiment(publisher, workers, clients)
+            for experiment in experiments:
+                with std_out_err_redirect_tqdm():
+                    await run_experiment(experiment, publisher, workers, clients)
 
 
 if __name__ == "__main__":
