@@ -20,21 +20,8 @@ from pathlib import Path
 
 import asyncssh
 
-from tqdm import tqdm
-from tqdm.contrib import DummyTqdmFile
 from halo import Halo
 from tenacity import retry, stop_after_attempt, wait_fixed, AsyncRetrying
-
-
-# To use Halo + tqdm together
-@contextmanager
-def std_out_err_redirect_tqdm():
-    old = sys.stdout, sys.stderr
-    try:
-        sys.stdout, sys.stderr = map(DummyTqdmFile, old)
-        yield old[0]
-    finally:
-        sys.stdout, sys.stderr = old
 
 
 @dataclass(frozen=True)
@@ -241,7 +228,10 @@ async def _connect_ssh(*args, **kwargs):
     async for attempt in AsyncRetrying(wait=wait_fixed(2)):
         with attempt:
             async with asyncssh.connect(*args, **kwargs) as conn:
-                await conn.run("true", check=True)
+                # SSH may be ready but really the system isn't until this file exists.
+                await conn.run(
+                    "test -f /var/lib/cloud/instance/boot-finished", check=True
+                )
                 try:
                     yield conn
                 except Exception as err:  # pylint: allow=bare-except
@@ -293,7 +283,7 @@ async def infra(
         async with contextlib.AsyncExitStack() as stack:
             with Halo("Connecting (SSH) to all machines") as spinner:
                 conns = await asyncio.gather(*map(stack.enter_async_context, conns))
-                spinner.succeed("Connected (SSH).")
+                spinner.succeed("Connected (SSH)")
             machines = [
                 Machine(ssh, hostname)
                 for ssh, hostname in zip(conns, [publisher] + workers + clients)
@@ -347,14 +337,12 @@ async def _execute_experiment(publisher, etcd_env):
     )
     result = int(result.stdout.strip())
 
-    # don't let this same output confuse us if we run on this machine again
-    await publisher.ssh.run("sudo journalctl --rotate", check=True)
-    await publisher.ssh.run("sudo journalctl --vacuum-time=1s", check=True)
-
     return result
 
 
-async def run_experiment(experiment: Experiment, setup: ExperimentSetup):
+async def run_experiment(
+    experiment: Experiment, setup: ExperimentSetup, spinner: Halo
+) -> int:
     assert experiment.clients == 100
     assert experiment.channels == 10
     assert experiment.message_size == 1024
@@ -365,12 +353,11 @@ async def run_experiment(experiment: Experiment, setup: ExperimentSetup):
     assert experiment.groups() == 2
     assert experiment.group_size() == 1
 
-    publisher = setup.publisher
-    workers = setup.workers
-    clients = setup.clients
-
-    with Halo() as spinner:
-        spinner.text = "starting etcd"
+    try:
+        publisher = setup.publisher
+        workers = setup.workers
+        clients = setup.clients
+        spinner.text = "Starting etcd"
 
         await publisher.ssh.run(
             "envsubst '$HOSTNAME' "
@@ -382,62 +369,74 @@ async def run_experiment(experiment: Experiment, setup: ExperimentSetup):
         await publisher.ssh.run("sudo systemctl start etcd", check=True)
         etcd_url = f"etcd://{publisher.hostname}:2379"
         etcd_env = {"SPECTRUM_CONFIG_SERVER": etcd_url}
-
-        try:
-            spinner.text = "Preparing experiment: setup"
-            # can't use ssh.run(env=...) because the SSH server doesn't like it.
-            await publisher.ssh.run(
-                f"SPECTRUM_CONFIG_SERVER={etcd_url} "
-                "/home/ubuntu/spectrum/setup"
-                "    --security 16"
-                "    --channels 10"
-                "    --clients 100"
-                "    --group-size 1"
-                "    --groups 2"
-                "    --message-size 1024",
-                check=True,
-            )
-
-            spinner.text = "Preparing experiment: starting workers"
-            # TODO: fix for multiple machines per group etc.
-            await asyncio.gather(
-                *[
-                    _prepare_worker(worker, idx + 1, etcd_env)
-                    for idx, worker in enumerate(workers)
-                ]
-            )
-
-            spinner.text = "Preparing experiment: starting clients"
-            await asyncio.gather(
-                *[_prepare_client(client, etcd_env) for client in clients]
-            )
-
-            spinner.text = "Running experiment"
-            result = await _execute_experiment(publisher, etcd_env)
-        finally:
-            spinner.text = "Shutting everything down"
-            shutdowns = []
-            shutdowns.append(
-                publisher.ssh.run(
-                    "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''",
+        # Make sure etcd is healthy
+        async for attempt in AsyncRetrying(
+            wait=wait_fixed(2), stop=stop_after_attempt(20)
+        ):
+            with attempt:
+                await publisher.ssh.run(
+                    f"ETCDCTL_API=3 etcdctl --endpoints {publisher.hostname}:2379 endpoint health",
                     check=True,
                 )
+
+        spinner.text = "Preparing experiment: setup"
+        # can't use ssh.run(env=...) because the SSH server doesn't like it.
+        await publisher.ssh.run(
+            f"SPECTRUM_CONFIG_SERVER={etcd_url} "
+            "/home/ubuntu/spectrum/setup"
+            "    --security 16"
+            "    --channels 10"
+            "    --clients 100"
+            "    --group-size 1"
+            "    --groups 2"
+            "    --message-size 1024",
+            check=True,
+            timeout=15,
+        )
+
+        spinner.text = "Preparing experiment: starting workers"
+        # TODO: fix for multiple machines per group etc.
+        await asyncio.gather(
+            *[
+                _prepare_worker(worker, idx + 1, etcd_env)
+                for idx, worker in enumerate(workers)
+            ]
+        )
+
+        spinner.text = "Preparing experiment: starting clients"
+        await asyncio.gather(*[_prepare_client(client, etcd_env) for client in clients])
+
+        spinner.text = "Running experiment"
+        return await asyncio.wait_for(
+            _execute_experiment(publisher, etcd_env), timeout=60.0
+        )
+    finally:
+        spinner.text = "Shutting everything down"
+        shutdowns = []
+        shutdowns.append(
+            publisher.ssh.run(
+                "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''",
+                check=True,
             )
-            for worker in workers:
-                shutdowns.append(
-                    worker.ssh.run("sudo systemctl stop spectrum-leader", check=False)
-                )
-                shutdowns.append(
-                    worker.ssh.run(
-                        "sudo systemctl stop 'spectrum-worker@*'", check=False
-                    )
-                )
+        )
+        for worker in workers:
             shutdowns.append(
-                publisher.ssh.run("sudo systemctl stop spectrum-publisher", check=False)
+                worker.ssh.run("sudo systemctl stop spectrum-leader", check=False)
             )
-            await asyncio.gather(*shutdowns)
-        spinner.succeed(f"Experiment time: {result}ms")
-        return result
+            shutdowns.append(
+                worker.ssh.run("sudo systemctl stop 'spectrum-worker@*'", check=False)
+            )
+        shutdowns.append(
+            publisher.ssh.run("sudo systemctl stop spectrum-publisher", check=False)
+        )
+        # don't let this same output confuse us if we run on this machine again
+        shutdowns.append(
+            publisher.ssh.run(
+                "sudo journalctl --rotate &&" "sudo journalctl --vacuum-time=1s",
+                check=True,
+            )
+        )
+        await asyncio.gather(*shutdowns)
 
 
 async def main(args):
@@ -455,8 +454,34 @@ async def main(args):
     for environment, experiments in experiments_by_environment(all_experiments).items():
         async with infra(environment, args.force_rebuild, args.cleanup) as setup:
             for experiment in experiments:
-                with std_out_err_redirect_tqdm():
-                    await run_experiment(experiment, setup)
+                interrupted = False
+                attempt = 0
+                MAX_ATTEMPTS = 3
+                while True:
+                    with Halo() as spinner:
+                        try:
+                            result = await run_experiment(experiment, setup, spinner)
+                        except KeyboardInterrupt:
+                            # On the first ^C for a given trial, just continue.
+                            # On the second, quit everything.
+                            if interrupted:
+                                spinner.fail("Got ^C multiple times.")
+                                raise
+                            spinner.info(
+                                "Got ^C; retrying (do it again to quit everything)."
+                            )
+                            interrupted = True
+                        except Exception as err:  # pylint: allow=broad-except
+                            attempt += 1
+                            foo = repr(err)
+                            msg = f"Error (attempt {attempt} of {MAX_ATTEMPTS}): {foo}."
+                            if attempt == MAX_ATTEMPTS:
+                                spinner.fail(msg)
+                                raise
+                            spinner.warn(msg)
+                        else:
+                            spinner.succeed(f"Experiment time: {result}ms")
+                            break
 
 
 if __name__ == "__main__":
