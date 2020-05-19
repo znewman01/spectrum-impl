@@ -15,7 +15,7 @@ from enum import Enum
 from functools import reduce
 from subprocess import check_call, check_output
 from tempfile import TemporaryDirectory, NamedTemporaryFile
-from typing import Dict, Union, List
+from typing import Dict, Union, List, Iterable, Any
 from pathlib import Path
 
 import asyncssh
@@ -23,6 +23,7 @@ import asyncssh
 from tqdm import tqdm
 from tqdm.contrib import DummyTqdmFile
 from halo import Halo
+from tenacity import retry, stop_after_attempt, wait_fixed, AsyncRetrying
 
 
 # To use Halo + tqdm together
@@ -40,6 +41,13 @@ def std_out_err_redirect_tqdm():
 class Machine:
     ssh: asyncssh.SSHClientConnection
     hostname: str
+
+
+@dataclass
+class ExperimentSetup:
+    publisher: Machine
+    workers: List[Machine]
+    clients: List[Machine]
 
 
 @dataclass(frozen=True)
@@ -90,6 +98,18 @@ class Environment:
     client_machines: int
     worker_machines: int
     workers_per_machine: int  # TODO: move out of environment (just have some max allowed value)
+
+    @property
+    def total_machines(self) -> int:
+        return self.client_machines + self.worker_machines + 1
+
+    def to_setup(self, machines: List[Machine]) -> ExperimentSetup:
+        assert len(machines) == self.total_machines
+        return ExperimentSetup(
+            publisher=machines[0],
+            workers=machines[1 : self.worker_machines + 1],
+            clients=machines[-self.client_machines :],
+        )
 
 
 @dataclass(frozen=True)
@@ -160,14 +180,17 @@ def _format_var_args(var_dict):
 
 @contextmanager
 def terraform(tf_vars, cleanup=False):
-    tf_vars = _format_var_args(tf_vars)
-    check_call(["terraform", "apply", "-auto-approve"] + tf_vars)
+    try:
+        tf_vars = _format_var_args(tf_vars)
+        check_call(["terraform", "apply", "-auto-approve"] + tf_vars)
 
-    data = json.loads(check_output(["terraform", "output", "-json"]))
-    yield {k: v["value"] for k, v in data.items()}
-
-    if cleanup:
-        check_call(["terraform", "destroy", "-auto-approve"] + tf_vars)
+        data = json.loads(check_output(["terraform", "output", "-json"]))
+        yield {k: v["value"] for k, v in data.items()}
+    finally:
+        if cleanup:
+            check_call(
+                ["terraform", "destroy", "-auto-approve", "-refresh=false"] + tf_vars
+            )
 
 
 def _get_last_build():
@@ -213,6 +236,23 @@ def build_ami(force_rebuild=False):
 
 
 @asynccontextmanager
+async def _connect_ssh(*args, **kwargs):
+    reraise_err = None
+    async for attempt in AsyncRetrying(wait=wait_fixed(2)):
+        with attempt:
+            async with asyncssh.connect(*args, **kwargs) as conn:
+                await conn.run("true", check=True)
+                try:
+                    yield conn
+                except Exception as err:  # pylint: allow=bare-except
+                    # Exceptions from "yield" have nothing to do with us.
+                    # We reraise them below without retrying.
+                    reraise_err = err
+    if reraise_err is not None:
+        raise reraise_err from None
+
+
+@asynccontextmanager
 async def infra(
     environment: Environment, force_rebuild: bool = False, cleanup: bool = False
 ):
@@ -235,40 +275,30 @@ async def infra(
 
         conns = []
         conns.append(
-            asyncssh.connect(
+            _connect_ssh(
                 publisher, known_hosts=None, client_keys=[ssh_key], username="ubuntu"
             )
         )
         for worker in workers:
-            conn = asyncssh.connect(
+            conn = _connect_ssh(
                 worker, known_hosts=None, client_keys=[ssh_key], username="ubuntu"
             )
             conns.append(conn)
         for client in clients:
-            conn = asyncssh.connect(
+            conn = _connect_ssh(
                 client, known_hosts=None, client_keys=[ssh_key], username="ubuntu"
             )
             conns.append(conn)
 
         async with contextlib.AsyncExitStack() as stack:
-            # TODO: this doesn't always work
-            conns = [
-                await stack.enter_async_context(ctx)
-                for ctx in await asyncio.gather(*conns)
+            with Halo("Connecting (SSH) to all machines") as spinner:
+                conns = await asyncio.gather(*map(stack.enter_async_context, conns))
+                spinner.succeed("Connected (SSH).")
+            machines = [
+                Machine(ssh, hostname)
+                for ssh, hostname in zip(conns, [publisher] + workers + clients)
             ]
-            publisher_machine = Machine(ssh=conns.pop(0), hostname=publisher)
-            worker_machines = []
-            for worker in workers:
-                worker_machines.append(Machine(ssh=conns.pop(0), hostname=worker))
-            client_machines = []
-            for client in clients:
-                client_machines.append(Machine(ssh=conns.pop(0), hostname=client))
-
-            yield {
-                "publisher": publisher_machine,
-                "workers": worker_machines,
-                "clients": client_machines,
-            }
+            yield environment.to_setup(machines)
 
 
 async def _install_spectrum_conf(machine, spectrum_conf):
@@ -277,7 +307,9 @@ async def _install_spectrum_conf(machine, spectrum_conf):
         tmp.write(spectrum_conf.encode("utf8"))
         tmp.flush()
         await asyncssh.scp(tmp.name, (machine.ssh, "/tmp/spectrum.conf"))
-    await machine.ssh.run("sudo install -m 644 /tmp/spectrum.conf /etc/spectrum.conf")
+    await machine.ssh.run(
+        "sudo install -m 644 /tmp/spectrum.conf /etc/spectrum.conf", check=True
+    )
 
 
 async def _prepare_worker(machine, group, etcd_env):
@@ -290,41 +322,39 @@ async def _prepare_worker(machine, group, etcd_env):
     }
     await _install_spectrum_conf(machine, spectrum_conf)
 
-    await machine.ssh.run("sudo systemctl start spectrum-worker@1")
-    await machine.ssh.run("sudo systemctl start spectrum-leader")
+    await machine.ssh.run("sudo systemctl start spectrum-worker@1", check=True)
+    await machine.ssh.run("sudo systemctl start spectrum-leader", check=True)
 
 
 async def _prepare_client(machine, etcd_env):
     await _install_spectrum_conf(machine, etcd_env)
 
     # TODO: fix client ranges
-    await machine.ssh.run("sudo systemctl start viewer@{1..100}")
+    await machine.ssh.run("sudo systemctl start viewer@{1..100}", check=True)
 
 
 async def _execute_experiment(publisher, etcd_env):
     await _install_spectrum_conf(publisher, etcd_env)
-    await publisher.ssh.run("sudo systemctl start spectrum-publisher --wait")
+    await publisher.ssh.run(
+        "sudo systemctl start spectrum-publisher --wait", check=True
+    )
 
     result = await publisher.ssh.run(
         "journalctl --unit spectrum-publisher "
         "    | grep -o 'Elapsed time: .*' "
-        "    | sed 's/Elapsed time: \\(.*\\)ms/\\1/'"
+        "    | sed 's/Elapsed time: \\(.*\\)ms/\\1/'",
+        check=True,
     )
     result = int(result.stdout.strip())
 
     # don't let this same output confuse us if we run on this machine again
-    await publisher.ssh.run("sudo journalctl --rotate")
-    await publisher.ssh.run("sudo journalctl --vacuum-time=1s")
+    await publisher.ssh.run("sudo journalctl --rotate", check=True)
+    await publisher.ssh.run("sudo journalctl --vacuum-time=1s", check=True)
 
     return result
 
 
-async def run_experiment(
-    experiment: Experiment,
-    publisher: Machine,
-    workers: List[Machine],
-    clients: List[Machine],
-):
+async def run_experiment(experiment: Experiment, setup: ExperimentSetup):
     assert experiment.clients == 100
     assert experiment.channels == 10
     assert experiment.message_size == 1024
@@ -335,21 +365,26 @@ async def run_experiment(
     assert experiment.groups() == 2
     assert experiment.group_size() == 1
 
-    # TODO: progress bars using tqdm
-    # https://stackoverflow.com/questions/37901292/asyncio-aiohttp-progress-bar-with-tqdm
-    with Halo(text="Starting etcd"):
+    publisher = setup.publisher
+    workers = setup.workers
+    clients = setup.clients
+
+    with Halo() as spinner:
+        spinner.text = "starting etcd"
+
         await publisher.ssh.run(
             "envsubst '$HOSTNAME' "
             '    < "$HOME/config/etcd.template" '
             "    | sudo tee /etc/default/etcd "
-            "    > /dev/null"
+            "    > /dev/null",
+            check=True,
         )
-        await publisher.ssh.run("sudo systemctl start etcd")
-    etcd_url = f"etcd://{publisher.hostname}:2379"
-    etcd_env = {"SPECTRUM_CONFIG_SERVER": etcd_url}
+        await publisher.ssh.run("sudo systemctl start etcd", check=True)
+        etcd_url = f"etcd://{publisher.hostname}:2379"
+        etcd_env = {"SPECTRUM_CONFIG_SERVER": etcd_url}
 
-    try:
-        with Halo(text="Preparing experiment"):
+        try:
+            spinner.text = "Preparing experiment: setup"
             # can't use ssh.run(env=...) because the SSH server doesn't like it.
             await publisher.ssh.run(
                 f"SPECTRUM_CONFIG_SERVER={etcd_url} "
@@ -359,9 +394,11 @@ async def run_experiment(
                 "    --clients 100"
                 "    --group-size 1"
                 "    --groups 2"
-                "    --message-size 1024"
+                "    --message-size 1024",
+                check=True,
             )
 
+            spinner.text = "Preparing experiment: starting workers"
             # TODO: fix for multiple machines per group etc.
             await asyncio.gather(
                 *[
@@ -370,52 +407,56 @@ async def run_experiment(
                 ]
             )
 
+            spinner.text = "Preparing experiment: starting clients"
             await asyncio.gather(
                 *[_prepare_client(client, etcd_env) for client in clients]
             )
 
-        with Halo(text="Running experiment") as spinner:
+            spinner.text = "Running experiment"
             result = await _execute_experiment(publisher, etcd_env)
-            spinner.succeed(f"Experiment time: {result}ms")
-            return result
-    finally:
-        with Halo(text="Shutting everything down"):
+        finally:
+            spinner.text = "Shutting everything down"
             shutdowns = []
             shutdowns.append(
                 publisher.ssh.run(
-                    "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''"
+                    "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''",
+                    check=True,
                 )
             )
             for worker in workers:
-                shutdowns.append(worker.ssh.run("sudo systemctl stop spectrum-leader"))
                 shutdowns.append(
-                    worker.ssh.run("sudo systemctl stop 'spectrum-worker@*'")
+                    worker.ssh.run("sudo systemctl stop spectrum-leader", check=False)
+                )
+                shutdowns.append(
+                    worker.ssh.run(
+                        "sudo systemctl stop 'spectrum-worker@*'", check=False
+                    )
                 )
             shutdowns.append(
-                publisher.ssh.run("sudo systemctl stop spectrum-publisher")
+                publisher.ssh.run("sudo systemctl stop spectrum-publisher", check=False)
             )
             await asyncio.gather(*shutdowns)
+        spinner.succeed(f"Experiment time: {result}ms")
+        return result
 
 
 async def main(args):
     parser = argparse.ArgumentParser()
     parser.add_argument("--force-rebuild", action="store_true")
-    parser.add_argument("--no-cleanup", action="store_false", dest="cleanup")
+    parser.add_argument("--cleanup", action="store_true")
     parser.add_argument(
         "experiments_file", metavar="EXPERIMENTS_FILE", type=argparse.FileType("r")
     )
     args = parser.parse_args(args[1:])
 
+    # TODO: progress bars using tqdm
+    # https://stackoverflow.com/questions/37901292/asyncio-aiohttp-progress-bar-with-tqdm
     all_experiments = map(Experiment.from_dict, json.load(args.experiments_file))
     for environment, experiments in experiments_by_environment(all_experiments).items():
-        async with infra(environment, args.force_rebuild, args.cleanup) as machines:
-            publisher = machines.pop("publisher")
-            workers = machines.pop("workers")
-            clients = machines.pop("clients")
-
+        async with infra(environment, args.force_rebuild, args.cleanup) as setup:
             for experiment in experiments:
                 with std_out_err_redirect_tqdm():
-                    await run_experiment(experiment, publisher, workers, clients)
+                    await run_experiment(experiment, setup)
 
 
 if __name__ == "__main__":

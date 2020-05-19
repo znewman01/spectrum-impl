@@ -1,3 +1,4 @@
-asyncssh==1.17.1
+asyncssh==2.2.1
 halo==0.0.29
 tqdm==4.46.0
+tenacity==6.2.0
