@@ -1,6 +1,85 @@
 # encoding: utf8
 # Conflicts with black, isort
 # pylint: disable=bad-continuation,ungrouped-imports,line-too-long
+"""
+Run Spectrum experiments.
+
+1. Build an appropriate base AMI.
+
+   We use the Git commit at which the `spectrum/` source directory was last
+   modified to create an AMI for running experiments. This AMI has the Spectrum
+   binaries and all dependencies for running them, along with etcd.
+
+   We build using Packer; see `image.json`, `install.sh`, `compile.sh`, and the
+   contents of `config/` for details on this image.
+
+   This step can take a very long time (compiling and packaging AMIs are both
+   lengthy steps). Fortunately, we cache:
+
+   - the AMI itself (based on the machine type and SHA); use `--force-rebuild`
+     to bust this cache
+   - the compiled Spectrum binary (based on source SHA and compile profile
+     (debug/release))
+
+2. Set up the AWS environment.
+
+   Here we use Terraform. This is surprisingly quick (<20s to set everything
+   up), though destroying instances takes a while.
+
+   See `main.tf` for details; the highlights:
+
+   - 1 publisher machine (this also runs etcd)
+   - many worker machines (`worker_machines_per_group * num_groups`)
+   - as many client machines as necessary (`ceil(num_clients / clients_per_machine)`)
+
+   We use the same instance type as the Packer image.
+
+3. Run experiments.
+
+   JSON input.
+
+   For example: `{"clients": 100, "channels": 10, "message_size": 1024}`
+
+   Also configurable:
+
+   - `machine_type`: AWS instance type to run on. For simplicity, we use the
+     same instance type for all machines.
+   - `clients_per_machine`:
+   - `workers_per_machine`: how many worker processes to run on each machine
+   - `worker_machines_per_group`: how many worker *machines* in each group
+   - `protocol`: the protocol to run. Options include
+     - `{"Symmetric": {"security": 16}}` (the symmetric protocol with a 16-byte
+       prime, 2 groups)
+     - `{"Insecure": {"parties": 3}}` (the insecure protocol with 3 groups)
+     - `{"SeedHomomorphic": {"parties": 3}}` (the seed-homomorphic protocol
+       with 3 groups and a default security level)
+
+   For each experiment, we:
+
+   1. Clear out prior state (etcd config, old logs).
+   2. Run the `setup` binary to put an experiment setup in etcd.
+   3. Start workers, leaders, and clients (pointing them at etcd).
+   4. Run the publisher, which will initiate the experiment.
+   5. Parse the publisher logs to get the time from start to finish.
+
+   We retry each experiment a few times if it fails.
+
+
+If running more than one experiment, they are grouped by AWS environment.
+
+Requirements:
+
+- Terraform (runnable as `terraform`)
+- Packer (runnable as `packer`)
+- Python 3.7
+- Python dependencies: see requirements.txt
+
+To debug:
+
+    $ python ssh.py  # SSH into publisher machine
+    $ python ssh.py --worker # SSH into some worker
+    $ python ssh.py --client 2 # SSH into the worker 2 (0-indexed)
+"""
 from __future__ import annotations
 
 import argparse
@@ -40,7 +119,7 @@ Region = NewType("Region", str)
 # Need to update install.sh to change this
 MAX_WORKERS_PER_MACHINE = 10
 AWS_REGION = Region("us-east-2")
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 5
 
 
 @dataclass(frozen=True)
@@ -146,7 +225,7 @@ class Experiment:
     message_size: Bytes
     machine_type: MachineType = field(default=MachineType("c5.9xlarge"))
     clients_per_machine: int = field(default=250)
-    workers_per_machine: int = field(default=1)
+    workers_per_machine: int = field(default=1)  # TODO: better default
     worker_machines_per_group: int = field(default=1)
     protocol: Protocol = field(default=Symmetric())
 
@@ -232,7 +311,11 @@ def terraform(tf_vars):
             tf_vars = _format_var_args(tf_vars)
             cmd = ["terraform", "plan", f"-out={plan}", "-no-color"] + tf_vars
             plan_output = check_output(cmd)
-            changes = [l for l in plan_output.decode("utf8").split("\n") if "#" in l]
+            changes = [
+                l
+                for l in plan_output.decode("utf8").split("\n")
+                if l.lstrip().startswith("#")
+            ]
 
             if not changes:
                 spinner.info("[infrastructure] no changes to apply")
@@ -336,8 +419,9 @@ def ensure_ami_build(
             }
         )
         with open("packer.log", "w") as f:
+            short_sha = sha[:7]
             with Halo(
-                "[infrastructure] building AMI (output in [packer.log])"
+                f"[infrastructure] building AMI (output in [packer.log]) for SHA: {short_sha}"
             ) as spinner:
                 check_call(["packer", "build"] + packer_vars + ["image.json"], stdout=f)
                 spinner.succeed()
@@ -654,7 +738,7 @@ async def retry_experiment(
     experiment: Experiment, setting: Setting, writer: Callable[[Any], None]
 ):
     interrupted = False
-    for attempt in range(MAX_ATTEMPTS):
+    for attempt in range(1, MAX_ATTEMPTS + 1):
         with Halo() as spinner:
             try:
                 time = await run_experiment(experiment, setting, spinner)
@@ -670,7 +754,6 @@ async def retry_experiment(
                 msg = f"Error (attempt {attempt} of {MAX_ATTEMPTS}): {err!r}."
                 if attempt == MAX_ATTEMPTS:
                     spinner.fail(msg)
-                    raise
                 spinner.info(msg)
             else:
                 spinner.succeed(f"[experiment] time: {time}ms")
@@ -679,11 +762,21 @@ async def retry_experiment(
 
 
 async def main(args):
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--force-rebuild", action="store_true")
-    parser.add_argument("--cleanup", action="store_true")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run Spectrum experiments.\n\n"
+            "prereqs: terraform, packer installed. some python stuff"
+        )
+    )
+    parser.add_argument("--force-rebuild", action="store_true", help="")
     parser.add_argument(
-        "experiments_file", metavar="EXPERIMENTS_FILE", type=argparse.FileType("r")
+        "--cleanup", action="store_true", help="tear down all infrastructure after"
+    )
+    parser.add_argument(
+        "experiments_file",
+        metavar="EXPERIMENTS_FILE",
+        type=argparse.FileType("r"),
+        help="file with a JSON array of Spectrum experiments to run",
     )
     parser.add_argument("--output", default="results.json", type=argparse.FileType("w"))
     args = parser.parse_args(args[1:])
@@ -693,10 +786,12 @@ async def main(args):
     # TODO: progress bars using tqdm
     # https://stackoverflow.com/questions/37901292/asyncio-aiohttp-progress-bar-with-tqdm
     all_experiments = map(Experiment.from_dict, json.load(args.experiments_file))
+    force_rebuild = args.force_rebuild
     with stream_json(args.output, close=True) as writer:
         with cleaner:
             for environment, experiments in experiments_by_environment(all_experiments):
-                async with infra(environment, args.force_rebuild) as setting:
+                async with infra(environment, force_rebuild) as setting:
+                    force_rebuild = False  # only force rebuild the first time
                     for experiment in experiments:
                         print()
                         Halo(f"{experiment}").stop_and_persist(symbol="•")
