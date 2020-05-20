@@ -4,6 +4,8 @@
 """
 Run Spectrum experiments.
 
+Steps:
+
 1. Build an appropriate base AMI.
 
    We use the Git commit at which the `spectrum/` source directory was last
@@ -762,13 +764,17 @@ async def retry_experiment(
 
 
 async def main(args):
+    description, _, epilog = __doc__.partition("\n\n")
     parser = argparse.ArgumentParser(
-        description=(
-            "Run Spectrum experiments.\n\n"
-            "prereqs: terraform, packer installed. some python stuff"
-        )
+        description=description,
+        epilog=epilog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--force-rebuild", action="store_true", help="")
+    parser.add_argument(
+        "--force-rebuild",
+        action="store_true",
+        help="rebuild the AMI even if Spectrum source hasn't changed",
+    )
     parser.add_argument(
         "--cleanup", action="store_true", help="tear down all infrastructure after"
     )
@@ -778,7 +784,12 @@ async def main(args):
         type=argparse.FileType("r"),
         help="file with a JSON array of Spectrum experiments to run",
     )
-    parser.add_argument("--output", default="results.json", type=argparse.FileType("w"))
+    parser.add_argument(
+        "--output",
+        default="results.json",
+        type=argparse.FileType("w"),
+        help="path for experiment results",
+    )
     args = parser.parse_args(args[1:])
 
     cleaner = terraform_cleanup(AWS_REGION) if args.cleanup else nullcontext()
