@@ -10,6 +10,14 @@ variable "instance_type" {
   type = string
 }
 
+variable "client_machine_count" {
+  type = number
+}
+
+variable "worker_machine_count" {
+  type = number
+}
+
 provider "aws" {
   profile = "default"
   region  = var.region
@@ -60,7 +68,7 @@ resource "aws_instance" "publisher" {
 
 resource "aws_instance" "worker" {
   ami             = var.ami
-  count           = 2
+  count           = var.worker_machine_count
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
@@ -68,7 +76,7 @@ resource "aws_instance" "worker" {
 
 resource "aws_instance" "client" {
   ami             = var.ami
-  count           = 1
+  count           = var.client_machine_count
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]

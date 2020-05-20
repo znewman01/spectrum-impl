@@ -3,19 +3,21 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
-import itertools
 import json
 import math
 import operator
 import sys
 
-from contextlib import contextmanager, asynccontextmanager
+from contextlib import (
+    contextmanager,
+    asynccontextmanager,
+)  # pylint: disable=ungrouped-imports
 from dataclasses import dataclass, field
-from enum import Enum
 from functools import reduce
+from itertools import chain, groupby, starmap, product
 from subprocess import check_call, check_output
 from tempfile import TemporaryDirectory, NamedTemporaryFile
-from typing import Dict, Union, List, Iterable, Any
+from typing import Dict, Union, List, Any
 from pathlib import Path
 
 import asyncssh
@@ -41,6 +43,10 @@ class ExperimentSetup:
 class Symmetric:
     security: int = field(default=16)
 
+    @property
+    def flag(self) -> str:
+        return f"--security {self.security}"
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Symmetric:
         return cls(**data)
@@ -50,6 +56,10 @@ class Symmetric:
 class Insecure:
     parties: int = field(default=2)
 
+    @property
+    def flag(self) -> str:
+        return f"--no-security"
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Insecure:
         return cls(**data)
@@ -58,6 +68,10 @@ class Insecure:
 @dataclass(frozen=True)
 class SeedHomomorphic:
     parties: int
+
+    @property
+    def flag(self) -> str:
+        return f"--security-multi-key 16"
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> SeedHomomorphic:
@@ -74,7 +88,7 @@ def protocol_from_dict(
         return Symmetric.from_dict(data[key])
     if key == "Insecure":
         return Insecure.from_dict(data[key])
-    if key == "SeedHomomorphci":
+    if key == "SeedHomomorphic":
         return SeedHomomorphic.from_dict(data[key])
     raise ValueError(f"Invalid protocol {data}")
 
@@ -111,6 +125,7 @@ class Experiment:
     worker_machines_per_group: int = field(default=1)
     protocol: Union[Symmetric, Insecure, SeedHomomorphic] = field(default=Symmetric())
 
+    @property
     def groups(self) -> int:
         if isinstance(self.protocol, Symmetric):
             return 2
@@ -124,6 +139,7 @@ class Experiment:
                 "Expected one of Symmetric, Insecure, SeedHomomorphic"
             )
 
+    @property
     def group_size(self) -> int:
         return self.workers_per_machine * self.worker_machines_per_group
 
@@ -137,7 +153,7 @@ class Experiment:
 
     def to_environment(self) -> Environment:
         client_machines = math.ceil(self.clients / self.clients_per_machine)
-        worker_machines = self.worker_machines_per_group * self.groups()
+        worker_machines = self.worker_machines_per_group * self.groups
         return Environment(
             machine_type=self.machine_type,
             worker_machines=worker_machines,
@@ -157,7 +173,7 @@ def experiments_by_environment(
     experiments: List[Experiment]
 ) -> Dict[Environment, List[Experiment]]:
     experiments = sorted(experiments, key=Experiment.to_environment)
-    by_environment = itertools.groupby(experiments, Experiment.to_environment)
+    by_environment = groupby(experiments, Experiment.to_environment)
     return {k: list(v) for k, v in by_environment}
 
 
@@ -234,7 +250,7 @@ async def _connect_ssh(*args, **kwargs):
                 )
                 try:
                     yield conn
-                except Exception as err:  # pylint: allow=bare-except
+                except Exception as err:  # pylint: disable=bare-except
                     # Exceptions from "yield" have nothing to do with us.
                     # We reraise them below without retrying.
                     reraise_err = err
@@ -246,9 +262,7 @@ async def _connect_ssh(*args, **kwargs):
 async def infra(
     environment: Environment, force_rebuild: bool = False, cleanup: bool = False
 ):
-    assert environment.worker_machines == 2
     assert environment.workers_per_machine == 1
-    assert environment.client_machines == 1
     assert environment.machine_type == "c5.9xlarge"
 
     build = build_ami(force_rebuild=force_rebuild)
@@ -256,7 +270,13 @@ async def infra(
     (region, _, ami) = build["artifact_id"].partition(":")
     instance_type = build["custom_data"]["instance_type"]
 
-    tf_vars = {"ami": ami, "region": region, "instance_type": instance_type}
+    tf_vars = {
+        "ami": ami,
+        "region": region,
+        "instance_type": instance_type,
+        "client_machine_count": environment.client_machines,
+        "worker_machine_count": environment.worker_machines,
+    }
     with terraform(tf_vars, cleanup=cleanup) as data:
         publisher = data["publisher"]
         workers = data["workers"]
@@ -302,12 +322,12 @@ async def _install_spectrum_conf(machine, spectrum_conf):
     )
 
 
-async def _prepare_worker(machine, group, etcd_env):
+async def _prepare_worker(machine, group, worker_start_idx, etcd_env):
     # TODO: WORKER_START_INDEX for multiple machines per group
     spectrum_conf = {
         "SPECTRUM_WORKER_GROUP": group,
         "SPECTRUM_LEADER_GROUP": group,
-        "SPECTRUM_WORKER_START_INDEX": 0,
+        "SPECTRUM_WORKER_START_INDEX": worker_start_idx,
         **etcd_env,
     }
     await _install_spectrum_conf(machine, spectrum_conf)
@@ -316,11 +336,12 @@ async def _prepare_worker(machine, group, etcd_env):
     await machine.ssh.run("sudo systemctl start spectrum-leader", check=True)
 
 
-async def _prepare_client(machine, etcd_env):
+async def _prepare_client(machine, client_range, etcd_env):
     await _install_spectrum_conf(machine, etcd_env)
-
-    # TODO: fix client ranges
-    await machine.ssh.run("sudo systemctl start viewer@{1..100}", check=True)
+    await machine.ssh.run(
+        f"sudo systemctl start viewer@{{{client_range.start}..{client_range.stop}}}",
+        check=True,
+    )
 
 
 async def _execute_experiment(publisher, etcd_env):
@@ -343,15 +364,7 @@ async def _execute_experiment(publisher, etcd_env):
 async def run_experiment(
     experiment: Experiment, setup: ExperimentSetup, spinner: Halo
 ) -> int:
-    assert experiment.clients == 100
-    assert experiment.channels == 10
-    assert experiment.message_size == 1024
-    assert experiment.clients <= experiment.clients_per_machine
     assert experiment.workers_per_machine == 1
-    assert experiment.worker_machines_per_group == 1
-    assert experiment.protocol == Symmetric(security=16)
-    assert experiment.groups() == 2
-    assert experiment.group_size() == 1
 
     try:
         publisher = setup.publisher
@@ -378,18 +391,26 @@ async def run_experiment(
                     f"ETCDCTL_API=3 etcdctl --endpoints {publisher.hostname}:2379 endpoint health",
                     check=True,
                 )
+        await publisher.ssh.run(
+            "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''",
+            check=True,
+        )
 
         spinner.text = "Preparing experiment: setup"
+        # don't let this same output confuse us if we run on this machine again
+        await publisher.ssh.run(
+            "sudo journalctl --rotate && sudo journalctl --vacuum-time=1s", check=True
+        )
         # can't use ssh.run(env=...) because the SSH server doesn't like it.
         await publisher.ssh.run(
             f"SPECTRUM_CONFIG_SERVER={etcd_url} "
             "/home/ubuntu/spectrum/setup"
-            "    --security 16"
-            "    --channels 10"
-            "    --clients 100"
-            "    --group-size 1"
-            "    --groups 2"
-            "    --message-size 1024",
+            f"    {experiment.protocol.flag}"
+            f"    --channels {experiment.channels}"
+            f"    --clients {experiment.clients}"
+            f"    --group-size {experiment.group_size}"
+            f"    --groups {experiment.groups}"
+            f"    --message-size {experiment.message_size}",
             check=True,
             timeout=15,
         )
@@ -398,13 +419,33 @@ async def run_experiment(
         # TODO: fix for multiple machines per group etc.
         await asyncio.gather(
             *[
-                _prepare_worker(worker, idx + 1, etcd_env)
-                for idx, worker in enumerate(workers)
+                _prepare_worker(worker, group + 1, worker_start_idx, etcd_env)
+                for (worker_start_idx, group), worker in zip(
+                    product(
+                        range(0, experiment.worker_machines_per_group),
+                        range(0, experiment.groups),
+                    ),
+                    workers,
+                )
             ]
         )
 
         spinner.text = "Preparing experiment: starting clients"
-        await asyncio.gather(*[_prepare_client(client, etcd_env) for client in clients])
+        # Full client count at every machine except the last
+        cpm = experiment.clients_per_machine
+        client_counts = starmap(
+            slice,
+            zip(
+                range(1, experiment.clients, cpm),
+                chain(range(cpm, experiment.clients, cpm), [experiment.clients]),
+            ),
+        )
+        await asyncio.gather(
+            *[
+                _prepare_client(client, client_range, etcd_env)
+                for client, client_range in zip(clients, client_counts)
+            ]
+        )
 
         spinner.text = "Running experiment"
         return await asyncio.wait_for(
@@ -413,12 +454,6 @@ async def run_experiment(
     finally:
         spinner.text = "Shutting everything down"
         shutdowns = []
-        shutdowns.append(
-            publisher.ssh.run(
-                "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''",
-                check=True,
-            )
-        )
         for worker in workers:
             shutdowns.append(
                 worker.ssh.run("sudo systemctl stop spectrum-leader", check=False)
@@ -428,13 +463,6 @@ async def run_experiment(
             )
         shutdowns.append(
             publisher.ssh.run("sudo systemctl stop spectrum-publisher", check=False)
-        )
-        # don't let this same output confuse us if we run on this machine again
-        shutdowns.append(
-            publisher.ssh.run(
-                "sudo journalctl --rotate &&" "sudo journalctl --vacuum-time=1s",
-                check=True,
-            )
         )
         await asyncio.gather(*shutdowns)
 
@@ -471,7 +499,7 @@ async def main(args):
                                 "Got ^C; retrying (do it again to quit everything)."
                             )
                             interrupted = True
-                        except Exception as err:  # pylint: allow=broad-except
+                        except Exception as err:  # pylint: disable=broad-except
                             attempt += 1
                             foo = repr(err)
                             msg = f"Error (attempt {attempt} of {MAX_ATTEMPTS}): {foo}."
