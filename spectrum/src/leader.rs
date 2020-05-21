@@ -136,6 +136,7 @@ where
     debug!("Registered with config server.");
 
     wait_for_start_time_set(&config).await.unwrap();
+    debug!("Got start time.");
     let publisher_addr = resolve_all(&config)
         .await?
         .into_iter()

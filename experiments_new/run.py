@@ -87,9 +87,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import traceback
 import json
 import math
 import operator
+import signal
 import subprocess
 import sys
 
@@ -319,13 +321,13 @@ def terraform(tf_vars):
                 if l.lstrip().startswith("#")
             ]
 
-            if not changes:
+            if changes:
+                spinner.succeed("[infrastructure] found changes to apply:")
+                for change in changes:
+                    change = change.lstrip(" #")
+                    print(f"  • {change}")
+            else:
                 spinner.info("[infrastructure] no changes to apply")
-                return
-            spinner.succeed("[infrastructure] found changes to apply:")
-            for change in changes:
-                change = change.lstrip(" #")
-                print(f"  • {change}")
 
         if changes:
             with Halo(
@@ -389,10 +391,20 @@ class PackerManifest:
 
 
 def ensure_ami_build(
-    machine_type: MachineType, sha: SHA, git_root: Path, force_rebuild=False
+    machine_type: MachineType,
+    sha: SHA,
+    git_root: Path,
+    force_rebuilt: Optional[Set[Tuple[SHA, MachineType]]],
 ) -> PackerBuild:
     builds = PackerManifest.from_disk("manifest.json")
     build = builds.most_recent_matching(machine_type, sha)
+
+    key = (sha, machine_type)
+    if force_rebuilt is not None and key not in force_rebuilt:
+        force_rebuild = True
+        force_rebuilt.add(key)
+    else:
+        force_rebuild = False
 
     if build is not None and not force_rebuild:
         return build
@@ -466,14 +478,14 @@ async def _connect_ssh(*args, **kwargs):
 
 
 @asynccontextmanager
-async def infra(environment: Environment, force_rebuild=False):
+async def infra(environment: Environment, force_rebuilt):
     Halo(f"[infrastructure] {environment}").stop_and_persist(symbol="•")
 
     git_root = _get_git_root()
     sha = _get_last_sha(git_root)
 
     build = ensure_ami_build(
-        environment.machine_type, sha, git_root, force_rebuild=force_rebuild
+        environment.machine_type, sha, git_root, force_rebuilt=force_rebuilt
     )
 
     tf_vars = {
@@ -603,6 +615,12 @@ async def _execute_experiment(
     return result
 
 
+def check_ssh(ssh_result):
+    if ssh_result.exit_status != 0:
+        raise Exception("bad")
+    return ssh_result
+
+
 async def run_experiment(
     experiment: Experiment, setup: Setting, spinner: Halo
 ) -> Milliseconds:
@@ -689,6 +707,10 @@ async def run_experiment(
             shutdowns.append(
                 worker.ssh.run("sudo systemctl stop 'spectrum-worker@*'", check=False)
             )
+        for client in clients:
+            shutdowns.append(
+                client.ssh.run("sudo systemctl stop 'viewer@*'", check=False)
+            )
         shutdowns.append(
             publisher.ssh.run("sudo systemctl stop spectrum-publisher", check=False)
         )
@@ -737,33 +759,59 @@ def stream_json(
 
 
 async def retry_experiment(
-    experiment: Experiment, setting: Setting, writer: Callable[[Any], None]
+    experiment: Experiment,
+    setting: Setting,
+    writer: Callable[[Any], None],
+    ctrl_c: asyncio.Event,
 ):
     interrupted = False
     for attempt in range(1, MAX_ATTEMPTS + 1):
         with Halo() as spinner:
-            try:
-                time = await run_experiment(experiment, setting, spinner)
-            except asyncio.CancelledError:
+            experiment_task = asyncio.create_task(
+                run_experiment(experiment, setting, spinner)
+            )
+            ctrl_c.clear()
+            ctrl_c_task = asyncio.create_task(ctrl_c.wait())
+
+            await asyncio.wait(
+                [experiment_task, ctrl_c_task], return_when=asyncio.FIRST_COMPLETED
+            )
+            if ctrl_c.is_set():
+                experiment_task.cancel()
+                try:
+                    await experiment_task
+                except asyncio.CancelledError:
+                    pass
+
                 # On the first ^C for a given trial, just continue.
+                if not interrupted:
+                    spinner.info(
+                        "Got Ctrl+C; retrying (do it again to quit everything)."
+                    )
+                    interrupted = True
+                    continue
+
                 # On the second, quit everything.
-                if interrupted:
-                    spinner.fail("Got ^C multiple times.")
-                    raise
-                spinner.fail("Got ^C; retrying (do it again to quit everything).")
-                interrupted = True
+                spinner.info("Got ^C multiple times; exiting.")
+                raise KeyboardInterrupt
+            try:
+                time = await experiment_task
             except Exception as err:  # pylint: disable=broad-except
+                with open("error.log", "a") as f:
+                    traceback.print_exc(err, file=f)
                 msg = f"Error (attempt {attempt} of {MAX_ATTEMPTS}): {err!r}."
                 if attempt == MAX_ATTEMPTS:
                     spinner.fail(msg)
-                spinner.info(msg)
+                else:
+                    spinner.warn(msg)
             else:
+                # experiment succeeded!
                 spinner.succeed(f"[experiment] time: {time}ms")
                 writer(asdict(Result(experiment, time)))
                 return
 
 
-async def main(args):
+def parse_args(args):
     description, _, epilog = __doc__.partition("\n\n")
     parser = argparse.ArgumentParser(
         description=description,
@@ -790,27 +838,35 @@ async def main(args):
         type=argparse.FileType("w"),
         help="path for experiment results",
     )
-    args = parser.parse_args(args[1:])
+    return parser.parse_args(args[1:])
 
-    cleaner = terraform_cleanup(AWS_REGION) if args.cleanup else nullcontext()
 
-    # TODO: progress bars using tqdm
-    # https://stackoverflow.com/questions/37901292/asyncio-aiohttp-progress-bar-with-tqdm
+async def run_experiments(all_experiments, writer, force_rebuild, cleanup, ctrl_c):
+    force_rebuilt = set() if force_rebuild else None
+    with terraform_cleanup(AWS_REGION) if cleanup else nullcontext():
+        for environment, experiments in experiments_by_environment(all_experiments):
+            async with infra(environment, force_rebuilt) as setting:
+                for experiment in experiments:
+                    print()
+                    Halo(f"{experiment}").stop_and_persist(symbol="•")
+                    await retry_experiment(experiment, setting, writer, ctrl_c)
+
+
+async def main(args):
+    loop = asyncio.get_running_loop()
+    ctrl_c = asyncio.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, ctrl_c.set)
+
     all_experiments = map(Experiment.from_dict, json.load(args.experiments_file))
-    force_rebuild = args.force_rebuild
-    with stream_json(args.output, close=True) as writer:
-        with cleaner:
-            for environment, experiments in experiments_by_environment(all_experiments):
-                async with infra(environment, force_rebuild) as setting:
-                    force_rebuild = False  # only force rebuild the first time
-                    for experiment in experiments:
-                        print()
-                        Halo(f"{experiment}").stop_and_persist(symbol="•")
-                        await retry_experiment(experiment, setting, writer)
+    try:
+        with stream_json(args.output, close=True) as writer:
+            await run_experiments(
+                all_experiments, writer, args.force_rebuild, args.cleanup, ctrl_c
+            )
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main(sys.argv))
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(main(parse_args(sys.argv)))
