@@ -31,7 +31,7 @@ def main():
 
             check_call(["ssh", "-i", f.name, f"ubuntu@{hostname}", "-o", "StrictHostKeyChecking=no"])
     except CalledProcessError as err:
-        sys.exit(err.status)
+        sys.exit(err.returncode)
 
 if __name__ == '__main__':
     main()

@@ -375,8 +375,11 @@ class PackerManifest:
 
     @classmethod
     def from_disk(cls, fname) -> PackerManifest:
-        with open(fname) as f:
-            data = json.load(f)
+        try:
+            with open(fname) as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            return []
         builds = list(map(PackerBuild.from_dict, data["builds"]))
         builds.sort(key=attrgetter("timestamp"), reverse=True)
         return cls(builds)
@@ -798,8 +801,8 @@ async def retry_experiment(
                 time = await experiment_task
             except Exception as err:  # pylint: disable=broad-except
                 with open("error.log", "a") as f:
-                    traceback.print_exc(err, file=f)
-                msg = f"Error (attempt {attempt} of {MAX_ATTEMPTS}): {err!r}."
+                    traceback.print_exc(file=f)
+                msg = f"Error (attempt {attempt} of {MAX_ATTEMPTS}): {err!r} (traceback in [error.log])"
                 if attempt == MAX_ATTEMPTS:
                     spinner.fail(msg)
                 else:
