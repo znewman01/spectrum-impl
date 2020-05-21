@@ -379,7 +379,7 @@ class PackerManifest:
             with open(fname) as f:
                 data = json.load(f)
         except FileNotFoundError:
-            return []
+            return cls([])
         builds = list(map(PackerBuild.from_dict, data["builds"]))
         builds.sort(key=attrgetter("timestamp"), reverse=True)
         return cls(builds)
