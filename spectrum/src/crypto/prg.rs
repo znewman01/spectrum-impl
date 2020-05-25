@@ -319,7 +319,7 @@ pub mod group {
                 value += Group::order();
             }
             if value >= Group::order() {
-                value = (value % Group::order()).into();
+                value %= Group::order();
             }
             GroupPrgSeed { value }
         }
@@ -333,7 +333,7 @@ pub mod group {
         type Output = Self;
 
         fn sub(self, other: Self) -> Self {
-            GroupPrgSeed::new(Integer::from(self.value - other.value))
+            GroupPrgSeed::new(self.value - other.value)
         }
     }
 
@@ -350,7 +350,7 @@ pub mod group {
         type Output = Self;
 
         fn add(self, other: Self) -> Self {
-            GroupPrgSeed::new(Integer::from(self.value + other.value))
+            GroupPrgSeed::new(self.value + other.value)
         }
     }
 
@@ -488,8 +488,8 @@ pub mod group {
             let mut all_bytes = Vec::with_capacity(chunk_size * self.0.len());
             for element in self.0.into_iter() {
                 let bytes: Bytes = element.into();
-                let bytes: Vec<u8> = bytes.into();
-                all_bytes.append(&mut bytes.into());
+                let mut bytes: Vec<u8> = bytes.into();
+                all_bytes.append(&mut bytes);
             }
             all_bytes
         }

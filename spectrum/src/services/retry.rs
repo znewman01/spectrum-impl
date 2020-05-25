@@ -9,14 +9,14 @@ use std::sync::{
 use std::time::Duration;
 
 // Try `attempts` times, delaying for duration `delay` between each.
-pub fn error_policy<T: fmt::Display>(
+pub fn error_policy<T: fmt::Debug>(
     delay: Duration,
     attempts: usize,
 ) -> impl FnMut(T) -> RetryPolicy<Error> {
     assert!(attempts > 0, "Zero attempts makes no sense.");
     let counter = Mutex::new(AtomicUsize::new(attempts));
     move |err: T| {
-        trace!("Error: {}", err);
+        trace!("Error: {:?}", err);
         let count = counter.lock().unwrap();
         if count.load(Ordering::Relaxed) <= 1 {
             let msg = format!("Did not succeed in {} attempts.", attempts);

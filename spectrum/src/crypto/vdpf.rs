@@ -372,13 +372,22 @@ pub mod multi_key {
 
         fn check_audit(&self, tokens: Vec<FieldToken>) -> bool {
             let bit_proof = LSS::recover(tokens.iter().map(|t| t.bit.clone()).collect());
+            if bit_proof.get_value() != 0 {
+                return false;
+            }
+
             let seed_proof = LSS::recover(tokens.iter().map(|t| t.seed.clone()).collect());
+            if seed_proof.get_value() != 0 {
+                return false;
+            }
 
-            // make sure all hashes are equal ||hash_set|| = 1
-            let hash_set: HashSet<_> = tokens.iter().map(|t| t.data.clone()).collect();
+            // make sure all hashes are equal
+            let distinct_hashes: HashSet<_> = tokens.into_iter().map(|t| t.data).collect();
+            if distinct_hashes.len() != 1 {
+                return false;
+            }
 
-            //&& bit_proof.get_value() == 0
-            hash_set.len() == 1 && bit_proof.get_value() == 0 && seed_proof.get_value() == 0
+            true
         }
     }
 
