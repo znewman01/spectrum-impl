@@ -1,4 +1,0 @@
-# $HOME/.aws/config
-[default]
-region = us-east1  # TODO: configurable
-output = json
