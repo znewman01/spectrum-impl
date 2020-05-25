@@ -10,6 +10,7 @@ results.json
 manifest.json
 terraform.log
 packer.log
+error.log
 
 # Python droppings
 .mypy_cache
