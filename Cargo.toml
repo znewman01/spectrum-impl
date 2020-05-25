@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "spectrum",
-    # "experiments",
 ]
 
 [profile.release]

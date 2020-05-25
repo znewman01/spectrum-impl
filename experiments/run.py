@@ -103,7 +103,20 @@ from itertools import chain, groupby, starmap, product
 from operator import attrgetter
 from subprocess import check_call, check_output
 from tempfile import TemporaryDirectory, NamedTemporaryFile
-from typing import *
+from typing import (
+    Optional,
+    Set,
+    Tuple,
+    Any,
+    NewType,
+    List,
+    Dict,
+    Type,
+    Mapping,
+    TextIO,
+    Iterator,
+    Callable,
+)
 from pathlib import Path
 
 import asyncssh
@@ -119,6 +132,7 @@ Hostname = NewType("Hostname", str)
 SHA = NewType("SHA", str)
 AMI = NewType("AMI", str)
 Region = NewType("Region", str)
+BuildProfile = NewType("BuildProfile", str)
 
 # Need to update install.sh to change this
 MAX_WORKERS_PER_MACHINE = 10
@@ -314,7 +328,17 @@ def terraform(tf_vars):
             plan = Path(tmpdir) / "tfplan"
             tf_vars = _format_var_args(tf_vars)
             cmd = ["terraform", "plan", f"-out={plan}", "-no-color"] + tf_vars
-            plan_output = check_output(cmd)
+            try:
+                plan_output = check_output(cmd, stderr=subprocess.STDOUT)
+            except subprocess.CalledProcessError as err:
+                if "terraform init" in err.output.decode("utf8"):
+                    # we know what to do here
+                    spinner.text = "[infrastructure] initializing plugins"
+                    check_output(["terraform", "init"])
+                    spinner.text = "[infrastructure] checking current state"
+                    plan_output = check_output(cmd)
+                else:
+                    raise
             changes = [
                 l
                 for l in plan_output.decode("utf8").split("\n")
@@ -349,12 +373,20 @@ def terraform(tf_vars):
 
 
 @dataclass(frozen=True)
+class PackerConfig:
+    machine_type: MachineType
+    sha: SHA
+    profile: BuildProfile
+
+
+@dataclass(frozen=True)
 class PackerBuild:
     timestamp: int
     region: Region
     ami: AMI
     machine_type: MachineType
     sha: SHA
+    profile: BuildProfile
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> PackerBuild:
@@ -365,7 +397,11 @@ class PackerBuild:
             ami=ami,
             sha=data["custom_data"]["sha"],
             machine_type=data["custom_data"]["instance_type"],
+            profile=data["custom_data"]["profile"],
         )
+
+    def to_config(self) -> PackerConfig:
+        return PackerConfig(self.machine_type, self.sha, self.profile)
 
 
 @dataclass(frozen=True)
@@ -384,28 +420,24 @@ class PackerManifest:
         builds.sort(key=attrgetter("timestamp"), reverse=True)
         return cls(builds)
 
-    def most_recent_matching(
-        self, machine_type: MachineType, sha: SHA
-    ) -> Optional[PackerBuild]:
+    def most_recent_matching(self, build_config: PackerConfig) -> Optional[PackerBuild]:
         for build in self.builds:
-            if build.sha == sha and build.machine_type == machine_type:
+            if build.to_config() == build_config:
                 return build
         return None
 
 
 def ensure_ami_build(
-    machine_type: MachineType,
-    sha: SHA,
+    build_config: PackerConfig,
     git_root: Path,
-    force_rebuilt: Optional[Set[Tuple[SHA, MachineType]]],
+    force_rebuilt: Optional[Set[PackerConfig]],
 ) -> PackerBuild:
     builds = PackerManifest.from_disk("manifest.json")
-    build = builds.most_recent_matching(machine_type, sha)
+    build = builds.most_recent_matching(build_config)
 
-    key = (sha, machine_type)
-    if force_rebuilt is not None and key not in force_rebuilt:
+    if force_rebuilt is not None and build_config not in force_rebuilt:
         force_rebuild = True
-        force_rebuilt.add(key)
+        force_rebuilt.add(build_config)
     else:
         force_rebuild = False
 
@@ -423,20 +455,21 @@ def ensure_ami_build(
             str(src_path),
             "--prefix",
             "spectrum/",
-            sha,
+            build_config.sha,
         ]
         check_call(cmd, cwd=git_root)
 
         packer_vars = _format_var_args(
             {
-                "sha": sha,
+                "sha": build_config.sha,
                 "src_archive": str(src_path),
-                "instance_type": machine_type,
+                "instance_type": build_config.machine_type,
                 "region": AWS_REGION,
+                "profile": build_config.profile,
             }
         )
         with open("packer.log", "w") as f:
-            short_sha = sha[:7]
+            short_sha = build_config.sha[:7]
             with Halo(
                 f"[infrastructure] building AMI (output in [packer.log]) for SHA: {short_sha}"
             ) as spinner:
@@ -444,7 +477,7 @@ def ensure_ami_build(
                 spinner.succeed()
 
     builds = PackerManifest.from_disk("manifest.json")
-    build = builds.most_recent_matching(machine_type, sha)
+    build = builds.most_recent_matching(build_config)
     if build is None:
         raise RuntimeError("Packer did not create the expected build.")
     return build
@@ -481,15 +514,20 @@ async def _connect_ssh(*args, **kwargs):
 
 
 @asynccontextmanager
-async def infra(environment: Environment, force_rebuilt):
+async def infra(
+    environment: Environment,
+    force_rebuilt: Optional[Set[PackerConfig]],
+    build_profile: BuildProfile,
+):
     Halo(f"[infrastructure] {environment}").stop_and_persist(symbol="•")
 
     git_root = _get_git_root()
     sha = _get_last_sha(git_root)
 
-    build = ensure_ami_build(
-        environment.machine_type, sha, git_root, force_rebuilt=force_rebuilt
+    build_config = PackerConfig(
+        machine_type=environment.machine_type, sha=sha, profile=build_profile
     )
+    build = ensure_ami_build(build_config, git_root, force_rebuilt=force_rebuilt)
 
     tf_vars = {
         "ami": build.ami,
@@ -822,6 +860,13 @@ def parse_args(args):
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
+        "--build",
+        choices=["debug", "release"],
+        default="debug",
+        type=BuildProfile,
+        help="build profile for compilation",
+    )
+    parser.add_argument(
         "--force-rebuild",
         action="store_true",
         help="rebuild the AMI even if Spectrum source hasn't changed",
@@ -844,11 +889,18 @@ def parse_args(args):
     return parser.parse_args(args[1:])
 
 
-async def run_experiments(all_experiments, writer, force_rebuild, cleanup, ctrl_c):
+async def run_experiments(
+    all_experiments: List[Experiment],
+    writer: Callable[[str], None],
+    force_rebuild: bool,
+    cleanup: bool,
+    build_profile: BuildProfile,
+    ctrl_c: asyncio.Event,
+):
     force_rebuilt = set() if force_rebuild else None
     with terraform_cleanup(AWS_REGION) if cleanup else nullcontext():
         for environment, experiments in experiments_by_environment(all_experiments):
-            async with infra(environment, force_rebuilt) as setting:
+            async with infra(environment, force_rebuilt, build_profile) as setting:
                 for experiment in experiments:
                     print()
                     Halo(f"{experiment}").stop_and_persist(symbol="•")
@@ -865,7 +917,12 @@ async def main(args):
     try:
         with stream_json(args.output, close=True) as writer:
             await run_experiments(
-                all_experiments, writer, args.force_rebuild, args.cleanup, ctrl_c
+                all_experiments,
+                writer,
+                args.force_rebuild,
+                args.cleanup,
+                args.build,
+                ctrl_c,
             )
     except KeyboardInterrupt:
         pass

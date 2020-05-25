@@ -21,6 +21,11 @@ variable "worker_machine_count" {
 provider "aws" {
   profile = "default"
   region  = var.region
+  version = "~> 2.63"
+}
+
+provider "tls" {
+  version = "~> 2.1"
 }
 
 resource "tls_private_key" "key" {
