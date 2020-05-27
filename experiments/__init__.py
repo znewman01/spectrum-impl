@@ -13,7 +13,9 @@ Milliseconds = NewType("Milliseconds", int)
 
 
 class Setting(ABC):
-    pass
+    @abstractmethod
+    async def additional_setup(self):
+        ...
 
 
 class Environment(ABC):

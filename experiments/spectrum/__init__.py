@@ -45,6 +45,7 @@ from itertools import chain, starmap, product
 import asyncssh
 
 from halo import Halo
+from tenacity import stop_after_attempt, wait_fixed, AsyncRetrying
 
 import experiments
 
@@ -64,6 +65,27 @@ class Setting(experiments.Setting):
     publisher: Machine
     workers: List[Machine]
     clients: List[Machine]
+
+    async def additional_setup(self):
+        with Halo("[infrastructure] starting etcd") as spinner:
+            await self.publisher.ssh.run(
+                "envsubst '$HOSTNAME' "
+                '    < "$HOME/config/etcd.template" '
+                "    | sudo tee /etc/default/etcd "
+                "    > /dev/null",
+                check=True,
+            )
+            await self.publisher.ssh.run("sudo systemctl start etcd", check=True)
+            # Make sure etcd is healthy
+            async for attempt in AsyncRetrying(
+                wait=wait_fixed(2), stop=stop_after_attempt(20)
+            ):
+                with attempt:
+                    await self.publisher.ssh.run(
+                        f"ETCDCTL_API=3 etcdctl --endpoints {self.publisher.hostname}:2379 endpoint health",
+                        check=True,
+                    )
+            spinner.succeed("[infrastructure] etcd healthy")
 
 
 @dataclass(order=True, frozen=True)

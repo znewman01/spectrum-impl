@@ -5,36 +5,20 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import traceback
-import json
 
-from contextlib import contextmanager, asynccontextmanager, nullcontext, closing
-from dataclasses import dataclass, asdict
-from itertools import chain, groupby, starmap, product
+from contextlib import asynccontextmanager, nullcontext
+from dataclasses import asdict
 from subprocess import check_output
-from tempfile import NamedTemporaryFile
-from typing import (
-    ContextManager,
-    Optional,
-    Set,
-    Tuple,
-    Any,
-    NewType,
-    List,
-    Dict,
-    Mapping,
-    TextIO,
-    Iterator,
-    Callable,
-)
+from typing import Optional, Set, List, Callable
 from pathlib import Path
 
 import asyncssh
 
 from halo import Halo
-from tenacity import stop_after_attempt, wait_fixed, AsyncRetrying
+from tenacity import wait_fixed, AsyncRetrying
 
 from experiments import cloud, packer
-from experiments import Environment, Setting, Result, experiments_by_environment
+from experiments import Environment, Setting, experiments_by_environment
 from experiments.cloud import Machine, SHA
 from experiments.spectrum import Experiment
 
@@ -129,25 +113,7 @@ async def infra(
             ]
             setup = environment.to_setup(machines)
 
-            with Halo("[infrastructure] starting etcd") as spinner:
-                await setup.publisher.ssh.run(
-                    "envsubst '$HOSTNAME' "
-                    '    < "$HOME/config/etcd.template" '
-                    "    | sudo tee /etc/default/etcd "
-                    "    > /dev/null",
-                    check=True,
-                )
-                await setup.publisher.ssh.run("sudo systemctl start etcd", check=True)
-                # Make sure etcd is healthy
-                async for attempt in AsyncRetrying(
-                    wait=wait_fixed(2), stop=stop_after_attempt(20)
-                ):
-                    with attempt:
-                        await setup.publisher.ssh.run(
-                            f"ETCDCTL_API=3 etcdctl --endpoints {setup.publisher.hostname}:2379 endpoint health",
-                            check=True,
-                        )
-                spinner.succeed("[infrastructure] etcd healthy")
+            await setup.additional_setup()
 
             yield setup
         print()
@@ -160,10 +126,7 @@ def check_ssh(ssh_result):
 
 
 async def retry_experiment(
-    experiment: Experiment,
-    setting: Setting,
-    writer: Callable[[Any], None],
-    ctrl_c: asyncio.Event,
+    experiment: Experiment, setting: Setting, ctrl_c: asyncio.Event
 ):
     interrupted = False
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -194,7 +157,7 @@ async def retry_experiment(
                 spinner.info("Got ^C multiple times; exiting.")
                 raise KeyboardInterrupt
             try:
-                time = await experiment_task
+                result = await experiment_task
             except Exception as err:  # pylint: disable=broad-except
                 with open("error.log", "a") as f:
                     traceback.print_exc(file=f)
@@ -205,9 +168,8 @@ async def retry_experiment(
                     spinner.warn(msg)
             else:
                 # experiment succeeded!
-                spinner.succeed(f"[experiment] time: {time}ms")
-                writer(asdict(Result(experiment, time)))
-                return
+                spinner.succeed(f"[experiment] time: {result.time}ms")
+                return result
 
 
 async def run_experiments(
@@ -225,4 +187,5 @@ async def run_experiments(
                 for experiment in experiments:
                     print()
                     Halo(f"{experiment}").stop_and_persist(symbol="•")
-                    await retry_experiment(experiment, setting, writer, ctrl_c)
+                    result = await retry_experiment(experiment, setting, writer, ctrl_c)
+                    writer(asdict(result))
