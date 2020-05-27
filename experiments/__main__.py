@@ -37,10 +37,12 @@ import signal
 import sys
 
 from contextlib import contextmanager, closing, nullcontext
-from typing import Any, Dict, TextIO, Iterator, Callable
+from typing import Any, Dict, TextIO, Iterator, Callable, ContextManager
 from pathlib import Path
 
 from experiments import spectrum
+from experiments.run import run_experiments
+from experiments.spectrum import Experiment
 
 
 def parse_args(args):
@@ -134,10 +136,18 @@ async def main(args):
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, ctrl_c.set)
 
+    all_experiments = map(Experiment.from_dict, json.load(args.experiments_file))
     with chdir(args.dir):
         try:
             with stream_json(args.output, close=True) as writer:
-                await args.main(args, writer, ctrl_c)
+                await run_experiments(
+                    all_experiments,
+                    writer,
+                    args.force_rebuild,
+                    args.cleanup,
+                    args.build,
+                    ctrl_c,
+                )
         except KeyboardInterrupt:
             pass
 

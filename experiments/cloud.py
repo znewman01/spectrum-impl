@@ -4,16 +4,29 @@ import operator
 import subprocess
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import reduce
 from pathlib import Path
 from subprocess import check_call, check_output
 from tempfile import TemporaryDirectory
 from typing import NewType
 
+import asyncssh
+
 from halo import Halo
 
 Region = NewType("Region", str)
+SHA = NewType("SHA", str)
+AMI = NewType("AMI", str)
+MachineType = NewType("MachineType", str)
+Hostname = NewType("Hostname", str)
 AWS_REGION = Region("us-east-2")
+
+
+@dataclass(frozen=True)
+class Machine:
+    ssh: asyncssh.SSHClientConnection
+    hostname: Hostname
 
 
 def format_args(var_dict):
