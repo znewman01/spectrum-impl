@@ -1,109 +1,22 @@
 # encoding: utf8
-# Conflicts with black, isort
 # pylint: disable=bad-continuation,ungrouped-imports,line-too-long
-"""
-Run Spectrum experiments.
-
-Steps:
-
-1. Build an appropriate base AMI.
-
-   We use the Git commit at which the `spectrum/` source directory was last
-   modified to create an AMI for running experiments. This AMI has the Spectrum
-   binaries and all dependencies for running them, along with etcd.
-
-   We build using Packer; see `image.json`, `install.sh`, `compile.sh`, and the
-   contents of `config/` for details on this image.
-
-   This step can take a very long time (compiling and packaging AMIs are both
-   lengthy steps). Fortunately, we cache:
-
-   - the AMI itself (based on the machine type and SHA); use `--force-rebuild`
-     to bust this cache
-   - the compiled Spectrum binary (based on source SHA and compile profile
-     (debug/release))
-
-2. Set up the AWS environment.
-
-   Here we use Terraform. This is surprisingly quick (<20s to set everything
-   up), though destroying instances takes a while.
-
-   See `main.tf` for details; the highlights:
-
-   - 1 publisher machine (this also runs etcd)
-   - many worker machines (`worker_machines_per_group * num_groups`)
-   - as many client machines as necessary (`ceil(num_clients / clients_per_machine)`)
-
-   We use the same instance type as the Packer image.
-
-3. Run experiments.
-
-   JSON input.
-
-   For example: `{"clients": 100, "channels": 10, "message_size": 1024}`
-
-   Also configurable:
-
-   - `machine_type`: AWS instance type to run on. For simplicity, we use the
-     same instance type for all machines.
-   - `clients_per_machine`:
-   - `workers_per_machine`: how many worker processes to run on each machine
-   - `worker_machines_per_group`: how many worker *machines* in each group
-   - `protocol`: the protocol to run. Options include
-     - `{"Symmetric": {"security": 16}}` (the symmetric protocol with a 16-byte
-       prime, 2 groups)
-     - `{"Insecure": {"parties": 3}}` (the insecure protocol with 3 groups)
-     - `{"SeedHomomorphic": {"parties": 3}}` (the seed-homomorphic protocol
-       with 3 groups and a default security level)
-
-   For each experiment, we:
-
-   1. Clear out prior state (etcd config, old logs).
-   2. Run the `setup` binary to put an experiment setup in etcd.
-   3. Start workers, leaders, and clients (pointing them at etcd).
-   4. Run the publisher, which will initiate the experiment.
-   5. Parse the publisher logs to get the time from start to finish.
-
-   We retry each experiment a few times if it fails.
-
-
-If running more than one experiment, they are grouped by AWS environment.
-
-Requirements:
-
-- Terraform (runnable as `terraform`)
-- Packer (runnable as `packer`)
-- Python 3.7
-- Python dependencies: see requirements.txt
-
-To debug:
-
-    $ python ssh.py  # SSH into publisher machine
-    $ python ssh.py --worker # SSH into some worker
-    $ python ssh.py --client 2 # SSH into the worker 2 (0-indexed)
-"""
 from __future__ import annotations
 
-import argparse
 import asyncio
 import contextlib
 import traceback
 import json
 import math
-import operator
-import signal
-import subprocess
-import sys
 
 from abc import ABC, abstractmethod
 from contextlib import contextmanager, asynccontextmanager, nullcontext, closing
 from dataclasses import dataclass, field, asdict
-from functools import reduce
 from itertools import chain, groupby, starmap, product
 from operator import attrgetter
 from subprocess import check_call, check_output
 from tempfile import TemporaryDirectory, NamedTemporaryFile
 from typing import (
+    ContextManager,
     Optional,
     Set,
     Tuple,
@@ -122,7 +35,9 @@ from pathlib import Path
 import asyncssh
 
 from halo import Halo
-from tenacity import retry, stop_after_attempt, wait_fixed, AsyncRetrying
+from tenacity import stop_after_attempt, wait_fixed, AsyncRetrying
+
+from experiments import cloud
 
 Bytes = NewType("Bytes", int)
 Bits = NewType("Bits", int)
@@ -131,12 +46,10 @@ MachineType = NewType("MachineType", str)
 Hostname = NewType("Hostname", str)
 SHA = NewType("SHA", str)
 AMI = NewType("AMI", str)
-Region = NewType("Region", str)
 BuildProfile = NewType("BuildProfile", str)
 
 # Need to update install.sh to change this
 MAX_WORKERS_PER_MACHINE = 10
-AWS_REGION = Region("us-east-2")
 MAX_ATTEMPTS = 5
 
 
@@ -295,83 +208,6 @@ class Result:
     time: Milliseconds  # in millis; BREAKING CHANGE
 
 
-def _format_var_args(var_dict):
-    return reduce(operator.add, [["-var", f"{k}={v}"] for k, v in var_dict.items()])
-
-
-@contextmanager
-def terraform_cleanup(region: Region):
-    try:
-        yield
-    finally:
-        tf_vars = _format_var_args(
-            {
-                "region": region,  # must be the same
-                "ami": "null",
-                "instance_type": "null",
-                "client_machine_count": 0,
-                "worker_machine_count": 0,
-            }
-        )
-        with Halo("[infrastructure] tearing down all resources") as spinner:
-            check_call(
-                ["terraform", "destroy", "-auto-approve"] + tf_vars,
-                stdout=subprocess.DEVNULL,
-            )
-            spinner.succeed()
-
-
-@contextmanager
-def terraform(tf_vars):
-    with TemporaryDirectory() as tmpdir:
-        with Halo("[infrastructure] checking current state") as spinner:
-            plan = Path(tmpdir) / "tfplan"
-            tf_vars = _format_var_args(tf_vars)
-            cmd = ["terraform", "plan", f"-out={plan}", "-no-color"] + tf_vars
-            try:
-                plan_output = check_output(cmd, stderr=subprocess.STDOUT)
-            except subprocess.CalledProcessError as err:
-                if "terraform init" in err.output.decode("utf8"):
-                    # we know what to do here
-                    spinner.text = "[infrastructure] initializing plugins"
-                    check_output(["terraform", "init"])
-                    spinner.text = "[infrastructure] checking current state"
-                    plan_output = check_output(cmd)
-                else:
-                    raise
-            changes = [
-                l
-                for l in plan_output.decode("utf8").split("\n")
-                if l.lstrip().startswith("#")
-            ]
-
-            if changes:
-                spinner.succeed("[infrastructure] found changes to apply:")
-                for change in changes:
-                    change = change.lstrip(" #")
-                    print(f"  • {change}")
-            else:
-                spinner.info("[infrastructure] no changes to apply")
-
-        if changes:
-            with Halo(
-                "[infrastructure] applying changes (output in [terraform.log])"
-            ) as spinner:
-                with open("terraform.log", "w") as f:
-                    cmd = [
-                        "terraform",
-                        "apply",
-                        "-refresh=false",
-                        "-auto-approve",
-                        str(plan),
-                    ]
-                    check_call(cmd, stdout=f)
-                spinner.succeed("[infrastructure] created")
-
-        data = json.loads(check_output(["terraform", "output", "-json"]))
-    yield {k: v["value"] for k, v in data.items()}
-
-
 @dataclass(frozen=True)
 class PackerConfig:
     machine_type: MachineType
@@ -382,7 +218,7 @@ class PackerConfig:
 @dataclass(frozen=True)
 class PackerBuild:
     timestamp: int
-    region: Region
+    region: cloud.Region
     ami: AMI
     machine_type: MachineType
     sha: SHA
@@ -459,12 +295,12 @@ def ensure_ami_build(
         ]
         check_call(cmd, cwd=git_root)
 
-        packer_vars = _format_var_args(
+        packer_vars = cloud.format_args(
             {
                 "sha": build_config.sha,
                 "src_archive": str(src_path),
                 "instance_type": build_config.machine_type,
-                "region": AWS_REGION,
+                "region": cloud.AWS_REGION,
                 "profile": build_config.profile,
             }
         )
@@ -536,7 +372,7 @@ async def infra(
         "client_machine_count": environment.client_machines,
         "worker_machine_count": environment.worker_machines,
     }
-    with terraform(tf_vars) as data:
+    with cloud.terraform(tf_vars) as data:
         publisher = data["publisher"]
         workers = data["workers"]
         clients = data["clients"]
@@ -852,43 +688,6 @@ async def retry_experiment(
                 return
 
 
-def parse_args(args):
-    description, _, epilog = __doc__.partition("\n\n")
-    parser = argparse.ArgumentParser(
-        description=description,
-        epilog=epilog,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--build",
-        choices=["debug", "release"],
-        default="debug",
-        type=BuildProfile,
-        help="build profile for compilation",
-    )
-    parser.add_argument(
-        "--force-rebuild",
-        action="store_true",
-        help="rebuild the AMI even if Spectrum source hasn't changed",
-    )
-    parser.add_argument(
-        "--cleanup", action="store_true", help="tear down all infrastructure after"
-    )
-    parser.add_argument(
-        "experiments_file",
-        metavar="EXPERIMENTS_FILE",
-        type=argparse.FileType("r"),
-        help="file with a JSON array of Spectrum experiments to run",
-    )
-    parser.add_argument(
-        "--output",
-        default="results.json",
-        type=argparse.FileType("w"),
-        help="path for experiment results",
-    )
-    return parser.parse_args(args[1:])
-
-
 async def run_experiments(
     all_experiments: List[Experiment],
     writer: Callable[[str], None],
@@ -898,35 +697,10 @@ async def run_experiments(
     ctrl_c: asyncio.Event,
 ):
     force_rebuilt = set() if force_rebuild else None
-    with terraform_cleanup(AWS_REGION) if cleanup else nullcontext():
+    with cloud.cleanup(cloud.AWS_REGION) if cleanup else nullcontext():
         for environment, experiments in experiments_by_environment(all_experiments):
             async with infra(environment, force_rebuilt, build_profile) as setting:
                 for experiment in experiments:
                     print()
                     Halo(f"{experiment}").stop_and_persist(symbol="•")
                     await retry_experiment(experiment, setting, writer, ctrl_c)
-
-
-async def main(args):
-    loop = asyncio.get_running_loop()
-    ctrl_c = asyncio.Event()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, ctrl_c.set)
-
-    all_experiments = map(Experiment.from_dict, json.load(args.experiments_file))
-    try:
-        with stream_json(args.output, close=True) as writer:
-            await run_experiments(
-                all_experiments,
-                writer,
-                args.force_rebuild,
-                args.cleanup,
-                args.build,
-                ctrl_c,
-            )
-    except KeyboardInterrupt:
-        pass
-
-
-if __name__ == "__main__":
-    asyncio.run(main(parse_args(sys.argv)))
