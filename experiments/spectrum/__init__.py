@@ -46,9 +46,10 @@ import asyncssh
 
 from halo import Halo
 
-from experiments import foo
+import experiments
+
+from experiments import Milliseconds
 from experiments.cloud import MachineType, Machine
-from experiments.foo import Milliseconds
 
 BuildProfile = NewType("BuildProfile", str)
 Bytes = NewType("Bytes", int)
@@ -59,14 +60,14 @@ MAX_WORKERS_PER_MACHINE = 10
 
 
 @dataclass
-class Setting(foo.Setting):
+class Setting(experiments.Setting):
     publisher: Machine
     workers: List[Machine]
     clients: List[Machine]
 
 
 @dataclass(order=True, frozen=True)
-class Environment(foo.Environment):
+class Environment(experiments.Environment):
     machine_type: MachineType
     client_machines: int
     worker_machines: int
@@ -209,7 +210,7 @@ async def _execute_experiment(
 
 
 @dataclass(frozen=True)
-class Experiment(foo.Experiment):
+class Experiment(experiments.Experiment):
     # TODO: should just be one machine type?
     clients: int
     channels: int
