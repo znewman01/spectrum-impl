@@ -136,7 +136,9 @@ async def main(args):
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, ctrl_c.set)
 
-    all_experiments = map(Experiment.from_dict, json.load(args.experiments_file))
+    all_experiments = map(
+        args.experiment_cls.from_dict, json.load(args.experiments_file)
+    )
     with chdir(args.dir):
         try:
             with stream_json(args.output, close=True) as writer:

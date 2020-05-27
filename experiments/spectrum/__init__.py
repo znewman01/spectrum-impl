@@ -32,38 +32,56 @@ To debug:
 from __future__ import annotations
 
 import argparse
-import json
+import asyncio
 import math
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NewType, Dict, Any, Optional, Type
+from tempfile import NamedTemporaryFile
+from typing import NewType, Dict, Any, Optional, Type, List, Mapping
+from itertools import chain, starmap, product
 
-from experiments.foo import Environment
-from experiments.cloud import MachineType
+import asyncssh
+
+from halo import Halo
+
+from experiments import foo
+from experiments.cloud import MachineType, Machine
+from experiments.foo import Milliseconds
 
 BuildProfile = NewType("BuildProfile", str)
 Bytes = NewType("Bytes", int)
 
-EXPERIMENT_JSON_HELP = """\
-JSON input.
 
-For example:
+# Need to update install.sh to change this
+MAX_WORKERS_PER_MACHINE = 10
 
-    {"clients": 100, "channels": 10, "message_size": 1024}
 
-Also configurable:
+@dataclass
+class Setting(foo.Setting):
+    publisher: Machine
+    workers: List[Machine]
+    clients: List[Machine]
 
-- `machine_type`: AWS instance type (same for all machines).
-- `clients_per_machine`
-- `workers_per_machine`: *processes* to run on each machine
-- `worker_machines_per_group`: worker *machines* in each group
-- `protocol`: the protocol to run; can be:
-  - `{"Symmetric": {"security": 16}}` (16-byte prime, 2 groups)
-  - `{"Insecure": {"parties": 3}}` (3 groups)
-  - `{"SeedHomomorphic": {"parties": 3}}` (3 groups, default security)
-"""
+
+@dataclass(order=True, frozen=True)
+class Environment(foo.Environment):
+    machine_type: MachineType
+    client_machines: int
+    worker_machines: int
+
+    @property
+    def total_machines(self) -> int:
+        return self.client_machines + self.worker_machines + 1
+
+    def to_setup(self, machines: List[Machine]) -> Setting:
+        assert len(machines) == self.total_machines
+        return Setting(
+            publisher=machines[0],
+            workers=machines[1 : self.worker_machines + 1],
+            clients=machines[-self.client_machines :],
+        )
 
 
 class Protocol(ABC):
@@ -129,8 +147,69 @@ class SeedHomomorphic(Protocol):
         return cls(**data)
 
 
+async def _install_spectrum_config(machine: Machine, spectrum_config: Dict[str, Any]):
+    spectrum_config_str = "\n".join([f"{k}={v}" for k, v in spectrum_config.items()])
+    with NamedTemporaryFile() as tmp:
+        tmp.write(spectrum_config_str.encode("utf8"))
+        tmp.flush()
+        await asyncssh.scp(tmp.name, (machine.ssh, "/tmp/spectrum.conf"))
+    await machine.ssh.run(
+        "sudo install -m 644 /tmp/spectrum.conf /etc/spectrum.conf", check=True
+    )
+
+
+async def _prepare_worker(
+    machine: Machine,
+    group: int,
+    worker_start_idx: int,
+    num_workers: int,
+    etcd_env: Mapping[str, str],
+):
+    spectrum_config: Dict[str, Any] = {
+        "SPECTRUM_WORKER_GROUP": group,
+        "SPECTRUM_LEADER_GROUP": group,
+        "SPECTRUM_WORKER_START_INDEX": worker_start_idx,
+        **etcd_env,
+    }
+    await _install_spectrum_config(machine, spectrum_config)
+
+    await machine.ssh.run(
+        f"sudo systemctl start spectrum-worker@{{1..{num_workers}}}", check=True
+    )
+    await machine.ssh.run("sudo systemctl start spectrum-leader", check=True)
+
+
+async def _prepare_client(
+    machine: Machine, client_range: slice, etcd_env: Dict[str, Any]
+):
+    await _install_spectrum_config(machine, etcd_env)
+    await machine.ssh.run(
+        f"sudo systemctl start viewer@{{{client_range.start}..{client_range.stop}}}",
+        check=True,
+    )
+
+
+async def _execute_experiment(
+    publisher: Machine, etcd_env: Dict[str, Any]
+) -> Milliseconds:
+    await _install_spectrum_config(publisher, etcd_env)
+    await publisher.ssh.run(
+        "sudo systemctl start spectrum-publisher --wait", check=True
+    )
+
+    result = await publisher.ssh.run(
+        "journalctl --unit spectrum-publisher "
+        "    | grep -o 'Elapsed time: .*' "
+        "    | sed 's/Elapsed time: \\(.*\\)ms/\\1/'",
+        check=True,
+    )
+    result = int(result.stdout.strip())
+
+    return result
+
+
 @dataclass(frozen=True)
-class Experiment:
+class Experiment(foo.Experiment):
     # TODO: should just be one machine type?
     clients: int
     channels: int
@@ -174,6 +253,101 @@ class Experiment:
             data["protocol"] = Protocol.from_dict(protocol)
         return cls(**data)
 
+    async def run(self, setup: Setting, spinner: Halo) -> Milliseconds:
+        try:
+            publisher = setup.publisher
+            workers = setup.workers
+            clients = setup.clients
+
+            etcd_url = f"etcd://{publisher.hostname}:2379"
+            etcd_env = {"SPECTRUM_CONFIG_SERVER": etcd_url}
+
+            spinner.text = "[experiment] setting up"
+            # don't let this same output confuse us if we run on this machine again
+            await publisher.ssh.run(
+                "sudo journalctl --rotate && sudo journalctl --vacuum-time=1s",
+                check=True,
+            )
+            # ensure a blank slate
+            await publisher.ssh.run(
+                "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''",
+                check=True,
+            )
+            # can't use ssh.run(env=...) because the SSH server doesn't like it.
+            await publisher.ssh.run(
+                f"SPECTRUM_CONFIG_SERVER={etcd_url} "
+                "/home/ubuntu/spectrum/setup"
+                f"    {self.protocol.flag}"
+                f"    --channels {self.channels}"
+                f"    --clients {self.clients}"
+                f"    --group-size {self.group_size}"
+                f"    --groups {self.groups}"
+                f"    --message-size {self.message_size}",
+                check=True,
+                timeout=15,
+            )
+
+            spinner.text = "[experiment] starting workers and clients"
+            assert self.workers_per_machine <= MAX_WORKERS_PER_MACHINE
+            await asyncio.gather(
+                *[
+                    _prepare_worker(
+                        worker,
+                        group + 1,
+                        machine_idx * self.workers_per_machine,
+                        self.workers_per_machine,
+                        etcd_env,
+                    )
+                    for (machine_idx, group), worker in zip(
+                        product(
+                            range(self.worker_machines_per_group), range(self.groups)
+                        ),
+                        workers,
+                    )
+                ]
+            )
+
+            # Full client count at every machine except the last
+            cpm = self.clients_per_machine
+            client_counts = starmap(
+                slice,
+                zip(
+                    range(1, self.clients, cpm),
+                    chain(range(cpm, self.clients, cpm), [self.clients]),
+                ),
+            )
+            await asyncio.gather(
+                *[
+                    _prepare_client(client, client_range, etcd_env)
+                    for client, client_range in zip(clients, client_counts)
+                ]
+            )
+
+            spinner.text = "[experiment] running"
+            return await asyncio.wait_for(
+                _execute_experiment(publisher, etcd_env), timeout=60.0
+            )
+        finally:
+            spinner.text = "[experiment] shutting everything down"
+            shutdowns = []
+            for worker in workers:
+                shutdowns.append(
+                    worker.ssh.run("sudo systemctl stop spectrum-leader", check=False)
+                )
+                shutdowns.append(
+                    worker.ssh.run(
+                        "sudo systemctl stop 'spectrum-worker@*'", check=False
+                    )
+                )
+            for client in clients:
+                shutdowns.append(
+                    client.ssh.run("sudo systemctl stop 'viewer@*'", check=False)
+                )
+            shutdowns.append(
+                publisher.ssh.run("sudo systemctl stop spectrum-publisher", check=False)
+            )
+            await asyncio.gather(*shutdowns)
+
 
 def add_args(parser):
     parser.add_argument(
@@ -187,9 +361,24 @@ def add_args(parser):
         "experiments_file",
         metavar="EXPERIMENTS_FILE",
         type=argparse.FileType("r"),
-        help=EXPERIMENT_JSON_HELP,
+        help="""\
+JSON input.
+
+For example:
+
+    {"clients": 100, "channels": 10, "message_size": 1024}
+
+Also configurable:
+
+- `machine_type`: AWS instance type (same for all machines).
+- `clients_per_machine`
+- `workers_per_machine`: *processes* to run on each machine
+- `worker_machines_per_group`: worker *machines* in each group
+- `protocol`: the protocol to run; can be:
+  - `{"Symmetric": {"security": 16}}` (16-byte prime, 2 groups)
+  - `{"Insecure": {"parties": 3}}` (3 groups)
+  - `{"SeedHomomorphic": {"parties": 3}}` (3 groups, default security)
+""",
     )
     parser.set_defaults(dir=Path(__file__).parent)
-
-
-async def main(args, writer, ctrl_c):
+    parser.set_defaults(experiment_cls=Experiment)
