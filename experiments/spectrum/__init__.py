@@ -50,7 +50,7 @@ from tenacity import stop_after_attempt, wait_fixed, AsyncRetrying
 import experiments
 
 from experiments import Milliseconds
-from experiments.cloud import MachineType, Machine
+from experiments.cloud import InstanceType, Machine
 
 BuildProfile = NewType("BuildProfile", str)
 Bytes = NewType("Bytes", int)
@@ -90,7 +90,7 @@ class Setting(experiments.Setting):
 
 @dataclass(order=True, frozen=True)
 class Environment(experiments.Environment):
-    machine_type: MachineType
+    instance_type: InstanceType
     client_machines: int
     worker_machines: int
 
@@ -237,7 +237,7 @@ class Experiment(experiments.Experiment):
     clients: int
     channels: int
     message_size: Bytes
-    machine_type: MachineType = field(default=MachineType("c5.9xlarge"))
+    instance_type: InstanceType = field(default=InstanceType("c5.9xlarge"))
     clients_per_machine: int = field(default=250)
     workers_per_machine: int = field(default=1)  # TODO: better default
     worker_machines_per_group: int = field(default=1)
@@ -264,7 +264,7 @@ class Experiment(experiments.Experiment):
         client_machines = math.ceil(self.clients / self.clients_per_machine)
         worker_machines = self.worker_machines_per_group * self.groups
         return Environment(
-            machine_type=self.machine_type,
+            instance_type=self.instance_type,
             worker_machines=worker_machines,
             client_machines=client_machines,
         )
@@ -393,7 +393,7 @@ For example:
 
 Also configurable:
 
-- `machine_type`: AWS instance type (same for all machines).
+- `instance_type`: AWS instance type (same for all machines).
 - `clients_per_machine`
 - `workers_per_machine`: *processes* to run on each machine
 - `worker_machines_per_group`: worker *machines* in each group

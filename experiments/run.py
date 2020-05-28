@@ -67,14 +67,14 @@ async def infra(
     sha = _get_last_sha(git_root)
 
     build_config = packer.Config(
-        machine_type=environment.machine_type, sha=sha, profile=build_profile
+        instance_type=environment.instance_type, sha=sha, profile=build_profile
     )
     build = packer.ensure_ami_build(build_config, git_root, force_rebuilt=force_rebuilt)
 
     tf_vars = {
         "ami": build.ami,
         "region": build.region,
-        "instance_type": build.machine_type,
+        "instance_type": build.instance_type,
         "client_machine_count": environment.client_machines,
         "worker_machine_count": environment.worker_machines,
     }

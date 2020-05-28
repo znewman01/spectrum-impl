@@ -18,7 +18,7 @@ from halo import Halo
 Region = NewType("Region", str)
 SHA = NewType("SHA", str)
 AMI = NewType("AMI", str)
-MachineType = NewType("MachineType", str)
+InstanceType = NewType("InstanceType", str)
 Hostname = NewType("Hostname", str)
 AWS_REGION = Region("us-east-2")
 

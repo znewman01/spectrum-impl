@@ -11,14 +11,14 @@ from typing import Dict, Any, List, Optional, Set
 
 from halo import Halo
 
-from experiments.cloud import Region, AWS_REGION, MachineType, AMI, SHA
+from experiments.cloud import Region, AWS_REGION, InstanceType, AMI, SHA
 from experiments import cloud
 from experiments.spectrum import BuildProfile
 
 
 @dataclass(frozen=True)
 class Config:
-    machine_type: MachineType
+    instance_type: InstanceType
     sha: SHA
     profile: BuildProfile
 
@@ -28,7 +28,7 @@ class Build:
     timestamp: int
     region: Region
     ami: AMI
-    machine_type: MachineType
+    instance_type: InstanceType
     sha: SHA
     profile: BuildProfile
 
@@ -40,12 +40,12 @@ class Build:
             region=region,
             ami=ami,
             sha=data["custom_data"]["sha"],
-            machine_type=data["custom_data"]["instance_type"],
+            instance_type=data["custom_data"]["instance_type"],
             profile=data["custom_data"]["profile"],
         )
 
     def to_config(self) -> Config:
-        return Config(self.machine_type, self.sha, self.profile)
+        return Config(self.instance_type, self.sha, self.profile)
 
 
 @dataclass(frozen=True)
@@ -105,7 +105,7 @@ def ensure_ami_build(
             {
                 "sha": build_config.sha,
                 "src_archive": str(src_path),
-                "instance_type": build_config.machine_type,
+                "instance_type": build_config.instance_type,
                 "region": AWS_REGION,
                 "profile": build_config.profile,
             }
@@ -115,7 +115,9 @@ def ensure_ami_build(
             with Halo(
                 f"[infrastructure] building AMI (output in [packer.log]) for SHA: {short_sha}"
             ) as spinner:
-                check_call(["packer", "build"] + packer_vars + ["image.json"], stdout=f)
+                check_call(
+                    ["packer", "build"] + packer_vars + ["packer.json"], stdout=f
+                )
                 spinner.succeed()
 
     builds = Manifest.from_disk("manifest.json")
