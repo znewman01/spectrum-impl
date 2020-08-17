@@ -338,6 +338,7 @@ pub mod group {
     }
 
     impl ops::SubAssign for GroupPrgSeed {
+        #[allow(clippy::suspicious_op_assign_impl)]
         fn sub_assign(&mut self, other: Self) {
             self.value -= other.value;
             if self.value < 0 {
@@ -355,6 +356,7 @@ pub mod group {
     }
 
     impl ops::AddAssign for GroupPrgSeed {
+        #[allow(clippy::suspicious_op_assign_impl)]
         fn add_assign(&mut self, other: Self) {
             self.value += other.value;
             if self.value >= Group::order() {

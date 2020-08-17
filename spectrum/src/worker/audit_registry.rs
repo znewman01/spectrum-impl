@@ -1,3 +1,5 @@
+// https://github.com/rust-lang/rust-clippy/issues/5902
+#![allow(clippy::same_item_push)]
 use crate::services::ClientInfo;
 
 use std::iter::FromIterator;
@@ -101,7 +103,7 @@ mod tests {
 
         for client in &clients {
             for (idx, share) in expected_shares.iter().enumerate() {
-                assert_eq!(reg.add(client, share.clone()).await, idx + 1);
+                assert_eq!(reg.add(client, *share).await, idx + 1);
             }
         }
 

@@ -23,13 +23,7 @@ type TokioError = Box<dyn std::error::Error + Sync + Send>;
 fn pick_worker_shards(nodes: Vec<Node>) -> Vec<Node> {
     let workers: Vec<Node> = nodes
         .into_iter()
-        .filter(|node| {
-            if let Service::Worker(_) = node.service {
-                true
-            } else {
-                false
-            }
-        })
+        .filter(|node| matches!(node.service, Service::Worker(_)))
         .collect();
     let groups: HashSet<Group> =
         HashSet::from_iter(workers.iter().map(|node| match node.service {

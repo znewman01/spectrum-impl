@@ -150,7 +150,7 @@ where
         PublisherClient::connect(format!("http://{}", publisher_addr)).await?,
     ));
     tx.broadcast(Some(publisher))
-        .or_else(|_| Err("Error sending service registry."))?;
+        .map_err(|_| "Error sending service registry.")?;
 
     server_task.await??;
     info!("Leader shutting down.");

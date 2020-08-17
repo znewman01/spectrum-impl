@@ -246,7 +246,7 @@ pub mod two_key {
             #[test]
             fn test_audit_check_correct(
                 (data, vdpf) in two_key_dpf::tests::data_with_dpf::<BasicVdpf>(),
-                point_idx in any::<prop::sample::Index>(),
+                point_idx: prop::sample::Index,
             ) {
                 let access_keys = vdpf.new_access_keys();
                 let point_idx = point_idx.index(access_keys.len());
@@ -255,9 +255,7 @@ pub mod two_key {
             }
 
             #[test]
-            fn test_audit_check_correct_for_noop(
-                vdpf in any::<BasicVdpf>(),
-            ) {
+            fn test_audit_check_correct_for_noop(vdpf: BasicVdpf) {
                 let access_keys = vdpf.new_access_keys();
                 vdpf_tests::run_test_audit_check_correct_for_noop(vdpf, &access_keys);
             }
@@ -300,8 +298,8 @@ pub mod multi_key {
 
             let mut seed_proof = field.zero();
             for key in dpf_keys.iter() {
-                seed_proof += access_key.clone()
-                    * FieldElement::new(key.seeds[point_idx].clone().value(), field.clone());
+                seed_proof +=
+                    access_key.clone() * field.new_element(key.seeds[point_idx].clone().value());
             }
 
             let mut bit_proof = access_key.field().zero();
@@ -402,7 +400,7 @@ pub mod multi_key {
             #[test]
             fn test_audit_check_correct(
                 (data, vdpf) in multi_key_dpf::tests::data_with_dpf::<MultiKeyVdpf>(),
-                point_idx in any::<prop::sample::Index>(),
+                point_idx: prop::sample::Index,
             ) {
                 let access_keys = vdpf.new_access_keys();
                 let point_idx = point_idx.index(access_keys.len());
@@ -411,9 +409,7 @@ pub mod multi_key {
             }
 
             #[test]
-            fn test_audit_check_correct_for_noop(
-                vdpf in any::<MultiKeyVdpf>(),
-            ) {
+            fn test_audit_check_correct_for_noop(vdpf: MultiKeyVdpf) {
                 let access_keys = vdpf.new_access_keys();
                 vdpf_tests::run_test_audit_check_correct_for_noop(vdpf, &access_keys);
             }

@@ -145,6 +145,7 @@ fn reduce_modulo(v: Integer, order: &Integer) -> Integer {
 impl ops::Add<FieldElement> for FieldElement {
     type Output = FieldElement;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn add(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
 
@@ -163,6 +164,7 @@ impl ops::Add<FieldElement> for FieldElement {
 impl ops::Sub<FieldElement> for FieldElement {
     type Output = FieldElement;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, other: FieldElement) -> FieldElement {
         assert_eq!(self.field, other.field);
         let mut value = self.value - other.value;

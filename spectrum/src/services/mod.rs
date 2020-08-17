@@ -9,53 +9,45 @@ use crate::{bytes::Bytes, protocols::wrapper::ChannelKeyWrapper};
 use std::hash::{Hash, Hasher};
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[non_exhaustive]
 pub struct Group {
     pub idx: u16,
-    _private: (),
 }
 
 impl Group {
     pub fn new(idx: u16) -> Self {
-        Group { idx, _private: () }
+        Group { idx }
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[non_exhaustive]
 pub struct LeaderInfo {
     pub group: Group,
-    _private: (),
 }
 
 impl LeaderInfo {
     pub fn new(group: Group) -> Self {
-        LeaderInfo {
-            group,
-            _private: (),
-        }
+        LeaderInfo { group }
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[non_exhaustive]
 pub struct WorkerInfo {
     pub group: Group,
     pub idx: u16,
-    _private: (),
 }
 
 impl WorkerInfo {
     pub fn new(group: Group, idx: u16) -> Self {
-        WorkerInfo {
-            group,
-            idx,
-            _private: (),
-        }
+        WorkerInfo { group, idx }
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Default)]
-pub struct PublisherInfo {
-    _private: (),
-}
+#[non_exhaustive]
+pub struct PublisherInfo {}
 
 impl PublisherInfo {
     pub fn new() -> Self {
@@ -64,10 +56,10 @@ impl PublisherInfo {
 }
 
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct ClientInfo {
     pub idx: u16,
     pub broadcast: Option<(Bytes, ChannelKeyWrapper)>,
-    _private: (),
 }
 
 impl Hash for ClientInfo {
@@ -89,7 +81,6 @@ impl ClientInfo {
         ClientInfo {
             idx,
             broadcast: None,
-            _private: (),
         }
     }
 
@@ -97,7 +88,6 @@ impl ClientInfo {
         ClientInfo {
             idx,
             broadcast: Some((message, key)),
-            _private: (),
         }
     }
 }
