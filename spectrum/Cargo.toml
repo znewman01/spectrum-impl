@@ -9,20 +9,18 @@ default = []
 etcd-tests = []  # run etcd integration tests
 
 [dependencies]
-hex = "0.4"
-jubjub = "0.3.0"
+jubjub = "0.4"
 futures = "0.3"
-openssl = "0.10.28"
+openssl = "0.10"
 prost = "0.6"
 rand = "0.7.3"
-bytes = "0.4"
-tonic = "0.2.0"
+tonic = "0.3"
 log = "0.4"
 simplelog = "^0.7.4"
 lazy_static = "1.4.0"
-tokio = { version = "0.2.16", features = [ "macros", "signal", "sync", "rt-threaded", "process" ] }
-rug = { version = "1.7", features = [ "serde" ] }
-async-trait = "0.1.26"
+tokio = { version = "0.2.22", features = [ "macros", "signal", "sync", "rt-threaded", "process" ] }
+rug = { version = "1.10", features = [ "serde" ] }
+async-trait = "0.1.38"
 chrono = "0.4"
 futures-retry = "0.4"
 serde = { version = "1.0", features = ["derive", "rc"] }

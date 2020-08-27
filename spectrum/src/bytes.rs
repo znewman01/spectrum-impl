@@ -1,5 +1,4 @@
 //! Spectrum implementation.
-use bytes::Bytes as OtherBytes;
 use rand::Rng;
 use std::convert::AsRef;
 use std::iter::FromIterator;
@@ -40,12 +39,6 @@ impl Bytes {
 impl AsRef<[u8]> for Bytes {
     fn as_ref(&self) -> &[u8] {
         &self.0
-    }
-}
-
-impl Into<OtherBytes> for Bytes {
-    fn into(self) -> OtherBytes {
-        OtherBytes::from(self.0)
     }
 }
 
