@@ -49,7 +49,7 @@ from tenacity import stop_after_attempt, wait_fixed, AsyncRetrying
 
 import experiments
 
-from experiments import Milliseconds
+from experiments import Milliseconds, Result
 from experiments.cloud import InstanceType, Machine
 
 BuildProfile = NewType("BuildProfile", str)
@@ -347,9 +347,10 @@ class Experiment(experiments.Experiment):
             )
 
             spinner.text = "[experiment] running"
-            return await asyncio.wait_for(
+            time = await asyncio.wait_for(
                 _execute_experiment(publisher, etcd_env), timeout=60.0
             )
+            return Result(self, time)
         finally:
             spinner.text = "[experiment] shutting everything down"
             shutdowns = []

@@ -42,7 +42,6 @@ from pathlib import Path
 
 from experiments import spectrum
 from experiments.run import run_experiments
-from experiments.spectrum import Experiment
 
 
 def parse_args(args):
@@ -86,9 +85,8 @@ def stream_json(
     """Streams JSON objects to a file-like object.
 
     Hack around the fact that json.dump doesn't allow streaming.
-    At the conclusion,
 
-    If close is True, The file will be closed on exit.
+    If close is True, the file will be closed on exit.
 
     >>> with stream_json(open("test.json", "w")) as writer:
     ...   writer.write({"a": 1})

@@ -187,5 +187,5 @@ async def run_experiments(
                 for experiment in experiments:
                     print()
                     Halo(f"{experiment}").stop_and_persist(symbol="•")
-                    result = await retry_experiment(experiment, setting, writer, ctrl_c)
+                    result = await retry_experiment(experiment, setting, ctrl_c)
                     writer(asdict(result))
