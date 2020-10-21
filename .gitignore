@@ -2,6 +2,7 @@ proptest-regressions/
 spectrum.log
 experiments.json
 results.json
+data/*.json
 
 # Infrastructure
 .terraform
