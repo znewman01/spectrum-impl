@@ -60,7 +60,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
 
     let config = config::from_env().await?;
     let experiment = experiment::read_from_store(&config).await?;
-    // TODO(zjn): construct from environment/args
     let info = PublisherInfo::new();
 
     let done = Arc::new(Notify::new());
