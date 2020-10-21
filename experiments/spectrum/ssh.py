@@ -14,7 +14,8 @@ def main():
     parser.add_argument("--worker", type=int, nargs="?", const=0, help="SSH into some/(the nth) worker machine")
     args = parser.parse_args()
 
-    data = json.loads(check_output(["terraform", "output", "-json"]))
+    cwd = os.path.dirname(__file__)  # terraform needs to be in *this* directory
+    data = json.loads(check_output(["terraform", "output", "-json"], cwd=cwd))
     data = {k: v["value"] for k, v in data.items()}
 
     if args.client is not None:
