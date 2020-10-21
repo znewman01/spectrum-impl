@@ -31,7 +31,16 @@ def _get_git_root() -> Path:
 
 
 def _get_last_sha(git_root: Path) -> SHA:
+    # Last sha at which the spectrum/ directory was modified
+    # (i.e., changes to the actual code, not infrastructure)
+    # This is mostly a hack to make changing the infrastructure bearable because
+    # Packer builds take a long time.
     cmd = ["git", "rev-list", "-1", "HEAD", "--", "spectrum"]
+    return SHA(check_output(cmd, cwd=git_root).decode("ascii").strip())
+
+
+def _sha_for_commitish(git_root: Path, commitish: str) -> SHA:
+    cmd = ["git", "rev-parse", commitish]
     return SHA(check_output(cmd, cwd=git_root).decode("ascii").strip())
 
 
@@ -60,11 +69,12 @@ async def infra(
     environment: Environment,
     force_rebuilt: Optional[Set[packer.Config]],
     build_profile: str,
+    commitish: Optional[str]
 ):
     Halo(f"[infrastructure] {environment}").stop_and_persist(symbol="•")
 
     git_root = _get_git_root()
-    sha = _get_last_sha(git_root)
+    sha = _sha_for_commitish(git_root, commitish) if commitish else _get_last_sha(git_root)
 
     build_config = packer.Config(
         instance_type=environment.instance_type, sha=sha, profile=build_profile
@@ -176,6 +186,7 @@ async def run_experiments(
     all_experiments: List[Experiment],
     writer: Callable[[str], None],
     force_rebuild: bool,
+    commitish: Optional[str],
     cleanup: bool,
     build_profile: str,
     ctrl_c: asyncio.Event,
@@ -183,7 +194,7 @@ async def run_experiments(
     force_rebuilt = set() if force_rebuild else None
     with cloud.cleanup(cloud.AWS_REGION) if cleanup else nullcontext():
         for environment, experiments in experiments_by_environment(all_experiments):
-            async with infra(environment, force_rebuilt, build_profile) as setting:
+            async with infra(environment, force_rebuilt, build_profile, commitish) as setting:
                 for experiment in experiments:
                     print()
                     Halo(f"{experiment}").stop_and_persist(symbol="•")

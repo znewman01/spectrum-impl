@@ -60,6 +60,9 @@ def parse_args(args):
         "--cleanup", action="store_true", help="tear down all infrastructure after"
     )
     parser.add_argument(
+        "--commit", dest="commitish", help="commit(ish) to build for"
+    )
+    parser.add_argument(
         "--output",
         default="results.json",
         type=argparse.FileType("w"),
@@ -144,6 +147,7 @@ async def main(args):
                     all_experiments,
                     writer,
                     args.force_rebuild,
+                    args.commitish,
                     args.cleanup,
                     args.build,
                     ctrl_c,
