@@ -86,18 +86,18 @@ BENCHMARK_PLOTS = {
         "channels": [1],
         "message_size": [10000]
     },
-    # "small": {
-    #     "clients": [8000],
-    #     "channels": [8000],
-    #     "message_size": [100, 1000, 10000]
-    # },
-    # "large": {
-    #     "clients": [1000],
-    #     "channels": [1],
-    #     "message_size": [100_000, 1_000_000, 10_000_000]
-    # },
-    # "multi-server": PLOTS["multi-server"],
-    # "multi-server-control": PLOTS["multi-server-control"]
+    "small": {
+        "clients": [5000],
+        "channels": [5000],
+        "message_size": [100, 1000, 10000]
+    },
+    "large": {
+        "clients": [1000],
+        "channels": [1],
+        "message_size": [100_000, 1_000_000, 10_000_000]
+    },
+    "multi-server": PLOTS["multi-server"],
+    "multi-server-control": PLOTS["multi-server-control"]
 }
 
 
