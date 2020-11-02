@@ -143,7 +143,7 @@ async def main(args):
     with chdir(args.dir):
         try:
             with stream_json(args.output, close=True) as writer:
-                await run_experiments(
+                any_err = await run_experiments(
                     all_experiments,
                     writer,
                     args.force_rebuild,
@@ -154,6 +154,8 @@ async def main(args):
                 )
         except KeyboardInterrupt:
             pass
+    if any_err:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

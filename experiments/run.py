@@ -192,6 +192,7 @@ async def run_experiments(
     ctrl_c: asyncio.Event,
 ):
     force_rebuilt = set() if force_rebuild else None
+    any_err = False
     with cloud.cleanup(cloud.AWS_REGION) if cleanup else nullcontext():
         for environment, experiments in experiments_by_environment(all_experiments):
             async with infra(environment, force_rebuilt, build_profile, commitish) as setting:
@@ -199,4 +200,8 @@ async def run_experiments(
                     print()
                     Halo(f"{experiment}").stop_and_persist(symbol="•")
                     result = await retry_experiment(experiment, setting, ctrl_c)
+                    if result is None:
+                        any_err = True
+                        continue
                     writer(asdict(result))
+    return not any_err
