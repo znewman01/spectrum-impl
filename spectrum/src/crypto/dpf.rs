@@ -28,7 +28,7 @@ pub trait DPF {
 }
 
 pub type BasicDPF<P> = two_key::Construction<P>;
-pub type MultiKeyDPF<P> = multi_key::Construction<P>;
+pub type MultiKeyDPF<P> = multi_key::LazyEvalConstruction<P>;
 
 #[derive(Derivative)]
 #[derivative(
