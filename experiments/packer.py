@@ -88,17 +88,10 @@ def ensure_ami_build(
 
     with TemporaryDirectory() as tmpdir:
         src_path = Path(tmpdir) / "spectrum-src.tar.gz"
-        cmd = [
-            "git",
-            "archive",
-            "--format",
-            "tar.gz",
-            "--output",
-            str(src_path),
-            "--prefix",
-            "spectrum/",
-            build_config.sha,
-        ]
+        cmd = "git archive --format tar.gz".split(" ") \
+            + ["--output", str(src_path)] \
+            + "--prefix spectrum/".split(" ") \
+            + [build_config.sha]
         check_call(cmd, cwd=git_root)
 
         packer_vars = cloud.format_args(
