@@ -253,6 +253,67 @@ pub mod multi_key {
         }
     }
 
+    // does not evaluate PRG, aggregating the seeds instread and returning (seeds, slots)
+    // which can be used to recover the output by evaluating the RPG on the aggregated seeds
+    #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+    pub struct LazyEvalConstruction<P> {
+        prg: P,
+        num_points: usize,
+        num_keys: usize,
+    }
+
+    impl<P> LazyEvalConstruction<P> {
+        pub fn new(prg: P, num_points: usize, num_keys: usize) -> Construction<P> {
+            LazyEvalConstruction {
+                prg,
+                num_points,
+                num_keys,
+            }
+        }
+    }
+
+    #[derive(Default, Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+    pub struct LazyEval<P: PRG> {
+        seed: P::Seed,
+        message: P::Output,
+    }
+
+    impl<P> LazyEval<P> {
+        pub fn new(seed: P::Seed, message: P::Output) -> LazyEval<P> {
+            LazyEval { seed, message }
+        }
+    }
+
+    impl Accumulatable for LazyEval {
+        fn combine(&mut self, other: LazyEval) {
+            // combine seeds
+            for (x, y) in (*self).seeds.iter_mut().zip(other.seeds.into_iter()) {
+                *x ^= y;
+            }
+
+            // combine messages
+            for (x, y) in (*self).messages.iter_mut().zip(other.messages.into_iter()) {
+                *x ^= y;
+            }
+        }
+    }
+
+    impl From<Bytes> for LazyEval<P> {
+        fn from(other: Bytes) -> Self {
+            // TODO: ??
+        }
+    }
+
+    // When converting to bytes, we evaluate the PRG on the seed to 
+    // generate a PRG output 
+    impl Into<Bytes> for LazyEval<P> {
+        fn into(self) -> Bytes {
+            self.prg
+                .combine_outputs(vec![self.prg.eval(self.seed), self.message])
+                .into_bytes()
+        }
+    }
+
     impl<P> DPF for Construction<P>
     where
         P: PRG + Clone + SeedHomomorphicPRG,
@@ -379,6 +440,142 @@ pub mod multi_key {
             for part in parts {
                 for (x, y) in res.iter_mut().zip(part.into_iter()) {
                     *x = self.prg.combine_outputs(vec![x.clone(), y]);
+                }
+            }
+            res
+        }
+    }
+
+    impl<P> DPF for LazyEvalConstruction<P>
+    where
+        P: PRG + Clone + SeedHomomorphicPRG,
+        P::Seed: Clone
+            + PartialEq
+            + Eq
+            + Debug
+            + ops::Sub<Output = P::Seed>
+            + ops::Add
+            + ops::SubAssign
+            + ops::AddAssign,
+        P::Output: Clone + PartialEq + Eq + Debug,
+    {
+        type Key = Key<P>;
+        type Message = LazyEval<P>; // tuple (prg seed, message slot)
+
+        fn num_points(&self) -> usize {
+            self.num_points
+        }
+
+        fn num_keys(&self) -> usize {
+            self.num_keys
+        }
+
+        fn msg_size(&self) -> usize {
+            self.prg.output_size()
+        }
+
+        fn null_message(&self) -> Self::Message {
+            self.prg.null_output()
+        }
+
+        /// generate new instance of PRG based DPF with two DPF keys
+        fn gen(&self, msg: Self::Message, point_idx: usize) -> Vec<Key<P>> {
+            let mut keys = self.gen_empty();
+
+            // generate a new random seed for the specified index
+            let special_seed = self.prg.new_seed();
+
+            keys[0].seeds[point_idx] += special_seed.clone();
+            keys[0].bits[point_idx] ^= 1;
+
+            // add message to the set of PRG outputs to "combine" together in the next step
+            // encoded message G(S*) ^ msg
+            let neg = self.prg.null_seed() - special_seed;
+            let encoded_msg = self.prg.combine_outputs(vec![msg, self.prg.eval(&neg)]);
+
+            // update the encoded message in the keys
+            for key in keys.iter_mut() {
+                key.encoded_msg = encoded_msg.clone();
+            }
+
+            keys
+        }
+
+        fn gen_empty(&self) -> Vec<Key<P>> {
+            // vector of seeds for each key
+            let mut seeds: Vec<Vec<_>> = repeat_with(|| {
+                repeat_with(|| self.prg.new_seed())
+                    .take(self.num_points)
+                    .collect()
+            })
+            .take(self.num_keys - 1)
+            .collect();
+
+            // want all seeds to cancel out; set last seed to be negation of all former seeds
+            let mut last_seed_vec = vec![self.prg.null_seed(); self.num_points];
+            for seed_vec in seeds.iter() {
+                for (a, b) in last_seed_vec.iter_mut().zip(seed_vec.iter()) {
+                    *a -= b.clone()
+                }
+            }
+            seeds.push(last_seed_vec);
+
+            // vector of bits for each key
+            let mut bits: Vec<Vec<_>> =
+                repeat_with(|| repeat_with(|| 0).take(self.num_points).collect())
+                    .take(self.num_keys)
+                    .collect();
+
+            // want bits to cancel out; set the last bit to be the xor of all the other bits
+            let mut last_bit_vec = vec![0; self.num_points];
+            for bit_vec in bits.iter() {
+                for (a, b) in last_bit_vec.iter_mut().zip(bit_vec.iter()) {
+                    *a ^= b
+                }
+            }
+
+            bits.push(last_bit_vec);
+
+            let encoded_msg = self.prg.eval(&self.prg.new_seed()); // psuedo random message
+
+            seeds
+                .iter()
+                .zip(bits.iter())
+                .map(|(seed_vec, bit_vec)| {
+                    Key::new(encoded_msg.clone(), bit_vec.clone(), seed_vec.clone())
+                })
+                .collect()
+        }
+
+        /// evaluates the DPF on a given PRGKey and outputs the resulting data
+        fn eval(&self, key: &Key<P>) -> Vec<LazyEval<P>> {
+            key.seeds
+                .iter()
+                .zip(key.bits.iter())
+                .map(|(seed, bits)| {
+                    let mut data = self.prg.null_output();
+                    if *bits == 1 {
+                        // TODO(zjn): futz with lifetimes; remove clone()
+                        data = self
+                            .prg
+                            .combine_outputs(vec![key.encoded_msg.clone(), data]);
+                    }
+
+                    LazyEval::new(seed, data)
+                })
+                .collect()
+        }
+
+        /// combines the results produced by running eval on both keys
+        fn combine(&self, parts: Vec<Vec<LazyEval<P>>>) -> Vec<LazyEval<P>> {
+            let mut parts = parts.into_iter();
+            let mut res = parts.next().expect("Need at least one part to combine.");
+            for part in parts {
+                for (x, y) in res.iter_mut().zip(part.into_iter()) {
+                    // merge seeds
+                    *x.seed = self.prg.combine_seeds(vec![x.seed.clone(), y.seed]);
+                    // merge messages
+                    *x.message = self.prg.combine_outputs(vec![x.message.clone(), y.message]);
                 }
             }
             res
