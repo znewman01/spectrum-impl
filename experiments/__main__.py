@@ -35,6 +35,8 @@ import json
 import signal
 import sys
 
+from dataclasses import asdict
+
 from experiments import spectrum
 from experiments.util import stream_json, chdir
 from experiments.run import run_experiments
@@ -55,9 +57,7 @@ def parse_args(args):
     parser.add_argument(
         "--cleanup", action="store_true", help="tear down all infrastructure after"
     )
-    parser.add_argument(
-        "--commit", dest="commitish", help="commit(ish) to build for"
-    )
+    parser.add_argument("--commit", dest="commitish", help="commit(ish) to build for")
     parser.add_argument(
         "--output",
         default="results.json",
@@ -83,21 +83,25 @@ async def main(args):
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, ctrl_c.set)
 
-    all_experiments = map(
-        args.experiment_cls.from_dict, json.load(args.experiments_file)
+    all_experiments = list(
+        map(args.experiment_cls.from_dict, json.load(args.experiments_file))
     )
+    any_err = False
     with chdir(args.dir):
         try:
             with stream_json(args.output, close=True) as writer:
-                any_err: bool = await run_experiments(
+                async for result in run_experiments(
                     all_experiments,
-                    writer,
                     args.force_rebuild,
                     args.commitish,
                     args.cleanup,
                     args.build,
                     ctrl_c,
-                )
+                ):
+                    if result is None:
+                        any_err = True
+                        continue
+                    writer(asdict(result))
         except KeyboardInterrupt:
             pass
     if any_err:

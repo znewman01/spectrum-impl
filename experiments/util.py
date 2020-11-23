@@ -8,7 +8,7 @@ from pathlib import Path
 
 @contextmanager
 def stream_json(
-    f: TextIO, close: bool = False
+    file: TextIO, close: bool = False
 ) -> Iterator[Callable[[Dict[str, Any]], None]]:
     """Streams JSON objects to a file-like object.
 
@@ -29,21 +29,21 @@ def stream_json(
     Yields:
         callable that writes its argument to f
     """
-    closer: ContextManager = closing(f) if close else nullcontext()
+    closer: ContextManager = closing(file) if close else nullcontext()
     with closer:
-        f.write("[\n")
+        file.write("[\n")
         first = True
 
         def writer(data):
             nonlocal first
             if not first:
-                f.write(",\n")
+                file.write(",\n")
             first = False
-            json.dump(data, f)
-            f.flush()
+            json.dump(data, file)
+            file.flush()
 
         yield writer
-        f.write("\n]\n")
+        file.write("\n]\n")
 
 
 @contextmanager

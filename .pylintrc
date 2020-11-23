@@ -1,0 +1,12 @@
+[BASIC]
+min-public-methods = 0  # terrible rule
+
+[MESSAGES CONTROL]
+disable=
+    missing-class-docstring,
+    missing-function-docstring,
+    missing-module-docstring,
+    bad-continuation,
+    bad-whitespace,
+    fixme
+max-line-length = 88

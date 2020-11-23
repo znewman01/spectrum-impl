@@ -7,9 +7,8 @@ import contextlib
 import traceback
 
 from contextlib import asynccontextmanager, nullcontext
-from dataclasses import asdict
 from subprocess import check_output
-from typing import Optional, Set, List, Callable
+from typing import Optional, Set, List
 from pathlib import Path
 
 import asyncssh
@@ -17,10 +16,10 @@ import asyncssh
 from halo import Halo
 from tenacity import wait_fixed, AsyncRetrying
 
-from experiments import cloud, packer
-from experiments import Environment, Setting, experiments_by_environment
+from experiments import cloud, packer, spectrum
+from experiments import Setting, experiments_by_environment
 from experiments.cloud import Machine, SHA
-from experiments.spectrum import Experiment
+from experiments import Experiment
 
 MAX_ATTEMPTS = 5
 
@@ -66,15 +65,19 @@ async def _connect_ssh(*args, **kwargs):
 
 @asynccontextmanager
 async def infra(
-    environment: Environment,
+    environment: spectrum.Environment,
     force_rebuilt: Optional[Set[packer.Config]],
-    build_profile: str,
-    commitish: Optional[str]
+    build_profile: spectrum.BuildProfile,
+    commitish: Optional[str],
 ):
     Halo(f"[infrastructure] {environment}").stop_and_persist(symbol="•")
 
     git_root = _get_git_root()
-    sha = _sha_for_commitish(git_root, commitish) if commitish else _get_last_sha(git_root)
+    sha = (
+        _sha_for_commitish(git_root, commitish)
+        if commitish
+        else _get_last_sha(git_root)
+    )
 
     build_config = packer.Config(
         instance_type=environment.instance_type, sha=sha, profile=build_profile
@@ -169,9 +172,12 @@ async def retry_experiment(
             try:
                 result = await experiment_task
             except Exception as err:  # pylint: disable=broad-except
-                with open("error.log", "a") as f:
-                    traceback.print_exc(file=f)
-                msg = f"Error (attempt {attempt} of {MAX_ATTEMPTS}): {err!r} (traceback in [error.log])"
+                with open("error.log", "a") as log_file:
+                    traceback.print_exc(file=log_file)
+                msg = (
+                    f"Error (attempt {attempt} of {MAX_ATTEMPTS}): "
+                    f"{err!r} (traceback in [{log_file.name}])"
+                )
                 if attempt == MAX_ATTEMPTS:
                     spinner.fail(msg)
                 else:
@@ -184,7 +190,6 @@ async def retry_experiment(
 
 async def run_experiments(
     all_experiments: List[Experiment],
-    writer: Callable[[str], None],
     force_rebuild: bool,
     commitish: Optional[str],
     cleanup: bool,
@@ -192,16 +197,13 @@ async def run_experiments(
     ctrl_c: asyncio.Event,
 ):
     force_rebuilt = set() if force_rebuild else None
-    any_err = False
     with cloud.cleanup(cloud.AWS_REGION) if cleanup else nullcontext():
         for environment, experiments in experiments_by_environment(all_experiments):
-            async with infra(environment, force_rebuilt, build_profile, commitish) as setting:
+            async with infra(
+                environment, force_rebuilt, build_profile, commitish
+            ) as setting:
                 for experiment in experiments:
                     print()
                     Halo(f"{experiment}").stop_and_persist(symbol="•")
                     result = await retry_experiment(experiment, setting, ctrl_c)
-                    if result is None:
-                        any_err = True
-                        continue
-                    writer(asdict(result))
-    return not any_err
+                    yield result

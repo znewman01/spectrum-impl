@@ -82,7 +82,11 @@ class Setting(experiments.Setting):
             ):
                 with attempt:
                     await self.publisher.ssh.run(
-                        f"ETCDCTL_API=3 etcdctl --endpoints {self.publisher.hostname}:2379 endpoint health",
+                        (
+                            "ETCDCTL_API=3 etcdctl "
+                            f"--endpoints {self.publisher.hostname}:2379 "
+                            "endpoint health"
+                        ),
                         check=True,
                     )
             spinner.succeed("[infrastructure] etcd healthy")
@@ -163,7 +167,7 @@ class SeedHomomorphic(Protocol):
 
     @property
     def flag(self) -> str:
-        return f"--security-multi-key 16"
+        return "--security-multi-key 16"
 
     @classmethod
     def _from_dict(cls, data: Dict[str, Any]) -> SeedHomomorphic:
@@ -226,7 +230,7 @@ async def _execute_experiment(
         "    | sed 's/Elapsed time: \\(.*\\)ms/\\1/'",
         check=True,
     )
-    result = int(result.stdout.strip())
+    result = Milliseconds(int(result.stdout.strip()))
 
     return result
 
@@ -276,11 +280,11 @@ class Experiment(experiments.Experiment):
             data["protocol"] = Protocol.from_dict(protocol)
         return cls(**data)
 
-    async def run(self, setup: Setting, spinner: Halo) -> Milliseconds:
+    async def run(self, setting: Setting, spinner: Halo) -> Result:
         try:
-            publisher = setup.publisher
-            workers = setup.workers
-            clients = setup.clients
+            publisher = setting.publisher
+            workers = setting.workers
+            clients = setting.clients
 
             etcd_url = f"etcd://{publisher.hostname}:2379"
             etcd_env = {"SPECTRUM_CONFIG_SERVER": etcd_url}

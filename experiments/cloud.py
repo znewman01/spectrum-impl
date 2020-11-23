@@ -69,7 +69,7 @@ def terraform(tf_vars):
             with Halo(
                 "[infrastructure] applying changes (output in [terraform.log])"
             ) as spinner:
-                with open("terraform.log", "w") as f:
+                with open("terraform.log", "w") as log_file:
                     cmd = [
                         "terraform",
                         "apply",
@@ -77,7 +77,7 @@ def terraform(tf_vars):
                         "-auto-approve",
                         str(plan),
                     ]
-                    check_call(cmd, stdout=f)
+                    check_call(cmd, stdout=log_file)
                 spinner.succeed("[infrastructure] created")
 
         data = json.loads(check_output(["terraform", "output", "-json"]))

@@ -56,8 +56,8 @@ class Manifest:
     @classmethod
     def from_disk(cls, fname) -> Manifest:
         try:
-            with open(fname) as f:
-                data = json.load(f)
+            with open(fname) as manifest_file:
+                data = json.load(manifest_file)
         except FileNotFoundError:
             return cls([])
         builds = list(map(Build.from_dict, data["builds"]))
@@ -88,10 +88,12 @@ def ensure_ami_build(
 
     with TemporaryDirectory() as tmpdir:
         src_path = Path(tmpdir) / "spectrum-src.tar.gz"
-        cmd = "git archive --format tar.gz".split(" ") \
-            + ["--output", str(src_path)] \
-            + "--prefix spectrum/".split(" ") \
-            + [build_config.sha]
+        cmd = (
+            "git archive --format tar.gz".split(" ")
+            + ["--output", str(src_path)]
+            + "--prefix spectrum/".split(" ")
+            + [str(build_config.sha)]
+        )
         check_call(cmd, cwd=git_root)
 
         packer_vars = cloud.format_args(
@@ -103,13 +105,14 @@ def ensure_ami_build(
                 "profile": build_config.profile,
             }
         )
-        with open("packer.log", "w") as f:
+        with open("packer.log", "w") as log_file:
             short_sha = build_config.sha[:7]
             with Halo(
-                f"[infrastructure] building AMI (output in [packer.log]) for SHA: {short_sha}"
+                "[infrastructure] "
+                f"building AMI (output in [{log_file.name}]) for SHA: {short_sha}"
             ) as spinner:
                 check_call(
-                    ["packer", "build"] + packer_vars + ["packer.json"], stdout=f
+                    ["packer", "build"] + packer_vars + ["packer.json"], stdout=log_file
                 )
                 spinner.succeed()
 

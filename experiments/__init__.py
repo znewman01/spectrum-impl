@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from itertools import groupby
-from typing import List, NewType, Tuple
+from typing import List, NewType, Tuple, Any
 
 from halo import Halo
 
@@ -21,6 +21,9 @@ class Setting(ABC):
 class Environment(ABC):
     @abstractmethod
     def to_setup(self, machines: List[Machine]) -> Setting:
+        ...
+
+    def __lt__(self, other: Any) -> bool:
         ...
 
 
@@ -46,8 +49,8 @@ class Experiment(ABC):
 
 
 def experiments_by_environment(
-    experiments: List[Experiment]
+    experiments: List[Experiment],
 ) -> List[Tuple[Environment, List[Experiment]]]:
-    experiments = sorted(experiments, key=lambda e: e.to_environment())
-    by_environment = groupby(experiments, lambda e: e.to_environment())
+    experiments = sorted(experiments, key=Experiment.to_environment)
+    by_environment = groupby(experiments, Experiment.to_environment)
     return [(k, list(v)) for k, v in by_environment]
