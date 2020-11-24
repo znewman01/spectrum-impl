@@ -16,6 +16,23 @@ from experiments import cloud
 from experiments.spectrum import BuildProfile
 
 
+@dataclass
+class Args:
+    force_rebuild: bool
+
+    @staticmethod
+    def add_args(parser):
+        parser.add_argument(
+            "--force-rebuild",
+            action="store_true",
+            help="rebuild the AMI (even if our source hasn't changed)",
+        )
+
+    @classmethod
+    def from_parsed(cls, parsed):
+        return cls(force_rebuild=parsed.force_rebuild)
+
+
 @dataclass(frozen=True)
 class Config:
     instance_type: InstanceType

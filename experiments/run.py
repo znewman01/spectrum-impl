@@ -7,9 +7,8 @@ import contextlib
 import traceback
 
 from contextlib import asynccontextmanager, nullcontext
-from subprocess import check_output
+from dataclasses import dataclass
 from typing import Optional, Set, List
-from pathlib import Path
 
 import asyncssh
 
@@ -18,29 +17,10 @@ from tenacity import wait_fixed, AsyncRetrying
 
 from experiments import cloud, packer, spectrum
 from experiments import Setting, experiments_by_environment
-from experiments.cloud import Machine, SHA
+from experiments.cloud import Machine
 from experiments import Experiment
 
 MAX_ATTEMPTS = 5
-
-
-def _get_git_root() -> Path:
-    cmd = ["git", "rev-parse", "--show-toplevel"]
-    return Path(check_output(cmd).decode("ascii").strip())
-
-
-def _get_last_sha(git_root: Path) -> SHA:
-    # Last sha at which the spectrum/ directory was modified
-    # (i.e., changes to the actual code, not infrastructure)
-    # This is mostly a hack to make changing the infrastructure bearable because
-    # Packer builds take a long time.
-    cmd = ["git", "rev-list", "-1", "HEAD", "--", "spectrum"]
-    return SHA(check_output(cmd, cwd=git_root).decode("ascii").strip())
-
-
-def _sha_for_commitish(git_root: Path, commitish: str) -> SHA:
-    cmd = ["git", "rev-parse", commitish]
-    return SHA(check_output(cmd, cwd=git_root).decode("ascii").strip())
 
 
 @asynccontextmanager
@@ -67,22 +47,18 @@ async def _connect_ssh(*args, **kwargs):
 async def infra(
     environment: spectrum.Environment,
     force_rebuilt: Optional[Set[packer.Config]],
-    build_profile: spectrum.BuildProfile,
-    commitish: Optional[str],
+    build_args: spectrum.BuildArgs,
 ):
     Halo(f"[infrastructure] {environment}").stop_and_persist(symbol="•")
 
-    git_root = _get_git_root()
-    sha = (
-        _sha_for_commitish(git_root, commitish)
-        if commitish
-        else _get_last_sha(git_root)
-    )
-
     build_config = packer.Config(
-        instance_type=environment.instance_type, sha=sha, profile=build_profile
+        instance_type=environment.instance_type,
+        sha=build_args.sha,
+        profile=build_args.profile,
     )
-    build = packer.ensure_ami_build(build_config, git_root, force_rebuilt=force_rebuilt)
+    build = packer.ensure_ami_build(
+        build_config, build_args.git_root, force_rebuilt=force_rebuilt
+    )
 
     tf_vars = {
         "ami": build.ami,
@@ -188,19 +164,34 @@ async def retry_experiment(
                 return result
 
 
+@dataclass
+class Args:
+    packer: packer.Args
+    cleanup: bool
+
+    @staticmethod
+    def add_args(parser):
+        packer.Args.add_args(parser)
+        parser.add_argument(
+            "--cleanup", action="store_true", help="tear down all infrastructure after"
+        )
+
+    @classmethod
+    def from_parsed(cls, parsed):
+        return cls(packer=packer.Args.from_parsed(parsed), cleanup=parsed.cleanup)
+
+
 async def run_experiments(
     all_experiments: List[Experiment],
-    force_rebuild: bool,
-    commitish: Optional[str],
-    cleanup: bool,
-    build_profile: str,
-    ctrl_c: asyncio.Event,
+    run_args: Args,
+    subparser_args: spectrum.Args,
+    ctrl_c: asyncio.Event,  # general
 ):
-    force_rebuilt = set() if force_rebuild else None
-    with cloud.cleanup(cloud.AWS_REGION) if cleanup else nullcontext():
+    force_rebuilt = set() if run_args.packer.force_rebuild else None
+    with cloud.cleanup(cloud.AWS_REGION) if run_args.cleanup else nullcontext():
         for environment, experiments in experiments_by_environment(all_experiments):
             async with infra(
-                environment, force_rebuilt, build_profile, commitish
+                environment, force_rebuilt, subparser_args.build
             ) as setting:
                 for experiment in experiments:
                     print()

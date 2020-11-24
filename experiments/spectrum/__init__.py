@@ -34,13 +34,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import math
+import io
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from itertools import chain, starmap, product
 from pathlib import Path
+from subprocess import check_output
 from tempfile import NamedTemporaryFile
 from typing import NewType, Dict, Any, Optional, Type, List, Mapping
-from itertools import chain, starmap, product
 
 import asyncssh
 
@@ -50,7 +52,7 @@ from tenacity import stop_after_attempt, wait_fixed, AsyncRetrying
 import experiments
 
 from experiments import Milliseconds, Result
-from experiments.cloud import InstanceType, Machine
+from experiments.cloud import InstanceType, Machine, SHA
 
 BuildProfile = NewType("BuildProfile", str)
 Bytes = NewType("Bytes", int)
@@ -237,7 +239,6 @@ async def _execute_experiment(
 
 @dataclass(frozen=True)
 class Experiment(experiments.Experiment):
-    # TODO: should just be one machine type?
     clients: int
     channels: int
     message_size: Bytes
@@ -377,19 +378,73 @@ class Experiment(experiments.Experiment):
             await asyncio.gather(*shutdowns)
 
 
-def add_args(parser):
-    parser.add_argument(
-        "--build",
-        choices=["debug", "release"],
-        default="debug",
-        type=BuildProfile,
-        help="build profile for compilation",
-    )
-    parser.add_argument(
-        "experiments_file",
-        metavar="EXPERIMENTS_FILE",
-        type=argparse.FileType("r"),
-        help="""\
+def _get_git_root() -> Path:
+    cmd = ["git", "rev-parse", "--show-toplevel"]
+    return Path(check_output(cmd).decode("ascii").strip())
+
+
+def _get_last_sha(git_root: Path) -> SHA:
+    # Last sha at which the spectrum/ directory was modified
+    # (i.e., changes to the actual code, not infrastructure)
+    # This is mostly a hack to make changing the infrastructure bearable because
+    # Packer builds take a long time.
+    cmd = ["git", "rev-list", "-1", "HEAD", "--", "spectrum"]
+    return SHA(check_output(cmd, cwd=git_root).decode("ascii").strip())
+
+
+def _sha_for_commitish(git_root: Path, commitish: str) -> SHA:
+    cmd = ["git", "rev-parse", commitish]
+    return SHA(check_output(cmd, cwd=git_root).decode("ascii").strip())
+
+
+@dataclass
+class BuildArgs:
+    profile: BuildProfile
+    sha: SHA
+    git_root: Path
+
+    @staticmethod
+    def add_args(parser):
+        parser.add_argument(
+            "--build",
+            choices=["debug", "release"],
+            default="debug",
+            type=BuildProfile,
+            help="build profile for compilation",
+        )
+        parser.add_argument(
+            "--commit", dest="commitish", help="commit(ish) to build for"
+        )
+
+    @classmethod
+    def from_parsed(cls, parsed):
+        profile = BuildProfile(parsed.build)
+
+        git_root = _get_git_root()
+        if parsed.commit:
+            sha = SHA(_sha_for_commitish(git_root, parsed.commit))
+        else:
+            sha = SHA(_get_last_sha(git_root))
+
+        return cls(profile=profile, sha=sha, git_root=git_root)
+
+
+@dataclass
+class Args:
+    build: BuildArgs
+    experiments_file: io.TextIOBase
+
+    dir: Path = Path(__file__).parent
+    experiment_cls = Experiment
+
+    @classmethod
+    def add_args(cls, parser):
+        BuildArgs.add_args(parser)
+        parser.add_argument(
+            "experiments_file",
+            metavar="EXPERIMENTS_FILE",
+            type=argparse.FileType("r"),
+            help="""\
 JSON input.
 
 For example:
@@ -407,6 +462,12 @@ Also configurable:
   - `{"Insecure": {"parties": 3}}` (3 groups)
   - `{"SeedHomomorphic": {"parties": 3}}` (3 groups, default security)
 """,
-    )
-    parser.set_defaults(dir=Path(__file__).parent)
-    parser.set_defaults(experiment_cls=Experiment)
+        )
+        parser.set_defaults(arg_cls=cls)
+
+    @classmethod
+    def from_parsed(cls, parsed) -> Args:
+        return cls(
+            build=BuildArgs.from_parsed(parsed),
+            experiments_file=parsed.experiments_file,
+        )
