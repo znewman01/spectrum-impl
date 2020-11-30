@@ -39,19 +39,21 @@ import sys
 from dataclasses import asdict, dataclass
 from typing import List
 
-from experiments import spectrum, Experiment
+from experiments.spectrum.args import Args as SpectrumArgs
+
+from experiments import Experiment
 from experiments.util import stream_json, chdir
 from experiments.run import run_experiments, Args as RunArgs
 
 
-_SUBPARSER_MODS = [spectrum]
+_SUBPARSER_ARGS = [SpectrumArgs]
 
 
 @dataclass
 class Args:
 
     run: RunArgs
-    subparser_args: spectrum.Args
+    subparser_args: SpectrumArgs
     output: io.IOBase
     cleanup: bool
 
@@ -65,14 +67,11 @@ class Args:
             help="path for experiment results",
         )
         subparsers = parser.add_subparsers(required=True)
-        for mod in _SUBPARSER_MODS:
-            _, _, name = mod.__name__.rpartition(".")
+        for args in _SUBPARSER_ARGS:
             subparser = subparsers.add_parser(
-                name,
-                help=mod.__doc__.lstrip(),
-                formatter_class=argparse.RawTextHelpFormatter,
+                args.name, help=args.doc, formatter_class=argparse.RawTextHelpFormatter,
             )
-            mod.Args.add_args(subparser)
+            args.add_args(subparser)
 
     @classmethod
     def from_parsed(cls, parsed):

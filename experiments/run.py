@@ -16,6 +16,8 @@ from halo import Halo
 from tenacity import wait_fixed, AsyncRetrying
 
 from experiments import cloud, packer, spectrum
+from experiments.spectrum.args import Args as SpectrumArgs
+from experiments.spectrum.args import BuildArgs as SpectrumBuildArgs
 from experiments import Setting, experiments_by_environment
 from experiments.cloud import Machine
 from experiments import Experiment
@@ -47,7 +49,7 @@ async def _connect_ssh(*args, **kwargs):
 async def infra(
     environment: spectrum.Environment,
     force_rebuilt: Optional[Set[packer.Config]],
-    build_args: spectrum.BuildArgs,
+    build_args: SpectrumBuildArgs,
 ):
     Halo(f"[infrastructure] {environment}").stop_and_persist(symbol="•")
 
@@ -184,7 +186,7 @@ class Args:
 async def run_experiments(
     all_experiments: List[Experiment],
     run_args: Args,
-    subparser_args: spectrum.Args,
+    subparser_args: SpectrumArgs,
     ctrl_c: asyncio.Event,  # general
 ):
     force_rebuilt = set() if run_args.packer.force_rebuild else None
