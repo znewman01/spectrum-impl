@@ -18,10 +18,10 @@ import asyncssh
 from halo import Halo
 from tenacity import stop_after_attempt, wait_fixed, AsyncRetrying
 
-import experiments
+import experiments.system as system
 
-from experiments import Milliseconds, Result
-from experiments.cloud import InstanceType, Machine, SHA
+from experiments.system import Milliseconds, Result
+from experiments.cloud import InstanceType, Machine
 
 BuildProfile = NewType("BuildProfile", str)
 Bytes = NewType("Bytes", int)
@@ -32,7 +32,7 @@ MAX_WORKERS_PER_MACHINE = 10
 
 
 @dataclass
-class Setting(experiments.Setting):
+class Setting(system.Setting):
     publisher: Machine
     workers: List[Machine]
     clients: List[Machine]
@@ -64,7 +64,7 @@ class Setting(experiments.Setting):
 
 
 @dataclass(order=True, frozen=True)
-class Environment(experiments.Environment):
+class Environment(system.Environment):
     instance_type: InstanceType
     client_machines: int
     worker_machines: int
@@ -207,7 +207,7 @@ async def _execute_experiment(
 
 
 @dataclass(frozen=True)
-class Experiment(experiments.Experiment):
+class Experiment(system.Experiment):
     clients: int
     channels: int
     message_size: Bytes

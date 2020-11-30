@@ -18,9 +18,8 @@ from tenacity import wait_fixed, AsyncRetrying
 from experiments import cloud, packer, spectrum
 from experiments.spectrum.args import Args as SpectrumArgs
 from experiments.spectrum.args import BuildArgs as SpectrumBuildArgs
-from experiments import Setting, experiments_by_environment
+from experiments.system import Setting, Experiment, experiments_by_environment
 from experiments.cloud import Machine
-from experiments import Experiment
 
 MAX_ATTEMPTS = 5
 

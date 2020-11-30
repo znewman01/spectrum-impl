@@ -41,7 +41,7 @@ from typing import List
 
 from experiments.spectrum.args import Args as SpectrumArgs
 
-from experiments import Experiment
+from experiments.system import Experiment
 from experiments.util import stream_json, chdir
 from experiments.run import run_experiments, Args as RunArgs
 
