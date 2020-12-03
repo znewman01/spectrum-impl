@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import argparse
 import asyncio
 import math
-import io
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from itertools import chain, starmap, product
 from pathlib import Path
-from subprocess import check_output
-from tempfile import NamedTemporaryFile
-from typing import NewType, Dict, Any, Optional, Type, List, Mapping
+from subprocess import check_call
+from tempfile import NamedTemporaryFile, TemporaryDirectory
+from typing import NewType, Dict, Any, Optional, Type, List, Mapping, Iterator
 
 import asyncssh
 
@@ -20,8 +19,8 @@ from tenacity import stop_after_attempt, wait_fixed, AsyncRetrying
 
 import experiments.system as system
 
-from experiments.system import Milliseconds, Result
-from experiments.cloud import InstanceType, Machine
+from experiments.system import Milliseconds, Result, Machine
+from experiments.cloud import InstanceType, SHA, AWS_REGION
 
 BuildProfile = NewType("BuildProfile", str)
 Bytes = NewType("Bytes", int)
@@ -345,3 +344,54 @@ class Experiment(system.Experiment):
                 publisher.ssh.run("sudo systemctl stop spectrum-publisher", check=False)
             )
             await asyncio.gather(*shutdowns)
+
+
+@dataclass
+class PackerConfig(system.PackerConfig):
+    sha: SHA
+    git_root: Path
+    profile: BuildProfile
+    instance_type: InstanceType
+
+    @contextmanager
+    def make_packer_args(self) -> Iterator[Dict[str, str]]:
+        with TemporaryDirectory() as tmpdir:
+            src_path = Path(tmpdir) / "spectrum-src.tar.gz"
+            cmd = (
+                "git archive --format tar.gz".split(" ")
+                + ["--output", str(src_path)]
+                + "--prefix spectrum/".split(" ")
+                + [str(self.sha)]
+            )
+            check_call(cmd, cwd=self.git_root)
+
+            yield {
+                "sha": self.sha,
+                "src_archive": str(src_path),
+                "profile": self.profile,
+                "region": AWS_REGION,
+                "instance_type": self.instance_type,
+            }
+
+    def matches(self, build: Dict[str, str]) -> bool:
+        return (
+            self.instance_type == InstanceType(build["instance_type"])
+            and self.sha == SHA(build["sha"])
+            and self.profile == BuildProfile(build["profile"])
+        )
+
+    # def make_tf_vars(self, build: packer.Build) -> Dict[str, str]:
+    #     return {
+    #         "ami": build.ami,
+    #         "region": AWS_REGION,
+    #         "instance_type": self.instance_type,
+    #     }
+
+
+SPECTRUM = system.System(
+    environment=Environment,
+    experiment=Experiment,
+    setting=Setting,
+    packer_config=PackerConfig,
+    root_dir=Path("/"),
+)

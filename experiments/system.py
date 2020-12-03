@@ -41,12 +41,14 @@ so probably:
     - count for different types of machines
 - mapping from TF output to Setting
   - ideally:
-    - some function: environment x setup x tf data dict -> <iterable of machines to connect to>
+    - some f: environment x setup x tf data dict -> <iterable of machines to connect to>
     - then in infra(): connect to them all, give a dict or something
       - involves connecting to ssh a lot
     - map that dict to a Setting
 
-3. lots, but i think it all goes in Experiment.run
+3. running an experiment
+
+lots, but i think it all goes in Experiment.run
 
 4. none
 """
@@ -55,25 +57,53 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from itertools import groupby
-from typing import List, NewType, Tuple, Any
+from pathlib import Path
+from typing import List, NewType, Tuple, Any, ContextManager, Dict, Type
+
+import asyncssh
 
 from halo import Halo
 
-from experiments.cloud import Machine
+from experiments.cloud import Hostname
+
+
+@dataclass(frozen=True)
+class Machine:
+    ssh: asyncssh.SSHClientConnection
+    hostname: Hostname
 
 
 class Setting(ABC):
+    """A handle to real-world resources needed to perform an experiment.
+
+    For instance, these resources might be `Machines` organized by type.
+    """
+
     @abstractmethod
     async def additional_setup(self):
+        """
+
+        Called after Setting created with valid SSH connections.
+        """
         ...
 
 
 class Environment(ABC):
+    """Description of what environment is required to do the experiment.
+
+    Experiments with the same (`__eq__`) `Environment` should be able to share a
+    `Setting`.
+    """
+
     @abstractmethod
     def to_setup(self, machines: List[Machine]) -> Setting:
         ...
 
     def __lt__(self, other: Any) -> bool:
+        """Overrides.
+
+        (So that we can sort and group.)
+        """
         ...
 
 
@@ -82,23 +112,62 @@ Milliseconds = NewType("Milliseconds", int)
 
 @dataclass(frozen=True)
 class Result:
+    """The result of an experiment (with a pointer back to that Experiment)."""
+
     experiment: Experiment
-    time: Milliseconds  # in millis; BREAKING CHANGE
+    time: Milliseconds
 
 
 class Experiment(ABC):
+    """A specific experiment, with all parameters set.
+
+    `run()` does the heavy lifting: given a `Setting` (handles to the necessary
+    environment), actually *run* the experiment and return a result.
+
+    Needs to be deserializable (`from_dict`) so that we can read in from JSON
+    format.
+    """
+
     @abstractmethod
     async def run(self, setting: Setting, spinner: Halo) -> Result:
+        """Run (one trial of) the experiment and return its result."""
         ...
 
     @abstractmethod
     def to_environment(self) -> Environment:
+        """Get a description of the environment this experiment runs in.
+
+        Experiments that share an `Environment` will share a `Setting`.
+        """
         ...
 
     @classmethod
     @abstractmethod
     def from_dict(cls, data) -> Experiment:
         pass
+
+
+class PackerConfig(ABC):
+    @abstractmethod
+    def make_packer_args(self) -> ContextManager[Dict[str, str]]:
+        ...
+
+    @abstractmethod
+    def matches(self, build: Dict[str, str]) -> bool:
+        ...
+
+
+@dataclass
+class System:
+    """A system for which experiments should be run.
+
+    Encapsulates all of the places where behaviors can vary."""
+
+    environment: Type[Environment]
+    experiment: Type[Experiment]
+    setting: Type[Setting]
+    packer_config: Type[PackerConfig]
+    root_dir: Path
 
 
 def experiments_by_environment(

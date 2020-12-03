@@ -8,7 +8,7 @@ import traceback
 
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
-from typing import Optional, Set, List
+from typing import Optional, Set, List, Any
 
 import asyncssh
 
@@ -18,8 +18,7 @@ from tenacity import wait_fixed, AsyncRetrying
 from experiments import cloud, packer, spectrum
 from experiments.spectrum.args import Args as SpectrumArgs
 from experiments.spectrum.args import BuildArgs as SpectrumBuildArgs
-from experiments.system import Setting, Experiment, experiments_by_environment
-from experiments.cloud import Machine
+from experiments.system import Setting, Experiment, experiments_by_environment, Machine
 
 MAX_ATTEMPTS = 5
 
@@ -47,24 +46,23 @@ async def _connect_ssh(*args, **kwargs):
 @asynccontextmanager
 async def infra(
     environment: spectrum.Environment,
-    force_rebuilt: Optional[Set[packer.Config]],
+    force_rebuilt: Optional[Set[Any]],
     build_args: SpectrumBuildArgs,
 ):
     Halo(f"[infrastructure] {environment}").stop_and_persist(symbol="•")
 
-    build_config = packer.Config(
-        instance_type=environment.instance_type,
+    packer_config = spectrum.PackerConfig(
         sha=build_args.sha,
+        git_root=build_args.git_root,
         profile=build_args.profile,
+        instance_type=environment.instance_type,
     )
-    build = packer.ensure_ami_build(
-        build_config, build_args.git_root, force_rebuilt=force_rebuilt
-    )
+    build = packer.ensure_ami_build(packer_config, force_rebuilt=force_rebuilt)
 
     tf_vars = {
         "ami": build.ami,
         "region": build.region,
-        "instance_type": build.instance_type,
+        "instance_type": environment.instance_type,
         "client_machine_count": environment.client_machines,
         "worker_machine_count": environment.worker_machines,
     }
@@ -107,12 +105,6 @@ async def infra(
 
             yield setup
         print()
-
-
-def check_ssh(ssh_result):
-    if ssh_result.exit_status != 0:
-        raise Exception("bad")
-    return ssh_result
 
 
 async def retry_experiment(
