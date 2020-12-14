@@ -28,7 +28,7 @@ import asyncssh
 from halo import Halo
 from tenacity import stop_after_attempt, wait_fixed, AsyncRetrying
 
-import experiments.system as system
+from experiments import system, packer
 
 from experiments.system import Milliseconds, Result, Machine
 from experiments.cloud import InstanceType, SHA, AWS_REGION
@@ -112,6 +112,15 @@ class Environment(system.Environment):
     @property
     def total_machines(self) -> int:
         return self.client_machines + self.worker_machines + 1
+
+    def make_tf_vars(self, build: packer.Build) -> Dict[str, Any]:
+        return {
+            "ami": build.ami,
+            "region": build.region,
+            "instance_type": self.instance_type,
+            "client_machine_count": self.client_machines,
+            "worker_machine_count": self.worker_machines,
+        }
 
 
 class Protocol(ABC):
@@ -413,6 +422,15 @@ class PackerConfig(system.PackerConfig):
             and self.profile == BuildProfile(build["profile"])
         )
 
+    @classmethod
+    def from_args(cls, args: Any, environment: Environment) -> PackerConfig:
+        return PackerConfig(
+            sha=args.sha,
+            git_root=args.git_root,
+            profile=args.profile,
+            instance_type=environment.instance_type,
+        )
+
     # def make_tf_vars(self, build: packer.Build) -> Dict[str, str]:
     #     return {
     #         "ami": build.ami,
@@ -426,5 +444,5 @@ SPECTRUM = system.System(
     experiment=Experiment,
     setting=Setting,
     packer_config=PackerConfig,
-    root_dir=Path("/"),
+    root_dir=Path(__file__).parent,
 )

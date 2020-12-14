@@ -41,7 +41,7 @@ from typing import List
 
 from experiments.spectrum.args import Args as SpectrumArgs
 
-from experiments.system import Experiment
+from experiments.system import Experiment, Args as SystemArgs, System
 from experiments.util import stream_json, chdir
 from experiments.run import run_experiments, Args as RunArgs
 
@@ -53,7 +53,7 @@ _SUBPARSER_ARGS = [SpectrumArgs]
 class Args:
 
     run: RunArgs
-    subparser_args: SpectrumArgs
+    subparser_args: SystemArgs
     output: io.IOBase
     cleanup: bool
 
@@ -100,14 +100,15 @@ async def main(args: Args):
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, ctrl_c.set)
 
+    system: System = args.subparser_args.system
     all_experiments: List[Experiment] = list(
         map(
-            args.subparser_args.experiment_cls.from_dict,
+            system.experiment.from_dict,
             json.load(args.subparser_args.experiments_file),
         )
     )
     any_err = False
-    with chdir(args.subparser_args.dir):
+    with chdir(system.root_dir):  # TODO(zjn): move this in, only where we need it
         try:
             with stream_json(args.output, close=True) as writer:
                 async for result in run_experiments(

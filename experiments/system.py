@@ -54,6 +54,8 @@ lots, but i think it all goes in Experiment.run
 """
 from __future__ import annotations
 
+import io
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from itertools import groupby
@@ -90,7 +92,7 @@ class Setting(ABC):
     @staticmethod
     @abstractmethod
     def to_machine_spec(tf_data: Dict[str, Any]) -> Dict[Any, str]:
-        pass
+        ...
 
     @classmethod
     @abstractmethod
@@ -109,6 +111,10 @@ class Environment(_SupportsLessThan, ABC):
     Experiments with the same (`__eq__`) `Environment` should be able to share a
     `Setting`.
     """
+
+    @abstractmethod
+    def make_tf_vars(self, build) -> Dict[str, Any]:
+        ...
 
 
 Milliseconds = NewType("Milliseconds", int)
@@ -148,7 +154,7 @@ class Experiment(ABC):
     @classmethod
     @abstractmethod
     def from_dict(cls, data) -> Experiment:
-        pass
+        ...
 
 
 class PackerConfig(ABC):
@@ -158,6 +164,11 @@ class PackerConfig(ABC):
 
     @abstractmethod
     def matches(self, build: Dict[str, str]) -> bool:
+        ...
+
+    @classmethod
+    @abstractmethod
+    def from_args(cls, args: Any, environment: Environment) -> PackerConfig:
         ...
 
 
@@ -172,6 +183,16 @@ class System:
     setting: Type[Setting]
     packer_config: Type[PackerConfig]
     root_dir: Path
+
+
+class BuildArgs(ABC):
+    pass
+
+
+class Args(ABC):
+    system: System
+    build: BuildArgs
+    experiments_file: io.TextIOBase
 
 
 def experiments_by_environment(

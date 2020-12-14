@@ -8,7 +8,7 @@ from functools import reduce
 from pathlib import Path
 from subprocess import check_call, check_output
 from tempfile import TemporaryDirectory
-from typing import NewType
+from typing import NewType, Dict, Any, List
 
 from halo import Halo
 
@@ -21,17 +21,17 @@ Hostname = NewType("Hostname", str)
 AWS_REGION = Region("us-east-2")
 
 
-def format_args(var_dict):
+def format_args(var_dict: Dict[str, Any]) -> List:
     return reduce(operator.add, [["-var", f"{k}={v}"] for k, v in var_dict.items()])
 
 
 @contextmanager
-def terraform(tf_vars):
+def terraform(tf_vars: Dict[str, Any]):
     with TemporaryDirectory() as tmpdir:
         with Halo("[infrastructure] checking current state") as spinner:
             plan = Path(tmpdir) / "tfplan"
-            tf_vars = format_args(tf_vars)
-            cmd = ["terraform", "plan", f"-out={plan}", "-no-color"] + tf_vars
+            tf_args = format_args(tf_vars)
+            cmd = ["terraform", "plan", f"-out={plan}", "-no-color"] + tf_args
             try:
                 plan_output = check_output(cmd, stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as err:

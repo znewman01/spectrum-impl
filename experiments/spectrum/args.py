@@ -38,7 +38,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from subprocess import check_output
 
-from experiments.spectrum import BuildProfile, Experiment
+from experiments import system
+from experiments.spectrum import BuildProfile, SPECTRUM
 from experiments.cloud import SHA
 
 
@@ -62,7 +63,7 @@ def _sha_for_commitish(git_root: Path, commitish: str) -> SHA:
 
 
 @dataclass
-class BuildArgs:
+class BuildArgs(system.BuildArgs):
     profile: BuildProfile
     sha: SHA
     git_root: Path
@@ -94,12 +95,11 @@ class BuildArgs:
 
 
 @dataclass
-class Args:
+class Args(system.Args):
     build: BuildArgs
     experiments_file: io.TextIOBase
 
-    dir: Path = Path(__file__).parent
-    experiment_cls = Experiment
+    system = SPECTRUM
 
     name = "spectrum"
     doc = __doc__.lstrip()

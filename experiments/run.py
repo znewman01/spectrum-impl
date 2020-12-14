@@ -8,7 +8,7 @@ import traceback
 
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
-from typing import Optional, Set, List, Any, Dict, TypeVar, Type, Awaitable
+from typing import Optional, Set, List, Any, Dict, TypeVar, Awaitable
 
 
 import asyncssh
@@ -16,10 +16,17 @@ import asyncssh
 from halo import Halo
 from tenacity import wait_fixed, AsyncRetrying
 
-from experiments import cloud, packer, spectrum
-from experiments.spectrum.args import Args as SpectrumArgs
-from experiments.spectrum.args import BuildArgs as SpectrumBuildArgs
-from experiments.system import Setting, Experiment, experiments_by_environment, Machine
+from experiments import cloud, packer
+from experiments.system import (
+    BuildArgs,
+    Args as SystemArgs,
+    Setting,
+    System,
+    Experiment,
+    Environment,
+    experiments_by_environment,
+    Machine,
+)
 
 MAX_ATTEMPTS = 5
 
@@ -60,36 +67,24 @@ async def _gather_dict(tasks: Dict[K, Awaitable[V]]) -> Dict[K, V]:
 
 @asynccontextmanager
 async def infra(
-    environment: spectrum.Environment,
-    setting_cls: Type[Setting],
+    environment: Environment,
+    system: System,
     force_rebuilt: Optional[Set[Any]],
-    build_args: SpectrumBuildArgs,
+    build_args: BuildArgs,
 ):
     Halo(f"[infrastructure] {environment}").stop_and_persist(symbol="•")
 
-    packer_config = spectrum.PackerConfig(
-        sha=build_args.sha,
-        git_root=build_args.git_root,
-        profile=build_args.profile,
-        instance_type=environment.instance_type,
-    )
+    packer_config = system.packer_config.from_args(build_args, environment)
     build = packer.ensure_ami_build(packer_config, force_rebuilt=force_rebuilt)
 
-    tf_vars = {
-        "ami": build.ami,
-        "region": build.region,
-        "instance_type": environment.instance_type,
-        "client_machine_count": environment.client_machines,
-        "worker_machine_count": environment.worker_machines,
-    }
-    with cloud.terraform(tf_vars) as data:
+    with cloud.terraform(environment.make_tf_vars(build)) as data:
         ssh_key = asyncssh.import_private_key(data["private_key"])
 
         # The "stack" bit is so that we can have an async context manager that,
         # on exit, closes all of our SSH connections.
         async with contextlib.AsyncExitStack() as stack:
             conn_ctxs = {}
-            for key, hostname in setting_cls.to_machine_spec(data).items():
+            for key, hostname in system.setting.to_machine_spec(data).items():
                 conn_ctxs[key] = stack.enter_async_context(
                     _connect_ssh(
                         hostname,
@@ -101,7 +96,7 @@ async def infra(
             with Halo("[infrastructure] connecting (SSH) to all machines") as spinner:
                 conns = await _gather_dict(conn_ctxs)
                 spinner.succeed("[infrastructure] connected (SSH)")
-            setting = setting_cls.from_dict(conns)
+            setting = system.setting.from_dict(conns)
 
             await setting.additional_setup()
 
@@ -179,14 +174,14 @@ class Args:
 async def run_experiments(
     all_experiments: List[Experiment],
     run_args: Args,
-    subparser_args: SpectrumArgs,
+    subparser_args: SystemArgs,
     ctrl_c: asyncio.Event,  # general
 ):
     force_rebuilt = set() if run_args.packer.force_rebuild else None
     with cloud.cleanup(cloud.AWS_REGION) if run_args.cleanup else nullcontext():
         for environment, experiments in experiments_by_environment(all_experiments):
             async with infra(
-                environment, spectrum.Setting, force_rebuilt, subparser_args.build
+                environment, subparser_args.system, force_rebuilt, subparser_args.build
             ) as setting:
                 for experiment in experiments:
                     print()
