@@ -12,11 +12,13 @@ from typing import NewType, Dict, Any, List
 
 from halo import Halo
 
+from experiments.system import System
+
+
 Region = NewType("Region", str)
 SHA = NewType("SHA", str)
 AMI = NewType("AMI", str)
 InstanceType = NewType("InstanceType", str)
-Hostname = NewType("Hostname", str)
 
 AWS_REGION = Region("us-east-2")
 
@@ -77,22 +79,15 @@ def terraform(tf_vars: Dict[str, Any]):
 
 
 @contextmanager
-def cleanup(region: Region):
+def cleanup(system: System):
     try:
         yield
     finally:
-        tf_vars = format_args(
-            {
-                "region": region,  # must be the same
-                "ami": "null",
-                "instance_type": "null",
-                "client_machine_count": 0,
-                "worker_machine_count": 0,
-            }
-        )
+        tf_vars = system.environment.make_tf_cleanup_vars()
+        tf_args = format_args(tf_vars)
         with Halo("[infrastructure] tearing down all resources") as spinner:
             check_call(
-                ["terraform", "destroy", "-auto-approve"] + tf_vars,
+                ["terraform", "destroy", "-auto-approve"] + tf_args,
                 stdout=subprocess.DEVNULL,
             )
             spinner.succeed()

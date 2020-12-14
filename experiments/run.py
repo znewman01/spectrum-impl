@@ -27,6 +27,7 @@ from experiments.system import (
     experiments_by_environment,
     Machine,
 )
+from experiments.util import Hostname
 
 MAX_ATTEMPTS = 5
 
@@ -42,7 +43,7 @@ async def _connect_ssh(hostname: str, *args, **kwargs):
                     "test -f /var/lib/cloud/instance/boot-finished", check=True
                 )
                 try:
-                    yield Machine(conn, cloud.Hostname(hostname))
+                    yield Machine(conn, Hostname(hostname))
                 except BaseException as err:  # pylint: disable=broad-except
                     # Exceptions from "yield" have nothing to do with us.
                     # We reraise them below without retrying.
@@ -175,10 +176,11 @@ async def run_experiments(
     all_experiments: List[Experiment],
     run_args: Args,
     subparser_args: SystemArgs,
-    ctrl_c: asyncio.Event,  # general
+    ctrl_c: asyncio.Event,
 ):
     force_rebuilt = set() if run_args.packer.force_rebuild else None
-    with cloud.cleanup(cloud.AWS_REGION) if run_args.cleanup else nullcontext():
+    system = subparser_args.system
+    with cloud.cleanup(system) if run_args.cleanup else nullcontext():
         for environment, experiments in experiments_by_environment(all_experiments):
             async with infra(
                 environment, subparser_args.system, force_rebuilt, subparser_args.build

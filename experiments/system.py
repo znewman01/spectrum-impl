@@ -66,7 +66,7 @@ import asyncssh
 
 from halo import Halo
 
-from experiments.cloud import Hostname
+from experiments.util import Hostname
 
 
 @dataclass(frozen=True)
@@ -114,6 +114,11 @@ class Environment(_SupportsLessThan, ABC):
 
     @abstractmethod
     def make_tf_vars(self, build) -> Dict[str, Any]:
+        ...
+
+    @staticmethod
+    @abstractmethod
+    def make_tf_cleanup_vars() -> Dict[str, Any]:
         ...
 
 

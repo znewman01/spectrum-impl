@@ -122,6 +122,16 @@ class Environment(system.Environment):
             "worker_machine_count": self.worker_machines,
         }
 
+    @staticmethod
+    def make_tf_cleanup_vars():
+        return {
+            "region": AWS_REGION,  # must be the same
+            "ami": "null",
+            "instance_type": "null",
+            "client_machine_count": 0,
+            "worker_machine_count": 0,
+        }
+
 
 class Protocol(ABC):
     @property
@@ -252,11 +262,11 @@ class Experiment(system.Experiment):
     clients: int
     channels: int
     message_size: Bytes
-    instance_type: InstanceType = field(default=InstanceType("c5.9xlarge"))
-    clients_per_machine: int = field(default=250)
-    workers_per_machine: int = field(default=1)  # TODO: better default
-    worker_machines_per_group: int = field(default=1)
-    protocol: Protocol = field(default=Symmetric())
+    instance_type: InstanceType = InstanceType("c5.9xlarge")
+    clients_per_machine: int = 250
+    workers_per_machine: int = 1  # TODO: better default
+    worker_machines_per_group: int = 1
+    protocol: Protocol = Symmetric()
 
     @property
     def groups(self) -> int:
@@ -430,13 +440,6 @@ class PackerConfig(system.PackerConfig):
             profile=args.profile,
             instance_type=environment.instance_type,
         )
-
-    # def make_tf_vars(self, build: packer.Build) -> Dict[str, str]:
-    #     return {
-    #         "ami": build.ami,
-    #         "region": AWS_REGION,
-    #         "instance_type": self.instance_type,
-    #     }
 
 
 SPECTRUM = system.System(

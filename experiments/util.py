@@ -2,8 +2,11 @@ import json
 import os
 
 from contextlib import contextmanager, closing, nullcontext
-from typing import TextIO, Callable, Iterator, Dict, Any, ContextManager
+from typing import TextIO, Callable, Iterator, Dict, Any, ContextManager, NewType
 from pathlib import Path
+
+
+Hostname = NewType("Hostname", str)
 
 
 @contextmanager
