@@ -54,9 +54,9 @@ class Setting(system.Setting):
         result = {}
         result["publisher"] = tf_data["publisher"]
         for idx, worker in enumerate(tf_data["workers"]):
-            result[(worker, idx)] = worker
+            result[("worker", idx)] = worker
         for idx, client in enumerate(tf_data["clients"]):
-            result[(client, idx)] = client
+            result[("client", idx)] = client
         return result
 
     @classmethod

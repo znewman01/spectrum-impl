@@ -85,7 +85,7 @@ class BuildArgs:
         profile = BuildProfile(parsed.build)
 
         git_root = _get_git_root()
-        if parsed.commit:
+        if parsed.commitish:
             sha = SHA(_sha_for_commitish(git_root, parsed.commit))
         else:
             sha = SHA(_get_last_sha(git_root))

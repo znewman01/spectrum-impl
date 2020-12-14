@@ -54,7 +54,7 @@ async def _gather_dict(tasks: Dict[K, Awaitable[V]]) -> Dict[K, V]:
         return key, await coro
 
     return dict(
-        *await asyncio.gather(*(do_it(key, coro) for key, coro in tasks.items()))
+        await asyncio.gather(*(do_it(key, coro) for key, coro in tasks.items()))
     )
 
 

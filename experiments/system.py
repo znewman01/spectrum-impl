@@ -87,13 +87,13 @@ class Setting(ABC):
         """
         ...
 
-    @abstractmethod
     @staticmethod
+    @abstractmethod
     def to_machine_spec(tf_data: Dict[str, Any]) -> Dict[Any, str]:
         pass
 
-    @abstractmethod
     @classmethod
+    @abstractmethod
     def from_dict(cls, machines: Dict[Any, Machine]) -> Setting:
         ...
 
@@ -177,6 +177,6 @@ class System:
 def experiments_by_environment(
     experiments: List[Experiment],
 ) -> List[Tuple[Environment, List[Experiment]]]:
-    experiments = sorted(experiments, key=Experiment.to_environment)
-    by_environment = groupby(experiments, Experiment.to_environment)
+    experiments = sorted(experiments, key=lambda e: e.to_environment())
+    by_environment = groupby(experiments, lambda e: e.to_environment())
     return [(k, list(v)) for k, v in by_environment]
