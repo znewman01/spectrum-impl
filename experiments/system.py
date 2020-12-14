@@ -58,7 +58,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from itertools import groupby
 from pathlib import Path
-from typing import List, NewType, Tuple, Any, ContextManager, Dict, Type
+from typing import List, NewType, Tuple, Any, ContextManager, Dict, Type, Protocol
 
 import asyncssh
 
@@ -87,24 +87,28 @@ class Setting(ABC):
         """
         ...
 
+    @abstractmethod
+    @staticmethod
+    def to_machine_spec(tf_data: Dict[str, Any]) -> Dict[Any, str]:
+        pass
 
-class Environment(ABC):
+    @abstractmethod
+    @classmethod
+    def from_dict(cls, machines: Dict[Any, Machine]) -> Setting:
+        ...
+
+
+class _SupportsLessThan(Protocol):
+    def __lt__(self, __other: Any) -> bool:
+        ...
+
+
+class Environment(_SupportsLessThan, ABC):
     """Description of what environment is required to do the experiment.
 
     Experiments with the same (`__eq__`) `Environment` should be able to share a
     `Setting`.
     """
-
-    @abstractmethod
-    def to_setup(self, machines: List[Machine]) -> Setting:
-        ...
-
-    def __lt__(self, other: Any) -> bool:
-        """Overrides.
-
-        (So that we can sort and group.)
-        """
-        ...
 
 
 Milliseconds = NewType("Milliseconds", int)

@@ -8,7 +8,8 @@ import traceback
 
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
-from typing import Optional, Set, List, Any
+from typing import Optional, Set, List, Any, Dict, TypeVar, Type, Awaitable
+
 
 import asyncssh
 
@@ -24,17 +25,17 @@ MAX_ATTEMPTS = 5
 
 
 @asynccontextmanager
-async def _connect_ssh(*args, **kwargs):
+async def _connect_ssh(hostname: str, *args, **kwargs):
     reraise_err = None
     async for attempt in AsyncRetrying(wait=wait_fixed(2)):
         with attempt:
-            async with asyncssh.connect(*args, **kwargs) as conn:
+            async with asyncssh.connect(hostname, *args, **kwargs) as conn:
                 # SSH may be ready but really the system isn't until this file exists.
                 await conn.run(
                     "test -f /var/lib/cloud/instance/boot-finished", check=True
                 )
                 try:
-                    yield conn
+                    yield Machine(conn, cloud.Hostname(hostname))
                 except BaseException as err:  # pylint: disable=broad-except
                     # Exceptions from "yield" have nothing to do with us.
                     # We reraise them below without retrying.
@@ -43,9 +44,24 @@ async def _connect_ssh(*args, **kwargs):
         raise reraise_err from None
 
 
+# Pylint bug: https://github.com/PyCQA/pylint/issues/3401
+K = TypeVar("K")  # pylint: disable=invalid-name
+V = TypeVar("V")  # pylint: disable=invalid-name
+
+
+async def _gather_dict(tasks: Dict[K, Awaitable[V]]) -> Dict[K, V]:
+    async def do_it(key, coro):
+        return key, await coro
+
+    return dict(
+        *await asyncio.gather(*(do_it(key, coro) for key, coro in tasks.items()))
+    )
+
+
 @asynccontextmanager
 async def infra(
     environment: spectrum.Environment,
+    setting_cls: Type[Setting],
     force_rebuilt: Optional[Set[Any]],
     build_args: SpectrumBuildArgs,
 ):
@@ -67,43 +83,29 @@ async def infra(
         "worker_machine_count": environment.worker_machines,
     }
     with cloud.terraform(tf_vars) as data:
-        publisher = data["publisher"]
-        workers = data["workers"]
-        clients = data["clients"]
         ssh_key = asyncssh.import_private_key(data["private_key"])
 
-        conn_ctxs = []
-        conn_ctxs.append(
-            _connect_ssh(
-                publisher, known_hosts=None, client_keys=[ssh_key], username="ubuntu"
-            )
-        )
-        for worker in workers:
-            conn_ctxs.append(
-                _connect_ssh(
-                    worker, known_hosts=None, client_keys=[ssh_key], username="ubuntu"
-                )
-            )
-        for client in clients:
-            conn_ctxs.append(
-                _connect_ssh(
-                    client, known_hosts=None, client_keys=[ssh_key], username="ubuntu"
-                )
-            )
-
+        # The "stack" bit is so that we can have an async context manager that,
+        # on exit, closes all of our SSH connections.
         async with contextlib.AsyncExitStack() as stack:
+            conn_ctxs = {}
+            for key, hostname in setting_cls.to_machine_spec(data).items():
+                conn_ctxs[key] = stack.enter_async_context(
+                    _connect_ssh(
+                        hostname,
+                        known_hosts=None,
+                        client_keys=[ssh_key],
+                        username="ubuntu",
+                    )
+                )
             with Halo("[infrastructure] connecting (SSH) to all machines") as spinner:
-                conns = await asyncio.gather(*map(stack.enter_async_context, conn_ctxs))
+                conns = await _gather_dict(conn_ctxs)
                 spinner.succeed("[infrastructure] connected (SSH)")
-            hostnames = [publisher] + workers + clients
-            machines = [
-                Machine(ssh, hostname) for ssh, hostname in zip(conns, hostnames)
-            ]
-            setup = environment.to_setup(machines)
+            setting = setting_cls.from_dict(conns)
 
-            await setup.additional_setup()
+            await setting.additional_setup()
 
-            yield setup
+            yield setting
         print()
 
 
@@ -184,7 +186,7 @@ async def run_experiments(
     with cloud.cleanup(cloud.AWS_REGION) if run_args.cleanup else nullcontext():
         for environment, experiments in experiments_by_environment(all_experiments):
             async with infra(
-                environment, force_rebuilt, subparser_args.build
+                environment, spectrum.Setting, force_rebuilt, subparser_args.build
             ) as setting:
                 for experiment in experiments:
                     print()

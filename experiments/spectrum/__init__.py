@@ -10,7 +10,18 @@ from itertools import chain, starmap, product
 from pathlib import Path
 from subprocess import check_call
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-from typing import NewType, Dict, Any, Optional, Type, List, Mapping, Iterator
+from typing import (
+    NewType,
+    Dict,
+    Any,
+    Optional,
+    Type,
+    List,
+    Mapping,
+    Iterator,
+    Union,
+    Tuple,
+)
 
 import asyncssh
 
@@ -35,6 +46,36 @@ class Setting(system.Setting):
     publisher: Machine
     workers: List[Machine]
     clients: List[Machine]
+
+    @staticmethod
+    def to_machine_spec(
+        tf_data: Dict[str, Any]
+    ) -> Dict[Union[str, Tuple[str, int]], str]:
+        result = {}
+        result["publisher"] = tf_data["publisher"]
+        for idx, worker in enumerate(tf_data["workers"]):
+            result[(worker, idx)] = worker
+        for idx, client in enumerate(tf_data["clients"]):
+            result[(client, idx)] = client
+        return result
+
+    @classmethod
+    def from_dict(cls, machines: Dict[Any, Machine]) -> Setting:
+        publisher = None
+        workers = []
+        clients = []
+        for ident, machine in machines.items():
+            if ident == "publisher":
+                publisher = machine
+            elif ident[0] == "worker":
+                workers.append(machine)
+            elif ident[0] == "client":
+                clients.append(machine)
+            else:
+                raise ValueError(f"Invalid identifier [{ident}]")
+        if publisher is None:
+            raise ValueError("Missing publisher.")
+        return cls(publisher=publisher, workers=workers, clients=clients)
 
     async def additional_setup(self):
         with Halo("[infrastructure] starting etcd") as spinner:
@@ -71,14 +112,6 @@ class Environment(system.Environment):
     @property
     def total_machines(self) -> int:
         return self.client_machines + self.worker_machines + 1
-
-    def to_setup(self, machines: List[Machine]) -> Setting:
-        assert len(machines) == self.total_machines
-        return Setting(
-            publisher=machines[0],
-            workers=machines[1 : self.worker_machines + 1],
-            clients=machines[-self.client_machines :],
-        )
 
 
 class Protocol(ABC):
