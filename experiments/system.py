@@ -205,8 +205,16 @@ class Args(ABC):
     build: BuildArgs
     experiments_file: io.TextIOBase
 
+    name: str
+    doc: str
 
-def experiments_by_environment(
+    @abstractmethod
+    @classmethod
+    def add_args(cls, parser):
+        ...
+
+
+def group_by_environment(
     experiments: List[Experiment],
 ) -> List[Tuple[Environment, List[Experiment]]]:
     experiments = sorted(experiments, key=lambda e: e.to_environment())

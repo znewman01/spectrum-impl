@@ -8,7 +8,7 @@ import traceback
 
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
-from typing import Optional, Set, List, Any, Dict, TypeVar, Awaitable
+from typing import Optional, Set, List, Any, AsyncIterator
 
 
 import asyncssh
@@ -24,16 +24,28 @@ from experiments.system import (
     System,
     Experiment,
     Environment,
-    experiments_by_environment,
+    group_by_environment,
     Machine,
+    Result,
 )
-from experiments.util import Hostname
+from experiments.util import Hostname, gather_dict
 
 MAX_ATTEMPTS = 5
 
 
 @asynccontextmanager
-async def _connect_ssh(hostname: str, *args, **kwargs):
+async def _connect_ssh(hostname: Hostname, *args, **kwargs) -> AsyncIterator[Machine]:
+    """Connect to the given host, retrying if necessary.
+
+    A pretty simple wrapper around asyncssh.connect, with a couple of changes:
+
+    - waits for /var/lib/cloud/instance/boot-finished to exist (AWS Ubuntu has
+      this when the machine is ready)
+    - yields a Machine instead of just connections: a nice wrapper of the
+      connection with a hostname
+    - retries until the machine is ready
+    """
+
     reraise_err = None
     async for attempt in AsyncRetrying(wait=wait_fixed(2)):
         with attempt:
@@ -52,27 +64,26 @@ async def _connect_ssh(hostname: str, *args, **kwargs):
         raise reraise_err from None
 
 
-# Pylint bug: https://github.com/PyCQA/pylint/issues/3401
-K = TypeVar("K")  # pylint: disable=invalid-name
-V = TypeVar("V")  # pylint: disable=invalid-name
-
-
-async def _gather_dict(tasks: Dict[K, Awaitable[V]]) -> Dict[K, V]:
-    async def do_it(key, coro):
-        return key, await coro
-
-    return dict(
-        await asyncio.gather(*(do_it(key, coro) for key, coro in tasks.items()))
-    )
-
-
 @asynccontextmanager
-async def infra(
+async def deployed(
     environment: Environment,
     system: System,
     force_rebuilt: Optional[Set[Any]],
     build_args: BuildArgs,
-):
+) -> AsyncIterator[Setting]:
+    """Yields a Setting (handle to populated environment).
+
+    This might require a few steps:
+
+    1. create a Packer image (if it's missing or forced)
+    2. `terraform apply`
+    3. connecting (SSH) to the deployed machines
+    4. performing additional setup (depending on the system)
+
+    The "if forced" bit is a little tricky. We keep a (mutable) set of the
+    configurations that have been rebuilt, since we want to rebuild at most once
+    per execution. If that argument is None, we don't force rebuilding.
+    """
     Halo(f"[infrastructure] {environment}").stop_and_persist(symbol="•")
 
     packer_config = system.packer_config.from_args(build_args, environment)
@@ -88,14 +99,14 @@ async def infra(
             for key, hostname in system.setting.to_machine_spec(data).items():
                 conn_ctxs[key] = stack.enter_async_context(
                     _connect_ssh(
-                        hostname,
+                        Hostname(hostname),
                         known_hosts=None,
                         client_keys=[ssh_key],
                         username="ubuntu",
                     )
                 )
             with Halo("[infrastructure] connecting (SSH) to all machines") as spinner:
-                conns = await _gather_dict(conn_ctxs)
+                conns = await gather_dict(conn_ctxs)
                 spinner.succeed("[infrastructure] connected (SSH)")
             setting = system.setting.from_dict(conns)
 
@@ -107,7 +118,8 @@ async def infra(
 
 async def retry_experiment(
     experiment: Experiment, setting: Setting, ctrl_c: asyncio.Event
-):
+) -> Optional[Result]:
+    """Run the experiment up to MAX_ATTEMPTS times."""
     interrupted = False
     for attempt in range(1, MAX_ATTEMPTS + 1):
         with Halo() as spinner:
@@ -153,6 +165,7 @@ async def retry_experiment(
                 # experiment succeeded!
                 spinner.succeed(f"[experiment] time: {result.time}ms")
                 return result
+    return None
 
 
 @dataclass
@@ -174,18 +187,28 @@ class Args:
 
 async def run_experiments(
     all_experiments: List[Experiment],
-    run_args: Args,
-    subparser_args: SystemArgs,
+    args: Args,
+    system_args: SystemArgs,
     ctrl_c: asyncio.Event,
 ):
-    force_rebuilt = set() if run_args.packer.force_rebuild else None
-    system = subparser_args.system
-    with cloud.cleanup(system) if run_args.cleanup else nullcontext():
-        for environment, experiments in experiments_by_environment(all_experiments):
-            async with infra(
-                environment, subparser_args.system, force_rebuilt, subparser_args.build
-            ) as setting:
-                for experiment in experiments:
+    """Run all experiments.
+
+    This groups the experiments by their environment so that we can reuse a
+    given environment.
+
+    We clean up the environment at the end if requested (by args.cleanup).
+    """
+    system = system_args.system
+    # a mutable set indicates that we should rebuild everything (but at most one
+    # time per execution!)
+    force_rebuilt = set() if args.packer.force_rebuild else None
+
+    cleanup = cloud.cleanup(system) if args.cleanup else nullcontext()
+    with cleanup:
+        for env, env_experiments in group_by_environment(all_experiments):
+            build_args = system_args.build
+            async with deployed(env, system, force_rebuilt, build_args) as setting:
+                for experiment in env_experiments:
                     print()
                     Halo(f"{experiment}").stop_and_persist(symbol="•")
                     result = await retry_experiment(experiment, setting, ctrl_c)

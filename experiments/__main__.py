@@ -36,24 +36,25 @@ import json
 import signal
 import sys
 
+from argparse import RawTextHelpFormatter
 from dataclasses import asdict, dataclass
-from typing import List
+from typing import List, Type
 
 from experiments.spectrum.args import Args as SpectrumArgs
 
-from experiments.system import Experiment, Args as SystemArgs, System
-from experiments.util import stream_json, chdir
+from experiments.system import Args as SystemArgs, System
+from experiments.util import stream_json
 from experiments.run import run_experiments, Args as RunArgs
 
 
-_SUBPARSER_ARGS = [SpectrumArgs]
+_SYSTEM_ARGS: List[Type[SystemArgs]] = [SpectrumArgs]
 
 
 @dataclass
 class Args:
 
     run: RunArgs
-    subparser_args: SystemArgs
+    system_args: SystemArgs
     output: io.IOBase
     cleanup: bool
 
@@ -67,17 +68,21 @@ class Args:
             help="path for experiment results",
         )
         subparsers = parser.add_subparsers(required=True)
-        for args in _SUBPARSER_ARGS:
-            subparser = subparsers.add_parser(
-                args.name, help=args.doc, formatter_class=argparse.RawTextHelpFormatter,
+        for args in _SYSTEM_ARGS:
+            # pylint: disable=no-member
+            # Pylint gets confused, but this is part of the ABC specification for SystemArgs.
+            args.add_args(
+                subparsers.add_parser(
+                    args.name, help=args.doc, formatter_class=RawTextHelpFormatter,
+                )
             )
-            args.add_args(subparser)
+            # pylint: enable=no-member
 
     @classmethod
     def from_parsed(cls, parsed):
         return cls(
             run=RunArgs.from_parsed(parsed),
-            subparser_args=parsed.arg_cls.from_parsed(parsed),
+            system_args=parsed.arg_cls.from_parsed(parsed),
             output=parsed.output,
             cleanup=parsed.cleanup,
         )
@@ -100,18 +105,15 @@ async def main(args: Args):
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, ctrl_c.set)
 
-    system: System = args.subparser_args.system
-    all_experiments: List[Experiment] = list(
-        map(
-            system.experiment.from_dict,
-            json.load(args.subparser_args.experiments_file),
-        )
-    )
+    system: System = args.system_args.system
+    experiments_json = json.load(args.system_args.experiments_file)
+    experiments = list(map(system.experiment.from_dict, experiments_json))
+
     any_err = False
     try:
         with stream_json(args.output, close=True) as writer:
             async for result in run_experiments(
-                all_experiments, args.run, args.subparser_args, ctrl_c,
+                experiments, args.run, args.system_args, ctrl_c,
             ):
                 if result is None:
                     any_err = True

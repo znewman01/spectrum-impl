@@ -1,9 +1,23 @@
+"""Utilities.
+
+A module named "util" is a clear indication that you haven't thought hard enough
+about how to organize your code.
+"""
+import asyncio
 import json
-import os
 
 from contextlib import contextmanager, closing, nullcontext
-from typing import TextIO, Callable, Iterator, Dict, Any, ContextManager, NewType
-from pathlib import Path
+from typing import (
+    TextIO,
+    Callable,
+    Iterator,
+    Dict,
+    Any,
+    ContextManager,
+    NewType,
+    TypeVar,
+    Awaitable,
+)
 
 
 Hostname = NewType("Hostname", str)
@@ -49,11 +63,17 @@ def stream_json(
         file.write("\n]\n")
 
 
-@contextmanager
-def chdir(path: Path):
-    old_cwd = os.getcwd()
-    try:
-        os.chdir(path)
-        yield
-    finally:
-        os.chdir(old_cwd)
+# Pylint bug: https://github.com/PyCQA/pylint/issues/3401
+K = TypeVar("K")  # pylint: disable=invalid-name
+V = TypeVar("V")  # pylint: disable=invalid-name
+
+
+async def gather_dict(tasks: Dict[K, Awaitable[V]]) -> Dict[K, V]:
+    """Gather {keys:awaitables} into {keys:(results of those awaitables)}."""
+
+    async def do_it(key, coro):
+        return key, await coro
+
+    return dict(
+        await asyncio.gather(*(do_it(key, coro) for key, coro in tasks.items()))
+    )

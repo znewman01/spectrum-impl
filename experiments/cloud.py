@@ -13,7 +13,6 @@ from typing import NewType, Dict, Any, List
 from halo import Halo
 
 from experiments.system import System
-from experiments.util import chdir
 
 
 Region = NewType("Region", str)
