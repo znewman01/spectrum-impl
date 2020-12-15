@@ -398,7 +398,7 @@ class Experiment(system.Experiment):
             await asyncio.gather(*shutdowns)
 
 
-@dataclass
+@dataclass(frozen=True)
 class PackerConfig(system.PackerConfig):
     sha: SHA
     git_root: Path

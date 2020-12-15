@@ -76,9 +76,9 @@ async def infra(
     Halo(f"[infrastructure] {environment}").stop_and_persist(symbol="•")
 
     packer_config = system.packer_config.from_args(build_args, environment)
-    build = packer.ensure_ami_build(packer_config, force_rebuilt=force_rebuilt)
+    build = packer.ensure_ami_build(packer_config, force_rebuilt, system.root_dir)
 
-    with cloud.terraform(environment.make_tf_vars(build)) as data:
+    with cloud.terraform(environment.make_tf_vars(build), system.root_dir) as data:
         ssh_key = asyncssh.import_private_key(data["private_key"])
 
         # The "stack" bit is so that we can have an async context manager that,

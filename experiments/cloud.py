@@ -13,6 +13,7 @@ from typing import NewType, Dict, Any, List
 from halo import Halo
 
 from experiments.system import System
+from experiments.util import chdir
 
 
 Region = NewType("Region", str)
@@ -28,21 +29,21 @@ def format_args(var_dict: Dict[str, Any]) -> List:
 
 
 @contextmanager
-def terraform(tf_vars: Dict[str, Any]):
+def terraform(tf_vars: Dict[str, Any], tf_dir: Path):
     with TemporaryDirectory() as tmpdir:
         with Halo("[infrastructure] checking current state") as spinner:
             plan = Path(tmpdir) / "tfplan"
             tf_args = format_args(tf_vars)
             cmd = ["terraform", "plan", f"-out={plan}", "-no-color"] + tf_args
             try:
-                plan_output = check_output(cmd, stderr=subprocess.STDOUT)
+                plan_output = check_output(cmd, stderr=subprocess.STDOUT, cwd=tf_dir)
             except subprocess.CalledProcessError as err:
                 if "terraform init" in err.output.decode("utf8"):
                     # we know what to do here
                     spinner.text = "[infrastructure] initializing plugins"
-                    check_output(["terraform", "init"])
+                    check_output(["terraform", "init"], cwd=tf_dir)
                     spinner.text = "[infrastructure] checking current state"
-                    plan_output = check_output(cmd)
+                    plan_output = check_output(cmd, cwd=tf_dir)
                 else:
                     raise
             changes = [
@@ -71,10 +72,10 @@ def terraform(tf_vars: Dict[str, Any]):
                         "-auto-approve",
                         str(plan),
                     ]
-                    check_call(cmd, stdout=log_file)
+                    check_call(cmd, stdout=log_file, cwd=tf_dir)
                 spinner.succeed("[infrastructure] created")
 
-        data = json.loads(check_output(["terraform", "output", "-json"]))
+        data = json.loads(check_output(["terraform", "output", "-json"], cwd=tf_dir))
     yield {k: v["value"] for k, v in data.items()}
 
 
@@ -89,5 +90,6 @@ def cleanup(system: System):
             check_call(
                 ["terraform", "destroy", "-auto-approve"] + tf_args,
                 stdout=subprocess.DEVNULL,
+                cwd=system.root_dir,
             )
             spinner.succeed()

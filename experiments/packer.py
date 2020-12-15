@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from operator import attrgetter
 from subprocess import check_call
 from typing import Dict, Any, List, Optional, Set
+from pathlib import Path
 
 from halo import Halo
 
@@ -54,7 +55,7 @@ class Manifest:
     builds: List[Build]
 
     @classmethod
-    def from_disk(cls, fname) -> Manifest:
+    def from_disk(cls, fname: Path) -> Manifest:
         try:
             with open(fname) as manifest_file:
                 data = json.load(manifest_file)
@@ -72,9 +73,12 @@ class Manifest:
 
 
 def ensure_ami_build(
-    config: system.PackerConfig, force_rebuilt: Optional[Set[system.PackerConfig]],
+    config: system.PackerConfig,
+    force_rebuilt: Optional[Set[system.PackerConfig]],
+    packer_dir: Path,
 ) -> Build:
-    builds = Manifest.from_disk("manifest.json")
+    manifest_path = packer_dir / "manifest.json"
+    builds = Manifest.from_disk(manifest_path)
     build = builds.most_recent_matching(config)
 
     if force_rebuilt is not None and config not in force_rebuilt:
@@ -89,15 +93,14 @@ def ensure_ami_build(
     with config.make_packer_args() as args:
         packer_vars = cloud.format_args(args)
         with open("packer.log", "w") as log_file:
-            with Halo(
-                f"[infrastructure] building AMI (output in [{log_file.name}])"
-            ) as spinner:
+            msg = f"[infrastructure] building AMI (output in [{log_file.name}])"
+            with Halo(msg) as spinner:
                 check_call(
                     ["packer", "build"] + packer_vars + ["packer.json"], stdout=log_file
                 )
                 spinner.succeed()
 
-    builds = Manifest.from_disk("manifest.json")
+    builds = Manifest.from_disk(manifest_path)
     build = builds.most_recent_matching(config)
     if build is None:
         raise RuntimeError("Packer did not create the expected build.")

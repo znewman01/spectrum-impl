@@ -165,6 +165,12 @@ class Experiment(ABC):
 class PackerConfig(ABC):
     @abstractmethod
     def make_packer_args(self) -> ContextManager[Dict[str, str]]:
+        """Yields the variables that should be passed on the command line to Packer.
+
+        They will be formatted separately.
+
+        Needs to be a context manager in case we need temp files.
+        """
         ...
 
     @abstractmethod
