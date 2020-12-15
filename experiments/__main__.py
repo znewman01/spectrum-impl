@@ -108,18 +108,17 @@ async def main(args: Args):
         )
     )
     any_err = False
-    with chdir(system.root_dir):  # TODO(zjn): move this in, only where we need it
-        try:
-            with stream_json(args.output, close=True) as writer:
-                async for result in run_experiments(
-                    all_experiments, args.run, args.subparser_args, ctrl_c,
-                ):
-                    if result is None:
-                        any_err = True
-                        continue
-                    writer(asdict(result))
-        except KeyboardInterrupt:
-            pass
+    try:
+        with stream_json(args.output, close=True) as writer:
+            async for result in run_experiments(
+                all_experiments, args.run, args.subparser_args, ctrl_c,
+            ):
+                if result is None:
+                    any_err = True
+                    continue
+                writer(asdict(result))
+    except KeyboardInterrupt:
+        pass
     if any_err:
         print("Error occurred")
         sys.exit(1)
