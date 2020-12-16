@@ -1,6 +1,5 @@
 variable "ami" {
-  type    = string
-  default = "ami-0a040c35ca945058a"
+  type = string
 }
 
 variable "region" {
@@ -20,7 +19,7 @@ provider "aws" {
 
 resource "tls_private_key" "key" {
   algorithm = "RSA"
-  rsa_bits = 4096
+  rsa_bits  = 4096
 }
 
 resource "aws_key_pair" "key" {
@@ -54,16 +53,37 @@ resource "aws_security_group" "allow_ssh" {
   }
 }
 
-resource "aws_instance" "publisher" {
+resource "aws_instance" "serverA" {
   ami             = var.ami
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
 }
 
-# bad name but okay for now
-output "publisher" {
-  value = aws_instance.publisher.public_dns
+resource "aws_instance" "serverB" {
+  ami             = var.ami
+  instance_type   = var.instance_type
+  key_name        = aws_key_pair.key.key_name
+  security_groups = [aws_security_group.allow_ssh.name]
+}
+
+resource "aws_instance" "client" {
+  ami             = var.ami
+  instance_type   = var.instance_type
+  key_name        = aws_key_pair.key.key_name
+  security_groups = [aws_security_group.allow_ssh.name]
+}
+
+output "serverA" {
+  value = aws_instance.serverA.public_dns
+}
+
+output "serverB" {
+  value = aws_instance.serverB.public_dns
+}
+
+output "client" {
+  value = aws_instance.client.public_dns
 }
 
 output "private_key" {
