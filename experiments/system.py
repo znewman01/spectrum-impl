@@ -208,8 +208,8 @@ class Args(ABC):
     name: str
     doc: str
 
-    @abstractmethod
     @classmethod
+    @abstractmethod
     def add_args(cls, parser):
         ...
 
