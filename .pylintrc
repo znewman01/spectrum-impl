@@ -3,6 +3,7 @@ min-public-methods = 0  # terrible rule
 
 [MESSAGES CONTROL]
 disable=
+    duplicate-code,  # false positives
     missing-class-docstring,
     missing-function-docstring,
     missing-module-docstring,

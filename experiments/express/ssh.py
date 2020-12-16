@@ -1,8 +1,8 @@
 #!/usr/bin/env python
+# pylint: disable=duplicate-code
 import argparse
 import sys
 import json
-import os
 import tempfile
 
 from subprocess import check_output, check_call, CalledProcessError
@@ -23,15 +23,15 @@ def main():
     hostname = data[args.host]
 
     try:
-        with tempfile.NamedTemporaryFile() as f:
-            f.write(data["private_key"].encode("utf8"))
-            f.flush()
+        with tempfile.NamedTemporaryFile() as key_file:
+            key_file.write(data["private_key"].encode("utf8"))
+            key_file.flush()
 
             check_call(
                 [
                     "ssh",
                     "-i",
-                    f.name,
+                    key_file.name,
                     f"ubuntu@{hostname}",
                     "-o",
                     "StrictHostKeyChecking=no",
