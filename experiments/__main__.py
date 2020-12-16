@@ -119,7 +119,9 @@ async def main(args: Args):
                 if result is None:
                     any_err = True
                     continue
-                writer(asdict(result))
+                result_dict = asdict(result)
+                result_dict["qps"] = result.qps
+                writer(result_dict)
     except KeyboardInterrupt:
         pass
     if any_err:

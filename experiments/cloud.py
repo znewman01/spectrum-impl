@@ -44,6 +44,8 @@ def terraform(tf_vars: Dict[str, Any], tf_dir: Path):
                     spinner.text = "[infrastructure] checking current state"
                     plan_output = check_output(cmd, cwd=tf_dir)
                 else:
+                    with open("terraform.log", "w") as log_file:
+                        log_file.write(err.output.decode("utf8"))
                     raise
             changes = [
                 l

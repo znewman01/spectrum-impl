@@ -5,6 +5,7 @@ import sys
 import json
 import tempfile
 
+from pathlib import Path
 from subprocess import check_output, check_call, CalledProcessError
 
 
@@ -17,7 +18,9 @@ def main():
     )
     args = parser.parse_args()
 
-    data = json.loads(check_output(["terraform", "output", "-json"]))
+    data = json.loads(
+        check_output(["terraform", "output", "-json"], cwd=Path(__file__).parent,)
+    )
     data = {k: v["value"] for k, v in data.items()}
 
     hostname = data[args.host]
@@ -35,7 +38,7 @@ def main():
                     f"ubuntu@{hostname}",
                     "-o",
                     "StrictHostKeyChecking=no",
-                ]
+                ],
             )
     except CalledProcessError as err:
         sys.exit(err.returncode)

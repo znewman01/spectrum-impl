@@ -21,6 +21,7 @@ from typing import (
 
 
 Hostname = NewType("Hostname", str)
+Bytes = NewType("Bytes", int)
 
 
 @contextmanager

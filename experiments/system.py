@@ -131,6 +131,11 @@ class Result:
 
     experiment: Experiment
     time: Milliseconds
+    queries: int
+
+    @property
+    def qps(self) -> int:
+        return int((self.queries / self.time) * 1000)
 
 
 class Experiment(ABC):

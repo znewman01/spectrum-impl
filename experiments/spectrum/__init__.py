@@ -32,9 +32,9 @@ from experiments import system, packer
 
 from experiments.system import Milliseconds, Result, Machine
 from experiments.cloud import InstanceType, SHA, AWS_REGION
+from experiments.util import Bytes
 
 BuildProfile = NewType("BuildProfile", str)
-Bytes = NewType("Bytes", int)
 
 
 # Need to update install.sh to change this
@@ -375,7 +375,7 @@ class Experiment(system.Experiment):
             time = await asyncio.wait_for(
                 _execute_experiment(publisher, etcd_env), timeout=60.0
             )
-            return Result(self, time)
+            return Result(self, time, queries=self.clients)
         finally:
             spinner.text = "[experiment] shutting everything down"
             shutdowns = []
@@ -442,6 +442,7 @@ class PackerConfig(system.PackerConfig):
         )
 
 
+# pylint: disable=duplicate-code
 SPECTRUM = system.System(
     environment=Environment,
     experiment=Experiment,
@@ -449,3 +450,4 @@ SPECTRUM = system.System(
     packer_config=PackerConfig,
     root_dir=Path(__file__).parent,
 )
+# pylint: enable=duplicate-code

@@ -163,7 +163,9 @@ async def retry_experiment(
                     spinner.warn(msg)
             else:
                 # experiment succeeded!
-                spinner.succeed(f"[experiment] time: {result.time}ms")
+                spinner.succeed(
+                    f"[experiment] {result.queries} queries in {result.time}ms => {result.qps} qps"
+                )
                 return result
     return None
 
