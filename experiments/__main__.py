@@ -92,12 +92,14 @@ class Args:
 def parse_args(args) -> Args:
     description, _, epilog = __doc__.partition("\n\n")
     parser = argparse.ArgumentParser(
+        prog="experiments",
         description=description,
         epilog=epilog,
         formatter_class=argparse.RawTextHelpFormatter,
     )
     Args.add_args(parser)
-    return Args.from_parsed(parser.parse_args(args[1:]))
+    args = args[1:] if len(args) > 1 else ["-h"]
+    return Args.from_parsed(parser.parse_args(args))
 
 
 async def main(args: Args):
