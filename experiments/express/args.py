@@ -51,9 +51,9 @@ class Args(system.Args):
             help="""\
 JSON input.
 
-For example TODO fix up:
+For example:
 
-    {"clients": 100, "channels": 10, "message_size": 1024}
+    {"channels": 10, "message_size": 1024}
 
 Also configurable:
 

@@ -67,6 +67,8 @@ resource "aws_instance" "serverB" {
   security_groups = [aws_security_group.allow_ssh.name]
 }
 
+# TODO(zjn): add more client servers?
+# Express evaluation only uses one but we (and Riposte) use >1
 resource "aws_instance" "client" {
   ami             = var.ami
   instance_type   = var.instance_type

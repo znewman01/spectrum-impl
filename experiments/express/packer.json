@@ -46,8 +46,6 @@
       "output": "manifest.json",
       "custom_data": {
         "instance_type": "{{user `instance_type`}}",
-        "profile": "{{user `profile`}}",
-        "sha": "{{user `sha`}}"
       }
     }
   ]

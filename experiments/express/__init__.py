@@ -102,16 +102,15 @@ class Experiment(system.Experiment):
         cmd_b = f"cd Express/serverB && ./serverB {self.server_threads} {self.CORES} {self.channels} {self.message_size}"
         cmd_a = f"cd Express/serverA && ./serverA {server_b.hostname}:4442 {self.server_threads} {self.CORES} {self.channels} {self.message_size}"
         cmd_client = f"cd Express/client && ./client {server_a.hostname}:4443 {server_b.hostname}:4442 {self.client_threads} {self.message_size} throughput"
-        # fmt: off
-        # order important here!
-        async with server_b.ssh.create_process(cmd_b) as server_b_proc, \
-                   server_a.ssh.create_process(cmd_a) as server_a_proc, \
-                   client.ssh.create_process(cmd_client) as client_proc:
+        server_b_proc = server_b.ssh.create_process(cmd_b)
+        server_a_proc = server_a.ssh.create_process(cmd_a)
+        client_proc = client.ssh.create_process(cmd_client)
+
+        async with server_b_proc, server_a_proc, client_proc:
             spinner.text = f"[experiment] letting processes run for {self.WAIT_TIME}s"
             await asyncio.sleep(self.WAIT_TIME)
             server_a_proc.kill()
             spinner.text = "[experiment] waiting for processes to exit"
-        # fmt: on
 
         lines = (await server_a_proc.stderr.read()).split("\n")
         matching = list(filter(None, map(partial(re.match, self.RESULT_RE), lines)))
