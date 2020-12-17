@@ -45,7 +45,7 @@
       "type": "manifest",
       "output": "manifest.json",
       "custom_data": {
-        "instance_type": "{{user `instance_type`}}",
+        "instance_type": "{{user `instance_type`}}"
       }
     }
   ]
