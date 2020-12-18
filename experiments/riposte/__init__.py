@@ -20,7 +20,7 @@ from experiments.util import Bytes
 
 # RESULT_RE = r"Processed (?P<queries>.*) queries at rate (?P<qps>.*) reqs/sec"
 RESULT_RE = r"Processed (?P<queries>\d*) queries in (?P<time>[\d.]*)s"
-WAIT_TIME = 60  # we're clocking the whole run time, so
+WAIT_TIME = 10  # the servers usually stop accepting requests about 6-7 seconds in
 HOME = Path("/home/ubuntu")
 RIPOSTE_BASE = HOME / "go/src/bitbucket.org/henrycg/riposte"
 PORT = 4000
@@ -144,7 +144,9 @@ class Experiment(system.Experiment):
 
     def _parse(self, server_output: List[str]) -> Result:
         matches = list(filter(None, map(partial(re.search, RESULT_RE), server_output)))
-        if not matches:
+        time = 0.0
+        queries = 0
+        if len(matches) <= 2:
             log_path = Path("riposte-output.log")
             with open(log_path, "w") as log_file:
                 for line in server_output:
@@ -153,14 +155,13 @@ class Experiment(system.Experiment):
                 f"Output from server contains no indications of performance "
                 f"(output in {log_path})"
             )
-        match = matches[-1]
-        print(match)
-        queries = int(match.group("queries"))
-        time = Milliseconds(int(float(match.group("time")) * 1000))  # seconds
-        # we sleep before starting clients; subtract out that time
-        time = Milliseconds(time - 2000)
+        for match in matches[1:]:  # TODO(zjn): should we skip the first one?
+            queries += int(match.group("queries"))
+            time += float(match.group("time"))  # seconds
 
-        return Result(experiment=self, time=time, queries=queries,)
+        return Result(
+            experiment=self, time=Milliseconds(int(time * 1000)), queries=queries
+        )
 
     async def _run(self, setting: Setting, spinner: Halo) -> Result:
         leader = setting.leader
@@ -239,7 +240,6 @@ class Experiment(system.Experiment):
                 setting, width, height
             )  # TODO(zjn): catch if this doesn't work
             results.append(await self._run(setting, spinner))
-            print(results[-1])
 
         # return the best result
         return max(*results, key=lambda r: r.qps)

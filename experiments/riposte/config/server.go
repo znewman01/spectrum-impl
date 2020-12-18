@@ -448,21 +448,22 @@ func (t *Server) Commit(com *CommitArgs, reply *CommitReply) error {
 	t.pendingMutex.Unlock()
 
 	t.clientsServedMutex.Lock()
-	t.clientsServed += len(queries)
+	t.clientsServed = len(queries)
 	elapsed := time.Now().Sub(t.clientsServedStart).Seconds()
-	log.Printf("Processed %v queries in %vs | table size %d", t.clientsServed, elapsed,
+	rate := float64(len(queries)) / time.Now().Sub(t.clientsServedStart).Seconds()
+	log.Printf("Processed %v queries in %vs (rate %v reqs/sec) | table size %d", t.clientsServed, elapsed, rate,
 		TABLE_WIDTH*TABLE_HEIGHT*SLOT_LENGTH)
-	// t.clientsServedStart = time.Now()
+	t.clientsServedStart = time.Now()
 	t.clientsServedMutex.Unlock()
 
 	return nil
 }
 
 func (t *Server) StorePlaintext(args *PlaintextArgs, reply *PlaintextReply) error {
-	// t.clientsServedMutex.Lock()
-	// t.clientsServed = 0
-	// t.clientsServedStart = time.Now()
-	// t.clientsServedMutex.Unlock()
+	t.clientsServedMutex.Lock()
+	t.clientsServed = 0
+	t.clientsServedStart = time.Now()
+	t.clientsServedMutex.Unlock()
 
 	log.Printf("Storing plaintext")
 	t.plainMutex.Lock()
