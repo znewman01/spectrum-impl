@@ -106,11 +106,13 @@ class Experiment(system.Experiment):
         server_a_proc = server_a.ssh.create_process(cmd_a)
         client_proc = client.ssh.create_process(cmd_client)
 
-        async with server_b_proc, server_a_proc, client_proc:
-            spinner.text = f"[experiment] letting processes run for {self.WAIT_TIME}s"
-            await asyncio.sleep(self.WAIT_TIME)
-            server_a_proc.kill()
-            spinner.text = "[experiment] waiting for processes to exit"
+        async with server_b_proc as server_b_proc:
+            async with server_a_proc as server_a_proc:
+                async with client_proc as client_proc:
+                    spinner.text = f"[experiment] run processes for {self.WAIT_TIME}s"
+                    await asyncio.sleep(self.WAIT_TIME)
+                    server_a_proc.kill()
+                    spinner.text = "[experiment] waiting for processes to exit"
 
         lines = (await server_a_proc.stderr.read()).split("\n")
         matching = list(filter(None, map(partial(re.match, self.RESULT_RE), lines)))
