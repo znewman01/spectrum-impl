@@ -1,5 +1,4 @@
 # encoding: utf8
-# pylint: disable=bad-continuation,ungrouped-imports,line-too-long
 from __future__ import annotations
 
 import asyncio
@@ -164,7 +163,8 @@ async def retry_experiment(
             else:
                 # experiment succeeded!
                 spinner.succeed(
-                    f"[experiment] {result.queries} queries in {result.time}ms => {result.qps} qps"
+                    f"[experiment] {result.queries} queries in {result.time}ms "
+                    f"=> {result.qps} qps"
                 )
                 return result
     return None

@@ -1,6 +1,3 @@
-# encoding: utf8
-# Conflicts with black, isort
-# pylint: disable=bad-continuation,ungrouped-imports,line-too-long
 """
 Run experiments for Spectrum project.
 
@@ -71,7 +68,7 @@ class Args:
         subparsers = parser.add_subparsers(required=True)
         for args in _SYSTEM_ARGS:
             # pylint: disable=no-member
-            # Pylint gets confused, but this is part of the ABC specification for SystemArgs.
+            # Pylint gets confused, but this is part of the contract for SystemArgs
             args.add_args(
                 subparsers.add_parser(
                     args.name, help=args.doc, formatter_class=RawTextHelpFormatter,

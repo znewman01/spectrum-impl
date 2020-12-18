@@ -17,6 +17,10 @@ from experiments.cloud import InstanceType, AWS_REGION
 from experiments.util import Bytes
 
 
+# the server outputs summary statistics every 10s; add one to avoid beating it
+WAIT_TIME = 10 + 1
+
+
 @dataclass
 class Setting(system.Setting):
     client: Machine
@@ -67,21 +71,10 @@ class Environment(system.Environment):
 @dataclass(frozen=True)
 class Experiment(system.Experiment):
     instance_type: InstanceType = InstanceType("c5.9xlarge")
-    server_threads: int = 18  # Express docs: "1x or 2x the number of cores on the system"
-    client_threads: int = 36  # Express docs: "set numThreads larger than the actual number of cores on the machine"
+    server_threads: int = 18  # Express: "1x or 2x the number of cores on the system"
+    client_threads: int = 36  # "larger than the actual number of cores on the machine"
     channels: int = 1
     message_size: Bytes = Bytes(1000)
-
-    CORES: ClassVar[int] = 0  # must be 0
-
-    # the server outputs summary statistics every 10s; add one to avoid beating it
-    WAIT_TIME: ClassVar[int] = 10 + 1
-
-    RESULT_RE: ClassVar[str] = (
-        r"serverA.go:209: "
-        r"Time Elapsed: (?P<time>.*)s; "
-        r"number of writes: (?P<queries>.*)"
-    )
 
     def to_environment(self) -> Environment:
         return Environment(instance_type=self.instance_type)
@@ -99,23 +92,44 @@ class Experiment(system.Experiment):
 
         spinner.text = "[experiment] starting processes"
 
-        cmd_b = f"cd Express/serverB && ./serverB {self.server_threads} {self.CORES} {self.channels} {self.message_size}"
-        cmd_a = f"cd Express/serverA && ./serverA {server_b.hostname}:4442 {self.server_threads} {self.CORES} {self.channels} {self.message_size}"
-        cmd_client = f"cd Express/client && ./client {server_a.hostname}:4443 {server_b.hostname}:4442 {self.client_threads} {self.message_size} throughput"
-        server_b_proc = server_b.ssh.create_process(cmd_b)
-        server_a_proc = server_a.ssh.create_process(cmd_a)
-        client_proc = client.ssh.create_process(cmd_client)
+        server_b_proc = server_b.ssh.create_process(
+            f"cd Express/serverB && "
+            f"./serverB {self.server_threads} "
+            f"    0 "  # "cores" must be 0
+            f"    {self.channels} "
+            f"    {self.message_size}"
+        )
+        server_a_proc = server_a.ssh.create_process(
+            f"cd Express/serverA && "
+            f"./serverA {server_b.hostname}:4442 "
+            f"    {self.server_threads} "
+            f"    0 "  # "cores" must be 0
+            f"    {self.channels} "
+            f"    {self.message_size}"
+        )
+        client_proc = client.ssh.create_process(
+            f"cd Express/client && "
+            f"./client {server_a.hostname}:4443 {server_b.hostname}:4442 "
+            f"    {self.client_threads} "
+            f"    {self.message_size} "
+            f"    throughput"
+        )
 
         async with server_b_proc as server_b_proc:
             async with server_a_proc as server_a_proc:
                 async with client_proc as client_proc:
-                    spinner.text = f"[experiment] run processes for {self.WAIT_TIME}s"
-                    await asyncio.sleep(self.WAIT_TIME)
+                    spinner.text = f"[experiment] run processes for {WAIT_TIME}s"
+                    await asyncio.sleep(WAIT_TIME)
                     server_a_proc.kill()
                     spinner.text = "[experiment] waiting for processes to exit"
 
         lines = (await server_a_proc.stderr.read()).split("\n")
-        matching = list(filter(None, map(partial(re.match, self.RESULT_RE), lines)))
+        result_regex = (
+            r"serverA.go:209: "
+            r"Time Elapsed: (?P<time>.*)s; "
+            r"number of writes: (?P<queries>.*)"
+        )
+        matching = list(filter(None, map(partial(re.match, result_regex), lines)))
         return Result(
             experiment=self,
             time=Milliseconds(int(float(matching[-1].group("time")) * 1000)),
