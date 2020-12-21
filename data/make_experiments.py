@@ -4,17 +4,33 @@ import json
 import os
 import sys
 
-TRIALS = 5
+TRIALS = 1
 
-MESSAGE_SIZES = [1_000, 10_000, 50_000, 100_000, 500_000, 1_000_000]
-CHANNELS = [100, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000]
+MESSAGE_SIZES_ONE_CHANNEL = [
+    1_000_000,
+    2_000_000,
+    3_000_000,
+    4_000_000,
+    5_000_000,
+    6_000_000,
+    7_000_000,
+    8_000_000,
+    9_000_000,
+    10_000_000,
+]
+MESSAGE_SIZES_MANY_CHANNEL = [1_000, 5_000, 10_000, 20_000]
+CHANNELS = [100, 1000, 2000, 3000, 5000, 8000]
 
 # Doesn't include "full broadcast" plots which are a special case.
 PLOTS_SPECTRUM = {
     # "Our turf": one channel, many clients, measure QPS
-    "onechannel": {"channels": [1], "clients": [1000], "message_size": MESSAGE_SIZES,},
+    "onechannel": {
+        "channels": [1],
+        "clients": [1000],
+        "message_size": MESSAGE_SIZES_ONE_CHANNEL,
+    },
     # "Their turf": number clients = number channels
-    "manychannel": {"channels": CHANNELS, "message_size": MESSAGE_SIZES,},
+    "manychannel": {"channels": CHANNELS, "message_size": MESSAGE_SIZES_MANY_CHANNEL,},
     # Horizontal scaling experiment
     "horizontal": {
         "worker_machines_per_group": [1, 2, 3, 4, 5, 6, 7, 8],
@@ -40,17 +56,16 @@ PLOTS_SPECTRUM = {
         "clients": [1400],
         "channels": [100],
         "message_size": [100_000],
-        "protocol": [{"Symmetric": {"security": 16,}}],
     },
 }
 
 PLOTS_EXPRESS = {
-    "onechannel": {"channels": [1], "message_size": MESSAGE_SIZES,},
-    "manychannel": {"channels": CHANNELS, "message_size": MESSAGE_SIZES,},
+    "onechannel": {"channels": [1], "message_size": MESSAGE_SIZES_ONE_CHANNEL,},
+    "manychannel": {"channels": CHANNELS, "message_size": MESSAGE_SIZES_MANY_CHANNEL,},
 }
 
 PLOTS_RIPOSTE = {
-    "manychannel": {"channels": CHANNELS, "message_size": MESSAGE_SIZES,},
+    "manychannel": {"channels": CHANNELS, "message_size": MESSAGE_SIZES_MANY_CHANNEL,},
 }
 
 
@@ -69,7 +84,7 @@ def make_experiments_spectrum(trials, params):
         if "clients" in experiment and "channels" not in experiment:
             experiment["channels"] = experiment["clients"]
         elif "channels" in experiment and "clients" not in experiment:
-            experiment["client"] = experiment["channels"]
+            experiment["clients"] = experiment["channels"]
         yield experiment
 
 
@@ -93,7 +108,7 @@ def main(args):
         experiments = list(make_experiments(TRIALS, params))
         _write_file(path, experiments)
 
-    for name, params in PLOTS_EXPRESS.items():
+    for name, params in PLOTS_RIPOSTE.items():
         path = os.path.join(args.output_dir, f"riposte-{name}.json")
         experiments = list(make_experiments(TRIALS, params))
         _write_file(path, experiments)
