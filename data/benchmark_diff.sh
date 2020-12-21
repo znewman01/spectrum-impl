@@ -28,65 +28,23 @@ parse_args() {
   fi
 
   # Cache results in this directory
-  RESULTS_DIR=/home/zjn/tmp/results  # TODO: make argument
-
-  # Where the benchmark spec json files will live
-  BENCH_SPEC_DIR=$(mktemp -d)
+  RESULTS_DIR=/home/zjn/tmp/bench  # TODO: make argument
 }
 
 main() {
     parse_args $@
 
     # 1. Get benchmark data for both commits!
-    # This is a pretty complicated step; need to:
-    # - generate the spec for benchmarks
-    # - run the benchmarks (in AWS) for uncached values
-    # - clean up AWS
+    COMMIT=${COMMIT1} RESULTS_DIR=${RESULTS_DIR} bash "$data_dir/run_experiments.sh" spectrum
+    COMMIT=${COMMIT2} RESULTS_DIR=${RESULTS_DIR} bash "$data_dir/run_experiments.sh" spectrum
 
-    # Generate full set of experiments
-    data_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-    python "$data_dir/make_experiments.py" "$BENCH_SPEC_DIR"
-
-    # Set up so we can run the experiments script
-    GIT_ROOT=$(git rev-parse --show-toplevel)
-    export PYTHONPATH="${GIT_ROOT}:${PYTHONPATH}"
-    CLEANUP_NEEDED=0
-
-    mkdir -p "${RESULTS_DIR}"
-    for bench_path in $(find "${BENCH_SPEC_DIR}/" -name "benchmarks-*.json"); do
-        bench_name=$(basename "${bench_path}")
-
-        for commit in "${COMMIT1}" "${COMMIT2}"; do
-            results_name="${commit}-${bench_name}"
-            results_path="${RESULTS_DIR}/${results_name}"
-            if  [ -f "${results_path}" ]; then
-                echo "${results_name} exists in ${RESULTS_DIR}; skipping..."
-            else
-                # The "|| true" is there to make sure we still clean up, nothing
-                # worse than leaving resources dangling.
-                CLEANUP_NEEDED=1
-                python -m experiments \
-                    --commit "$commit" \
-                    --output "${results_path}" \
-                    spectrum --build release "${bench_path}" || true
-            fi
-        done
-    done
-
-    # Clean up iff we ran any experiments
-    if [ "${CLEANUP_NEEDED}" -eq 1 ]; then
-       echo "[]" | python -m experiments --cleanup spectrum -  # magic invocation for "tear down AWS"
-    fi
-
-    rm "${BENCH_SPEC_DIR}"/*.json
-    rmdir "${BENCH_SPEC_DIR}"
-
-    # 2. Plot
+    # # 2. Plot
     python data/plot_benchmark_diff.py \
         --results-dir "${RESULTS_DIR}" \
         --baseline "${COMMIT1}" \
         --new "${COMMIT2}" \
-        --output "${RESULTS_DIR}/${COMMIT1}-${COMMIT2}.png"
+        # --output "${RESULTS_DIR}/${COMMIT1}-${COMMIT2}.png"
+    exit 0
 }
 
 main $@
