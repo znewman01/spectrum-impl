@@ -133,9 +133,16 @@ class Experiment(system.Experiment):
         )
         matching = list(filter(None, map(partial(re.match, result_regex), lines)))
         if not matching:
-            log_path = Path("express-output.log")
+            log_path = Path("express.log")
             with open(log_path, "w") as log_file:
+                log_file.write("SERVER A\n")
                 for line in lines:
+                    log_file.write(line + "\n")
+                log_file.write("\n\nSERVER B\n")
+                for line in (await server_b_proc.stderr.read()).split("\n"):
+                    log_file.write(line + "\n")
+                log_file.write("\n\nCLIENT\n")
+                for line in (await client_proc.stderr.read()).split("\n"):
                     log_file.write(line + "\n")
             raise ValueError(f"No lines matched; output in {log_path}")
         return Result(
