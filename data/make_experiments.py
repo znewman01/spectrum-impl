@@ -84,17 +84,17 @@ def main(args):
     args = parser.parse_args(args[1:])
 
     for name, params in PLOTS_SPECTRUM.items():
-        path = os.path.join(args.output_dir, f"experiments-spectrum-{name}.json")
+        path = os.path.join(args.output_dir, f"spectrum-{name}.json")
         experiments = list(make_experiments_spectrum(TRIALS, params))
         _write_file(path, experiments)
 
     for name, params in PLOTS_EXPRESS.items():
-        path = os.path.join(args.output_dir, f"experiments-express-{name}.json")
+        path = os.path.join(args.output_dir, f"express-{name}.json")
         experiments = list(make_experiments(TRIALS, params))
         _write_file(path, experiments)
 
     for name, params in PLOTS_EXPRESS.items():
-        path = os.path.join(args.output_dir, f"experiments-riposte-{name}.json")
+        path = os.path.join(args.output_dir, f"riposte-{name}.json")
         experiments = list(make_experiments(TRIALS, params))
         _write_file(path, experiments)
 
