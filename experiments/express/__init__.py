@@ -121,6 +121,8 @@ class Experiment(system.Experiment):
                     spinner.text = f"[experiment] run processes for {WAIT_TIME}s"
                     await asyncio.sleep(WAIT_TIME)
                     server_a_proc.kill()
+                    server_b_proc.kill()
+                    client_proc.kill()
                     spinner.text = "[experiment] waiting for processes to exit"
 
         lines = (await server_a_proc.stderr.read()).split("\n")
@@ -130,6 +132,12 @@ class Experiment(system.Experiment):
             r"number of writes: (?P<queries>.*)"
         )
         matching = list(filter(None, map(partial(re.match, result_regex), lines)))
+        if not matching:
+            log_path = Path("express-output.log")
+            with open(log_path, "w") as log_file:
+                for line in lines:
+                    log_file.write(line + "\n")
+            raise ValueError(f"No lines matched; output in {log_path}")
         return Result(
             experiment=self,
             time=Milliseconds(int(float(matching[-1].group("time")) * 1000)),
