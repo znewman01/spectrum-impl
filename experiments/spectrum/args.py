@@ -73,7 +73,7 @@ class BuildArgs(system.BuildArgs):
         parser.add_argument(
             "--build",
             choices=["debug", "release"],
-            default="debug",
+            default="release",
             type=BuildProfile,
             help="build profile for compilation",
         )

@@ -1,6 +1,7 @@
 proptest-regressions/
 spectrum.log
 express.log
+riposte.log
 experiments.json
 results.json
 data/*.json

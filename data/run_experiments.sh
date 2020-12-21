@@ -7,7 +7,7 @@ main() {
   mkdir ${TMP_DIR}/{experiments,results}
 
   # Need to be able to run "python -m experiments"
-  pushd $(git rev-parse --show-toplevel) > /dev/null
+  cd $(git rev-parse --show-toplevel) > /dev/null
 
   # Make experiment spec files
   pushd data > /dev/null
@@ -18,31 +18,37 @@ main() {
     for exp_path in ${TMP_DIR}/experiments/*${system}*.json; do
       exp=$(basename "$exp_path")
       if [ ! -z ${1+nonempty} ] && [[ ! "$exp" =~ "${1}" ]]; then
-        # if a filter was given, but it doesn't match this experiment
+        # a filter was given, but it doesn't match this experiment
         continue
       else
         echo "Running ${exp}"
-        declare "ran_${system}=1"
-        python -m experiments --output ${TMP_DIR}/results/${exp} ${system} ${exp_path}
+        declare "ran_${system}=1"  # so we clean up later
+        if [ ${system} == "spectrum" and ! -z ${COMMIT+nonempty} ]; then
+          extra_args="--commit ${COMMIT}"
+        else
+          extra_args=""
+        fi
+        python -m experiments \
+          --output ${TMP_DIR}/results/${exp} \
+          ${system} ${extra_args} ${exp_path}
       fi
     done
-  done
 
-  # TODO: copy out results
-
-  # Clean up AWS resources
-  for system in express riposte spectrum; do
+    # Clean up AWS resources
     var="ran_${system}"
     if [ ! -z ${!var} ]; then
-      echo "[]" | python -m experiments --cleanup express -
+      echo "[]" | python -m experiments --cleanup ${system} -
     fi
   done
 
-  echo "Pausing (good time to copy out ${TMP_DIR}/results/*)..."
-  read
-  rm -rf ${TMP_DIR}
+  if [ ! -z ${RESULTS_DIR} ]; then
+    cp -r ${TMP_DIR}/results ${RESULTS_DIR}
+  else
+    echo "Pausing (good time to copy out ${TMP_DIR}/results/*)..."
+    read
+  fi
 
-  popd > /dev/null
+  rm -rf ${TMP_DIR}
   exit
 }
 

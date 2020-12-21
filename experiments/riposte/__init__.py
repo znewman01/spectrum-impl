@@ -20,7 +20,7 @@ from experiments.util import Bytes
 
 # RESULT_RE = r"Processed (?P<queries>.*) queries at rate (?P<qps>.*) reqs/sec"
 RESULT_RE = r"Processed (?P<queries>\d*) queries in (?P<time>[\d.]*)s"
-WAIT_TIME = 10  # the servers usually stop accepting requests about 6-7 seconds in
+WAIT_TIME = 15  # the servers usually stop accepting requests about 6-7 seconds in
 HOME = Path("/home/ubuntu")
 RIPOSTE_BASE = HOME / "go/src/bitbucket.org/henrycg/riposte"
 PORT = 4000
@@ -147,7 +147,7 @@ class Experiment(system.Experiment):
         time = 0.0
         queries = 0
         if len(matches) <= 2:
-            log_path = Path("riposte-output.log")
+            log_path = Path("riposte.log")
             with open(log_path, "w") as log_file:
                 for line in server_output:
                     log_file.write(line + "\n")
@@ -155,7 +155,7 @@ class Experiment(system.Experiment):
                 f"Output from server contains no indications of performance "
                 f"(output in {log_path})"
             )
-        for match in matches[1:]:  # TODO(zjn): should we skip the first one?
+        for match in matches[1:]:
             queries += int(match.group("queries"))
             time += float(match.group("time"))  # seconds
 
