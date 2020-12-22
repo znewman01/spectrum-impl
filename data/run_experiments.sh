@@ -23,14 +23,14 @@ main() {
       else
         echo "Running ${exp}"
         declare "ran_${system}=1"  # so we clean up later
-        if [ ${system} == "spectrum" and ! -z ${COMMIT+nonempty} ]; then
+        if [ ${system} == "spectrum" ] && [ ! -z ${COMMIT+nonempty} ]; then
           extra_args="--commit ${COMMIT}"
         else
           extra_args=""
         fi
         python -m experiments \
           --output ${TMP_DIR}/results/${exp} \
-          ${system} ${extra_args} ${exp_path}
+          ${system} ${extra_args} ${exp_path} || true
       fi
     done
 

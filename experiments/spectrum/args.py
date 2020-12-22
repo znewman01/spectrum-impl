@@ -87,7 +87,7 @@ class BuildArgs(system.BuildArgs):
 
         git_root = _get_git_root()
         if parsed.commitish:
-            sha = SHA(_sha_for_commitish(git_root, parsed.commit))
+            sha = SHA(_sha_for_commitish(git_root, parsed.commitish))
         else:
             sha = SHA(_get_last_sha(git_root))
 

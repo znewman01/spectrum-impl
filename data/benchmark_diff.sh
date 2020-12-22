@@ -35,14 +35,21 @@ main() {
     parse_args $@
 
     # 1. Get benchmark data for both commits!
-    COMMIT=${COMMIT1} RESULTS_DIR=${RESULTS_DIR} bash "$data_dir/run_experiments.sh" spectrum
-    COMMIT=${COMMIT2} RESULTS_DIR=${RESULTS_DIR} bash "$data_dir/run_experiments.sh" spectrum
+    for COMMIT in $COMMIT1 $COMMIT2; do
+      COMMIT_DIR="${RESULTS_DIR}/${COMMIT}"
+      echo "Processing commit $COMMIT"
+      if [ -d "${COMMIT_DIR}" ]; then
+        echo "Results exist (${COMMIT_DIR}), skipping"
+        continue
+      fi
+      COMMIT=${COMMIT} RESULTS_DIR=${COMMIT_DIR} bash "data/run_experiments.sh" spectrum
+    done
 
-    # # 2. Plot
+    # 2. Plot
     python data/plot_benchmark_diff.py \
         --results-dir "${RESULTS_DIR}" \
-        --baseline "${COMMIT1}" \
-        --new "${COMMIT2}" \
+        --new "${COMMIT1}" \
+        --baseline "${COMMIT2}" \
         # --output "${RESULTS_DIR}/${COMMIT1}-${COMMIT2}.png"
     exit 0
 }

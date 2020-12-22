@@ -70,7 +70,7 @@ def plot_manychannel(results_dir: Path, benchmark: Optional[List[str]], show: bo
         old = make_means(old, ["message_size", "channels"])
         dfs.append(("old", old))
 
-        new = load_df(results_dir / benchmark[0] / "spectrum-manychannel.json")
+        new = load_df(results_dir / benchmark[1] / "spectrum-manychannel.json")
         new = process_spectrum(new).drop(["worker_machines_per_group", "protocol"], 1)
         new = make_means(new, ["message_size", "channels"])
         dfs.append(("new", new))
@@ -225,7 +225,10 @@ def main(args):
     plot_multiserver(results_dir, benchmark, show=args.show)
     # TODO: bandwidth
     # TODO: cost
-    # TODO: microbenchmark
+    # TODO: microbenchmark:
+    # - audit (covered above but still interesting) vs. PRG expansion / XOR,
+    # - final merge
+    # - blame game <- would have to implement first, a boy can dream
 
 
 if __name__ == "__main__":
