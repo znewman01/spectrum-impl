@@ -5,6 +5,7 @@ use futures::{
     stream::FuturesUnordered,
 };
 use log::error;
+pub use spectrum_primitives as crypto;
 use std::env;
 use std::fmt;
 use std::fs::File;
@@ -19,13 +20,11 @@ use tokio::{
 };
 
 pub mod client;
-pub mod crypto;
 pub mod leader;
 pub mod protocols;
 pub mod publisher;
 pub mod worker;
 
-pub mod bytes;
 pub mod cli;
 pub mod config;
 pub mod experiment;

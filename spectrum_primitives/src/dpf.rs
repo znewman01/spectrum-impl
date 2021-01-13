@@ -2,7 +2,7 @@
 #![allow(clippy::unknown_clippy_lints)] // below issue triggers only on clippy beta/nightly
 #![allow(clippy::match_single_binding)] // https://github.com/mcarton/rust-derivative/issues/58
 
-use crate::crypto::prg::PRG;
+use crate::prg::PRG;
 
 use derivative::Derivative;
 
@@ -178,8 +178,8 @@ pub mod two_key {
     pub mod tests {
         use super::*;
         use crate::bytes::Bytes;
-        use crate::crypto::dpf::prg_tests::*;
-        use crate::crypto::prg::aes::AESPRG;
+        use crate::dpf::prg_tests::*;
+        use crate::prg::aes::AESPRG;
         use proptest::prelude::*;
 
         const MAX_NUM_POINTS: usize = 10;
@@ -230,8 +230,8 @@ pub mod two_key {
 // s-DPF (i.e. num_keys = s > 2) based on any seed-homomorphic PRG G(.).
 pub mod multi_key {
     use super::*;
-    use crate::crypto::prg::SeedHomomorphicPRG;
-    use crate::crypto::prg::PRG;
+    use crate::prg::SeedHomomorphicPRG;
+    use crate::prg::PRG;
     use serde::{Deserialize, Serialize};
     use std::iter::repeat_with;
     use std::ops;
@@ -388,8 +388,8 @@ pub mod multi_key {
     #[cfg(test)]
     pub mod tests {
         use super::*;
-        use crate::crypto::dpf::prg_tests::*;
-        use crate::crypto::prg::{group::ElementVector, group::GroupPRG};
+        use crate::dpf::prg_tests::*;
+        use crate::prg::{group::ElementVector, group::GroupPRG};
         use proptest::prelude::*;
 
         const MAX_NUM_POINTS: usize = 10;

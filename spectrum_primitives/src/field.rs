@@ -1,6 +1,6 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
-use crate::proto;
+// use crate::proto;
 use rug::{integer::IsPrime, integer::Order, rand::RandState, Integer};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -32,19 +32,19 @@ impl From<Integer> for Field {
     }
 }
 
-impl From<proto::Integer> for Field {
-    fn from(msg: proto::Integer) -> Field {
-        parse_integer(msg.data.as_ref()).into()
-    }
-}
-
-impl Into<proto::Integer> for Field {
-    fn into(self) -> proto::Integer {
-        proto::Integer {
-            data: emit_integer(&self.order),
-        }
-    }
-}
+// impl From<proto::Integer> for Field {
+//     fn from(msg: proto::Integer) -> Field {
+//         parse_integer(msg.data.as_ref()).into()
+//     }
+// }
+//
+// impl Into<proto::Integer> for Field {
+//     fn into(self) -> proto::Integer {
+//         proto::Integer {
+//             data: emit_integer(&self.order),
+//         }
+//     }
+// }
 
 /// element in a prime order field
 #[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
@@ -87,9 +87,9 @@ impl Field {
         }
     }
 
-    pub fn from_proto(&self, msg: proto::Integer) -> FieldElement {
-        FieldElement::new(parse_integer(msg.data.as_ref()), self.clone())
-    }
+    //  pub fn from_proto(&self, msg: proto::Integer) -> FieldElement {
+    //      FieldElement::new(parse_integer(msg.data.as_ref()), self.clone())
+    //  }
 
     pub fn element_from_bytes(&self, bytes: &Bytes) -> FieldElement {
         let val = Integer::from_digits(bytes.as_ref(), BYTE_ORDER);
@@ -122,13 +122,13 @@ impl Into<Bytes> for FieldElement {
     }
 }
 
-impl Into<proto::Integer> for FieldElement {
-    fn into(self) -> proto::Integer {
-        proto::Integer {
-            data: emit_integer(&self.value),
-        }
-    }
-}
+// impl Into<proto::Integer> for FieldElement {
+//     fn into(self) -> proto::Integer {
+//         proto::Integer {
+//             data: emit_integer(&self.value),
+//         }
+//     }
+// }
 
 // perform modulo reducation after a field operation.
 // note: different from % given that reduce_modulo compares

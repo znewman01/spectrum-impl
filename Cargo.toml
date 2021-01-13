@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "spectrum",
+    "spectrum_primitives",
 ]
 
 [profile.release]

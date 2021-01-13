@@ -1,5 +1,5 @@
 //! Spectrum implementation.
-use crate::crypto::field::FieldElement;
+use crate::field::FieldElement;
 use rug::rand::RandState;
 use std::fmt::Debug;
 use std::iter::{once, repeat_with};
@@ -126,7 +126,7 @@ impl ops::Mul<FieldElement> for SecretShare {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::field::tests::field_element_pairs;
+    use crate::field::tests::field_element_pairs;
     use proptest::prelude::*;
 
     const MAX_SPLIT: usize = 100;

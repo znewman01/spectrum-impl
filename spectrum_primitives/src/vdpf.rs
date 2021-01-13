@@ -1,5 +1,5 @@
 //! Spectrum implementation.
-use crate::crypto::{
+use crate::{
     dpf::{BasicDPF, MultiKeyDPF, DPF},
     field::{Field, FieldElement},
     lss::{SecretShare, LSS},
@@ -239,7 +239,7 @@ pub mod two_key {
     pub mod tests {
         use super::super::tests as vdpf_tests;
         use super::*;
-        use crate::crypto::dpf::two_key as two_key_dpf;
+        use crate::dpf::two_key as two_key_dpf;
         use proptest::prelude::*;
 
         proptest! {
@@ -393,7 +393,7 @@ pub mod multi_key {
     pub mod tests {
         use super::super::tests as vdpf_tests;
         use super::*;
-        use crate::crypto::dpf::multi_key as multi_key_dpf;
+        use crate::dpf::multi_key as multi_key_dpf;
         use proptest::prelude::*;
 
         proptest! {
@@ -423,7 +423,7 @@ pub mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    use crate::crypto::field::tests::integers;
+    use crate::field::tests::integers;
 
     impl<D: Arbitrary + 'static> Arbitrary for FieldVDPF<D> {
         type Parameters = ();

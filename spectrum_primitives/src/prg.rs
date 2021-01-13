@@ -1,7 +1,7 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
-use crate::crypto::field::{Field, FieldElement};
-use crate::crypto::group::{Group, GroupElement};
+use crate::field::{Field, FieldElement};
+use crate::group::{Group, GroupElement};
 
 use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;

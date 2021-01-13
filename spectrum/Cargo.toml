@@ -9,9 +9,7 @@ default = []
 etcd-tests = []  # run etcd integration tests
 
 [dependencies]
-jubjub = "0.4"
 futures = "0.3"
-openssl = "0.10"
 prost = "0.6"
 rand = "0.7.3"
 tonic = "0.3"
@@ -19,7 +17,6 @@ log = "0.4"
 simplelog = "^0.7.4"
 lazy_static = "1.4.0"
 tokio = { version = "0.2.22", features = [ "macros", "signal", "sync", "rt-threaded", "process" ] }
-rug = { version = "1.10", features = [ "serde" ] }
 async-trait = "0.1.38"
 chrono = "0.4"
 futures-retry = "0.4"
@@ -32,7 +29,7 @@ clap = { git = "http://github.com/clap-rs/clap/", rev = "37889c661134e8286102f7d
 csv = "1.1"
 etcd-rs = "0.2.2"
 tempfile = "3"
-blake3 = "0.3.0"
+spectrum_primitives = { path = "../spectrum_primitives" }
 
 [build-dependencies]
 tonic-build = "0.2.0"

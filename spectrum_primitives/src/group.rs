@@ -1,6 +1,6 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
-use crate::crypto::prg::{aes::AESSeed, aes::AESPRG, PRG};
+use crate::prg::{aes::AESSeed, aes::AESPRG, PRG};
 
 use jubjub::Fr as ECFieldElement; // elliptic curve field
 use rand::prelude::*;
