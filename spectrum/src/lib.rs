@@ -26,6 +26,7 @@ pub mod publisher;
 pub mod worker;
 
 pub mod cli;
+pub use crypto::bytes;
 pub mod config;
 pub mod experiment;
 pub mod net;
@@ -35,6 +36,8 @@ mod proto {
     use tonic::Status;
 
     tonic::include_proto!("spectrum");
+
+    pub use spectrum_primitives::proto::Integer;
 
     pub fn expect_field<T>(opt: Option<T>, name: &str) -> Result<T, Status> {
         opt.ok_or_else(|| Status::invalid_argument(format!("{} must be set.", name)))

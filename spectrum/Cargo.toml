@@ -20,6 +20,7 @@ tokio = { version = "0.2.22", features = [ "macros", "signal", "sync", "rt-threa
 async-trait = "0.1.38"
 chrono = "0.4"
 futures-retry = "0.4"
+rug = { version = "1.10", features = [ "serde" ] }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 port_check = "0.1.5"

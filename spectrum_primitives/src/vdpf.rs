@@ -44,9 +44,9 @@ pub trait VDPF: DPF {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct FieldToken {
-    pub(in crate) bit: SecretShare,
-    pub(in crate) seed: SecretShare,
-    pub(in crate) data: Bytes,
+    pub bit: SecretShare,
+    pub seed: SecretShare,
+    pub data: Bytes,
 }
 
 impl FieldToken {
@@ -57,8 +57,8 @@ impl FieldToken {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct FieldProofShare {
-    pub(in crate) bit: SecretShare,
-    pub(in crate) seed: SecretShare,
+    pub bit: SecretShare,
+    pub seed: SecretShare,
 }
 
 impl FieldProofShare {
@@ -84,7 +84,7 @@ impl FieldProofShare {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct FieldVDPF<D> {
     dpf: D,
-    pub(in crate) field: Field,
+    pub field: Field,
 }
 
 impl<D> FieldVDPF<D> {
