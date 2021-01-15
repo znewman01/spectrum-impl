@@ -138,29 +138,33 @@ impl ops::BitXorAssign<Bytes> for Bytes {
     }
 }
 
+#[cfg(any(test, feature = "testing"))]
+use proptest::prelude::*;
+
+#[cfg(any(test, feature = "testing"))]
+impl Arbitrary for Bytes {
+    type Parameters = prop::collection::SizeRange;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(size: Self::Parameters) -> Self::Strategy {
+        any_with::<Vec<u8>>((size, ()))
+            .prop_map(Bytes::from)
+            .boxed()
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+pub fn bytes(len: usize) -> impl Strategy<Value = Bytes> {
+    prop::collection::vec(any::<u8>(), len).prop_map(Bytes::from)
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use proptest::prelude::*;
     use rand::thread_rng;
     use std::ops::Range;
 
     const SIZE_RANGE: Range<usize> = 0..4097;
-
-    impl Arbitrary for Bytes {
-        type Parameters = prop::collection::SizeRange;
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(size: Self::Parameters) -> Self::Strategy {
-            any_with::<Vec<u8>>((size, ()))
-                .prop_map(Bytes::from)
-                .boxed()
-        }
-    }
-
-    pub fn bytes(len: usize) -> impl Strategy<Value = Bytes> {
-        prop::collection::vec(any::<u8>(), len).prop_map(Bytes::from)
-    }
 
     proptest! {
 

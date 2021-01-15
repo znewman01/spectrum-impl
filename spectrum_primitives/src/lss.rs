@@ -126,7 +126,7 @@ impl ops::Mul<FieldElement> for SecretShare {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field::tests::field_element_pairs;
+    use crate::field::testing::field_element_pairs;
     use proptest::prelude::*;
 
     const MAX_SPLIT: usize = 100;

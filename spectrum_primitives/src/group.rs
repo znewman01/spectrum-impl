@@ -14,6 +14,9 @@ use std::hash::Hash;
 use std::hash::Hasher;
 use std::ops;
 
+#[cfg(any(test, feature = "testing"))]
+use proptest::prelude::*;
+
 const BYTE_ORDER: Order = Order::LsfLe;
 
 // see jubjub::Fr for details
@@ -202,35 +205,43 @@ impl PartialEq for GroupElement {
     }
 }
 
+/// Test helpers
+#[cfg(any(test, feature = "testing"))]
+mod testing {
+    use super::*;
+
+    // need to generate 512-bit integers to ensure all operations
+    // "wrap around" the group order during testing
+    pub(super) fn integer_512_bits() -> impl Strategy<Value = Integer> {
+        any_with::<Bytes>(JUBJUB_MODULUS_BYTES.into())
+            .prop_map(|bytes| Integer::from_digits(&bytes.as_ref(), BYTE_ORDER))
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl Arbitrary for GroupElement {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        use testing::*;
+        integer_512_bits()
+            .prop_map(move |value| Group::new_element(&value))
+            .boxed()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::testing::*;
     use super::*;
     use crate::bytes::Bytes;
 
-    use proptest::prelude::*;
     use rug::integer::IsPrime;
 
     use std::ops::Range;
 
     const NUM_GROUP_GENERATORS: Range<usize> = 1..500;
-
-    // need to generate 512-bit integers to ensure all operations
-    // "wrap around" the group order during testing
-    fn integer_512_bits() -> impl Strategy<Value = Integer> {
-        any_with::<Bytes>(JUBJUB_MODULUS_BYTES.into())
-            .prop_map(|bytes| Integer::from_digits(&bytes.as_ref(), BYTE_ORDER))
-    }
-
-    impl Arbitrary for GroupElement {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            integer_512_bits()
-                .prop_map(move |value| Group::new_element(&value))
-                .boxed()
-        }
-    }
 
     #[test]
     fn group_is_of_prime_order() {

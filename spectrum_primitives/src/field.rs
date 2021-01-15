@@ -1,8 +1,12 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
 use crate::proto;
+
+#[cfg(any(test, feature = "testing"))]
+use proptest::prelude::*;
 use rug::{integer::IsPrime, integer::Order, rand::RandState, Integer};
 use serde::{Deserialize, Serialize};
+
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops;
@@ -233,45 +237,10 @@ impl ops::SubAssign<FieldElement> for FieldElement {
     }
 }
 
-#[cfg(test)]
-pub mod tests {
+/// Test helpers
+#[cfg(any(test, feature = "testing"))]
+pub mod testing {
     use super::*;
-    use proptest::prelude::*;
-    use std::collections::HashSet;
-    use std::iter::repeat_with;
-
-    pub fn integers() -> impl Strategy<Value = Integer> {
-        (0..1000).prop_map(Integer::from)
-    }
-
-    pub fn prime_integers() -> impl Strategy<Value = Integer> {
-        integers().prop_map(Integer::next_prime)
-    }
-
-    impl Arbitrary for Field {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            prime_integers().prop_map(Field::from).boxed()
-        }
-    }
-
-    impl Arbitrary for FieldElement {
-        type Parameters = Option<Field>;
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(field: Self::Parameters) -> Self::Strategy {
-            match field {
-                Some(field) => integers()
-                    .prop_map(move |value| field.new_element(value))
-                    .boxed(),
-                None => (integers(), any::<Field>())
-                    .prop_map(|(value, field)| field.new_element(value))
-                    .boxed(),
-            }
-        }
-    }
 
     // Pair of field elements *in the same field*
     pub fn field_element_pairs() -> impl Strategy<Value = (FieldElement, FieldElement)> {
@@ -282,6 +251,49 @@ pub mod tests {
             )
         })
     }
+
+    pub fn integers() -> impl Strategy<Value = Integer> {
+        (0..1000).prop_map(Integer::from)
+    }
+
+    pub fn prime_integers() -> impl Strategy<Value = Integer> {
+        integers().prop_map(Integer::next_prime)
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl Arbitrary for Field {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        testing::prime_integers().prop_map(Field::from).boxed()
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl Arbitrary for FieldElement {
+    type Parameters = Option<Field>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(field: Self::Parameters) -> Self::Strategy {
+        match field {
+            Some(field) => testing::integers()
+                .prop_map(move |value| field.new_element(value))
+                .boxed(),
+            None => (testing::integers(), any::<Field>())
+                .prop_map(|(value, field)| field.new_element(value))
+                .boxed(),
+        }
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::testing::*;
+    use super::*;
+    use std::collections::HashSet;
+    use std::iter::repeat_with;
 
     // Pair of field elements *in the same field*
     fn field_element_triples() -> impl Strategy<Value = (FieldElement, FieldElement, FieldElement)>

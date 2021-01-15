@@ -14,6 +14,9 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 use std::iter::repeat_with;
 
+#[cfg(any(test, feature = "testing"))]
+use proptest::prelude::*;
+
 // check_audit(gen_audit(gen_proof(...))) = TRUE
 pub trait VDPF: DPF {
     type AuthKey;
@@ -240,7 +243,6 @@ pub mod two_key {
         use super::super::tests as vdpf_tests;
         use super::*;
         use crate::dpf::two_key as two_key_dpf;
-        use proptest::prelude::*;
 
         proptest! {
             #[test]
@@ -394,7 +396,6 @@ pub mod multi_key {
         use super::super::tests as vdpf_tests;
         use super::*;
         use crate::dpf::multi_key as multi_key_dpf;
-        use proptest::prelude::*;
 
         proptest! {
             #[test]
@@ -418,62 +419,71 @@ pub mod multi_key {
     }
 }
 
+#[cfg(any(test, feature = "testing"))]
+impl<D: Arbitrary + 'static> Arbitrary for FieldVDPF<D> {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        (any::<D>(), any::<Field>())
+            .prop_map(|(dpf, field)| FieldVDPF::new(dpf, field))
+            .boxed()
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl Arbitrary for FieldProofShare {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        use crate::field::testing::integers;
+
+        (any::<Field>(), integers(), 0..1u8)
+            .prop_map(|(field, seed_value, bit)| FieldProofShare {
+                bit: SecretShare::new(field.new_element(bit.into()), false),
+                seed: SecretShare::new(field.new_element(seed_value), false),
+            })
+            .boxed()
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+mod testing {
+    use proptest::prelude::*;
+
+    pub(super) fn hashes() -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(super::any::<u8>(), 32)
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl Arbitrary for FieldToken {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        use testing::hashes;
+
+        (any::<Field>(), hashes())
+            .prop_flat_map(|(field, data)| {
+                (
+                    any_with::<FieldElement>(Some(field.clone())),
+                    any_with::<FieldElement>(Some(field)),
+                )
+                    .prop_map(move |(bit, seed)| FieldToken {
+                        bit: SecretShare::new(bit, false),
+                        seed: SecretShare::new(seed, false),
+                        data: data.clone().into(),
+                    })
+            })
+            .boxed()
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use proptest::prelude::*;
-
-    use crate::field::tests::integers;
-
-    impl<D: Arbitrary + 'static> Arbitrary for FieldVDPF<D> {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (any::<D>(), any::<Field>())
-                .prop_map(|(dpf, field)| FieldVDPF::new(dpf, field))
-                .boxed()
-        }
-    }
-
-    impl Arbitrary for FieldProofShare {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (any::<Field>(), integers(), 0..1u8)
-                .prop_map(|(field, seed_value, bit)| FieldProofShare {
-                    bit: SecretShare::new(field.new_element(bit.into()), false),
-                    seed: SecretShare::new(field.new_element(seed_value), false),
-                })
-                .boxed()
-        }
-    }
-
-    pub(super) fn hashes() -> impl Strategy<Value = Vec<u8>> {
-        prop::collection::vec(any::<u8>(), 32)
-    }
-
-    impl Arbitrary for FieldToken {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (any::<Field>(), hashes())
-                .prop_flat_map(|(field, data)| {
-                    (
-                        any_with::<FieldElement>(Some(field.clone())),
-                        any_with::<FieldElement>(Some(field)),
-                    )
-                        .prop_map(move |(bit, seed)| FieldToken {
-                            bit: SecretShare::new(bit, false),
-                            seed: SecretShare::new(seed, false),
-                            data: data.clone().into(),
-                        })
-                })
-                .boxed()
-        }
-    }
 
     pub(super) fn run_test_audit_check_correct<V: VDPF>(
         vdpf: V,

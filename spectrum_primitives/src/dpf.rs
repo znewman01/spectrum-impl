@@ -8,6 +8,9 @@ use derivative::Derivative;
 
 use std::fmt::Debug;
 
+#[cfg(any(test, feature = "testing"))]
+use proptest::prelude::*;
+
 /// Distributed Point Function
 /// Must generate a set of keys k_1, k_2, ...
 /// such that combine(eval(k_1), eval(k_2), ...) = e_i * msg
@@ -56,6 +59,30 @@ impl<P: PRG> Key<P> {
             bits,
             seeds,
         }
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl<P> Arbitrary for Key<P>
+where
+    P: PRG,
+    P::Seed: Arbitrary,
+    P::Output: Arbitrary,
+{
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        (1..10usize)
+            .prop_flat_map(|num_keys| {
+                (
+                    any::<P::Output>(),
+                    prop::collection::vec(0..1u8, num_keys),
+                    prop::collection::vec(any::<P::Seed>(), num_keys),
+                )
+                    .prop_map(|(msg, bits, seeds)| Self::new(msg, bits, seeds))
+            })
+            .boxed()
     }
 }
 
@@ -174,26 +201,27 @@ pub mod two_key {
         }
     }
 
+    #[cfg(any(test, feature = "testing"))]
+    const MAX_NUM_POINTS: usize = 10;
+
+    #[cfg(any(test, feature = "testing"))]
+    impl<P: Arbitrary + 'static> Arbitrary for Construction<P> {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (any::<P>(), 1..=MAX_NUM_POINTS)
+                .prop_map(move |(prg, num_points)| Construction::new(prg, num_points))
+                .boxed()
+        }
+    }
+
     #[cfg(test)]
     pub mod tests {
         use super::*;
         use crate::bytes::Bytes;
         use crate::dpf::prg_tests::*;
         use crate::prg::aes::AESPRG;
-        use proptest::prelude::*;
-
-        const MAX_NUM_POINTS: usize = 10;
-
-        impl<P: Arbitrary + 'static> Arbitrary for Construction<P> {
-            type Parameters = ();
-            type Strategy = BoxedStrategy<Self>;
-
-            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-                (any::<P>(), 1..=MAX_NUM_POINTS)
-                    .prop_map(move |(prg, num_points)| Construction::new(prg, num_points))
-                    .boxed()
-            }
-        }
 
         pub fn data_with_dpf<D>() -> impl Strategy<Value = (Bytes, D)>
         where
@@ -385,28 +413,33 @@ pub mod multi_key {
         }
     }
 
+    /// Test helpers
+    #[cfg(any(test, feature = "testing"))]
+    mod testing {
+        pub const MAX_NUM_POINTS: usize = 10;
+        pub const MAX_NUM_KEYS: usize = 10;
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    impl<P: Arbitrary + 'static> Arbitrary for Construction<P> {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            use testing::*;
+            (any::<P>(), 2..=MAX_NUM_KEYS, 1..=MAX_NUM_POINTS)
+                .prop_map(move |(prg, num_keys, num_points)| {
+                    Construction::new(prg, num_points, num_keys)
+                })
+                .boxed()
+        }
+    }
+
     #[cfg(test)]
     pub mod tests {
         use super::*;
         use crate::dpf::prg_tests::*;
         use crate::prg::{group::ElementVector, group::GroupPRG};
-        use proptest::prelude::*;
-
-        const MAX_NUM_POINTS: usize = 10;
-        const MAX_NUM_KEYS: usize = 10;
-
-        impl<P: Arbitrary + 'static> Arbitrary for Construction<P> {
-            type Parameters = ();
-            type Strategy = BoxedStrategy<Self>;
-
-            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-                (any::<P>(), 2..=MAX_NUM_KEYS, 1..=MAX_NUM_POINTS)
-                    .prop_map(move |(prg, num_keys, num_points)| {
-                        Construction::new(prg, num_points, num_keys)
-                    })
-                    .boxed()
-            }
-        }
 
         pub fn data_with_dpf<D>() -> impl Strategy<Value = (ElementVector, D)>
         where
@@ -443,30 +476,6 @@ pub mod multi_key {
 #[cfg(test)]
 pub mod prg_tests {
     use super::*;
-    use proptest::prelude::*;
-
-    impl<P> Arbitrary for Key<P>
-    where
-        P: PRG,
-        P::Seed: Arbitrary,
-        P::Output: Arbitrary,
-    {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (1..10usize)
-                .prop_flat_map(|num_keys| {
-                    (
-                        any::<P::Output>(),
-                        prop::collection::vec(0..1u8, num_keys),
-                        prop::collection::vec(any::<P::Seed>(), num_keys),
-                    )
-                        .prop_map(|(msg, bits, seeds)| Self::new(msg, bits, seeds))
-                })
-                .boxed()
-        }
-    }
 
     pub(super) fn run_test_dpf<D>(dpf: D, data: D::Message, index: usize)
     where

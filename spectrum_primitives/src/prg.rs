@@ -12,6 +12,9 @@ use std::convert::TryFrom;
 use std::hash::Hash;
 use std::iter::repeat;
 
+#[cfg(any(test, feature = "testing"))]
+use proptest::prelude::*;
+
 pub trait PRG {
     type Seed;
     type Output;
@@ -192,38 +195,46 @@ pub mod aes {
         }
     }
 
+    /// Test helpers
+    #[cfg(any(test, feature = "testing"))]
+    mod testing {
+        use std::ops::Range;
+
+        pub const SIZES: Range<usize> = 16..1000; // in bytes
+        pub const SEED_SIZE: usize = 16; // in bytes
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    impl Arbitrary for AESPRG {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            use testing::*;
+            SIZES
+                .prop_map(|output_size| AESPRG::new(SEED_SIZE, output_size))
+                .boxed()
+        }
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    impl Arbitrary for AESSeed {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            use testing::*;
+            prop::collection::vec(any::<u8>(), SEED_SIZE)
+                .prop_map(|data| AESSeed { bytes: data.into() })
+                .boxed()
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         extern crate rand;
         use super::super::tests as prg_tests;
         use super::*;
-        use proptest::prelude::*;
-        use std::ops::Range;
-
-        const SIZES: Range<usize> = 16..1000; // in bytes
-        const SEED_SIZE: usize = 16; // in bytes
-
-        impl Arbitrary for AESPRG {
-            type Parameters = ();
-            type Strategy = BoxedStrategy<Self>;
-
-            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-                SIZES
-                    .prop_map(|output_size| AESPRG::new(SEED_SIZE, output_size))
-                    .boxed()
-            }
-        }
-
-        impl Arbitrary for AESSeed {
-            type Parameters = ();
-            type Strategy = BoxedStrategy<Self>;
-
-            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-                prop::collection::vec(any::<u8>(), SEED_SIZE)
-                    .prop_map(|data| AESSeed { bytes: data.into() })
-                    .boxed()
-            }
-        }
 
         // aes prg testing
         proptest! {
@@ -523,59 +534,65 @@ pub mod group {
         }
     }
 
+    /// Test helpers
+    #[cfg(any(test, feature = "testing"))]
+    mod testing {
+        use std::ops::Range;
+
+        pub const GROUP_PRG_NUM_SEEDS: Range<usize> = 1..10; // # group elements
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    impl Arbitrary for GroupPRG {
+        type Parameters = Option<(usize, aes::AESSeed)>;
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(params: Self::Parameters) -> Self::Strategy {
+            use testing::*;
+            match params {
+                Some(params) => Just(GroupPRG::from_aes_seed(params.0, params.1)).boxed(),
+                None => (GROUP_PRG_NUM_SEEDS, any::<AESSeed>())
+                    .prop_flat_map(move |(output_size, generator_seed)| {
+                        Just(GroupPRG::from_aes_seed(output_size, generator_seed))
+                    })
+                    .boxed(),
+            }
+        }
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    impl Arbitrary for ElementVector {
+        type Parameters = prop::collection::SizeRange;
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(num_elements: Self::Parameters) -> Self::Strategy {
+            prop::collection::vec(any::<GroupElement>(), num_elements)
+                .prop_map(ElementVector)
+                .boxed()
+        }
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    impl Arbitrary for GroupPrgSeed {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (0..1000)
+                .prop_map(Integer::from)
+                .prop_map(GroupPrgSeed::new)
+                .boxed()
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         extern crate rand;
         use super::super::tests as prg_tests;
-        use super::aes::AESSeed;
         use super::*;
-        use proptest::prelude::*;
-        use rug::Integer;
         use std::collections::HashSet;
         use std::fmt::Debug;
         use std::ops;
-        use std::ops::Range;
-
-        const GROUP_PRG_NUM_SEEDS: Range<usize> = 1..10; // # group elements
-
-        impl Arbitrary for GroupPRG {
-            type Parameters = Option<(usize, AESSeed)>;
-            type Strategy = BoxedStrategy<Self>;
-
-            fn arbitrary_with(params: Self::Parameters) -> Self::Strategy {
-                match params {
-                    Some(params) => Just(GroupPRG::from_aes_seed(params.0, params.1)).boxed(),
-                    None => (GROUP_PRG_NUM_SEEDS, any::<AESSeed>())
-                        .prop_flat_map(move |(output_size, generator_seed)| {
-                            Just(GroupPRG::from_aes_seed(output_size, generator_seed))
-                        })
-                        .boxed(),
-                }
-            }
-        }
-
-        impl Arbitrary for ElementVector {
-            type Parameters = prop::collection::SizeRange;
-            type Strategy = BoxedStrategy<Self>;
-
-            fn arbitrary_with(num_elements: Self::Parameters) -> Self::Strategy {
-                prop::collection::vec(any::<GroupElement>(), num_elements)
-                    .prop_map(ElementVector)
-                    .boxed()
-            }
-        }
-
-        impl Arbitrary for GroupPrgSeed {
-            type Parameters = ();
-            type Strategy = BoxedStrategy<Self>;
-
-            fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-                (0..1000)
-                    .prop_map(Integer::from)
-                    .prop_map(GroupPrgSeed::new)
-                    .boxed()
-            }
-        }
 
         pub fn seeds() -> impl Strategy<Value = Vec<GroupPrgSeed>> {
             prop::collection::vec(any::<GroupPrgSeed>(), 1..100)
