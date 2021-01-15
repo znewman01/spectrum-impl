@@ -5,7 +5,6 @@ use futures::{
     stream::FuturesUnordered,
 };
 use log::error;
-pub use spectrum_primitives as crypto;
 use std::env;
 use std::fmt;
 use std::fs::File;

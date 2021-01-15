@@ -1,32 +1,30 @@
 #![allow(clippy::unknown_clippy_lints)] // below issue triggers only on clippy beta/nightly
 #![allow(clippy::match_single_binding)] // https://github.com/mcarton/rust-derivative/issues/58
 use crate::proto;
-use crate::{
-    crypto::{
-        dpf::{self, BasicDPF, MultiKeyDPF, DPF},
-        field::Field,
-        lss::SecretShare,
-        prg::{
-            aes::{AESSeed, AESPRG},
-            group::GroupPRG,
-            PRG,
-        },
-        vdpf::{self, FieldProofShare, FieldToken, FieldVDPF, VDPF},
-    },
-    protocols::{accumulator::Accumulatable, Protocol},
-};
+use crate::protocols::{accumulator::Accumulatable, Protocol};
 
 use derivative::Derivative;
 use rug::Integer;
 use serde::{Deserialize, Serialize};
 use spectrum_primitives::bytes::Bytes;
+use spectrum_primitives::{
+    dpf::{self, BasicDPF, MultiKeyDPF, DPF},
+    field::Field,
+    lss::SecretShare,
+    prg::{
+        aes::{AESSeed, AESPRG},
+        group::GroupPRG,
+        PRG,
+    },
+    vdpf::{self, FieldProofShare, FieldToken, FieldVDPF, VDPF},
+};
 
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::iter::repeat;
 use std::sync::Arc;
 
-pub use crate::crypto::vdpf::{BasicVdpf, MultiKeyVdpf};
+pub use spectrum_primitives::vdpf::{BasicVdpf, MultiKeyVdpf};
 
 #[derive(Derivative)]
 #[derivative(
@@ -326,8 +324,8 @@ pub mod tests {
 
     use std::convert::TryInto;
 
-    use crate::crypto::field::FieldElement;
     use crate::protocols::tests::*;
+    use spectrum_primitives::field::FieldElement;
 
     impl Arbitrary for ChannelKey<BasicVdpf> {
         type Parameters = ();

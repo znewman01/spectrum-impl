@@ -1,14 +1,11 @@
-use crate::{
-    crypto::field::FieldElement,
-    crypto::vdpf::VDPF,
-    protocols::{
-        insecure,
-        secure::{self, BasicVdpf, MultiKeyVdpf},
-        Protocol,
-    },
+use crate::protocols::{
+    insecure,
+    secure::{self, BasicVdpf, MultiKeyVdpf},
+    Protocol,
 };
 
 use serde::{Deserialize, Serialize};
+use spectrum_primitives::{field::FieldElement, vdpf::VDPF};
 
 use std::convert::TryFrom;
 use std::fmt::Debug;
