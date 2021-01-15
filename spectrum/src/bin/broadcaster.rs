@@ -1,9 +1,9 @@
 use clap::{crate_authors, crate_version, ArgGroup, Clap};
 use futures::prelude::*;
 use spectrum_impl::{
-    bytes::Bytes, cli, client, config, experiment, protocols::wrapper::ChannelKeyWrapper,
-    services::ClientInfo,
+    cli, client, config, experiment, protocols::wrapper::ChannelKeyWrapper, services::ClientInfo,
 };
+use spectrum_primitives::bytes::Bytes;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::Read;

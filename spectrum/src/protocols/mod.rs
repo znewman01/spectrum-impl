@@ -4,8 +4,8 @@ pub mod insecure;
 pub mod secure;
 pub mod wrapper;
 
-use crate::bytes::Bytes;
 use accumulator::Accumulatable;
+use spectrum_primitives::bytes::Bytes;
 
 pub trait Protocol {
     type ChannelKey;

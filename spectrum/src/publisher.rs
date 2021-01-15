@@ -4,7 +4,6 @@ use crate::proto::{
     AggregateGroupRequest, AggregateGroupResponse,
 };
 use crate::{
-    bytes::Bytes,
     config::store::Store,
     experiment,
     net::Config as NetConfig,
@@ -20,6 +19,7 @@ use crate::{
 use chrono::prelude::*;
 use futures::prelude::*;
 use log::{debug, error, info, trace};
+use spectrum_primitives::bytes::Bytes;
 use std::sync::Arc;
 use tokio::spawn;
 use tonic::{Request, Response, Status};

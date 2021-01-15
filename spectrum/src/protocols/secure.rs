@@ -2,7 +2,6 @@
 #![allow(clippy::match_single_binding)] // https://github.com/mcarton/rust-derivative/issues/58
 use crate::proto;
 use crate::{
-    bytes::Bytes,
     crypto::{
         dpf::{self, BasicDPF, MultiKeyDPF, DPF},
         field::Field,
@@ -20,6 +19,7 @@ use crate::{
 use derivative::Derivative;
 use rug::Integer;
 use serde::{Deserialize, Serialize};
+use spectrum_primitives::bytes::Bytes;
 
 use std::convert::{TryFrom, TryInto};
 use std::fmt;

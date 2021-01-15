@@ -5,7 +5,6 @@ use crate::proto::{
     AggregateGroupRequest, AggregateWorkerRequest, AggregateWorkerResponse, Share,
 };
 use crate::{
-    bytes::Bytes,
     config::store::Store,
     experiment::Experiment,
     net::Config as NetConfig,
@@ -17,6 +16,7 @@ use crate::{
         LeaderInfo, Service,
     },
 };
+use spectrum_primitives::bytes::Bytes;
 
 use futures::Future;
 use log::{debug, error, info, trace};

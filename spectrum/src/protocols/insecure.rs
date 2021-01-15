@@ -1,5 +1,6 @@
 use crate::proto;
-use crate::{bytes::Bytes, protocols::Protocol};
+use crate::protocols::Protocol;
+use spectrum_primitives::bytes::Bytes;
 
 use serde::{Deserialize, Serialize};
 

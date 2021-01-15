@@ -3,8 +3,10 @@ pub mod health;
 pub mod quorum;
 mod retry;
 
+use spectrum_primitives::bytes::Bytes;
+
 use crate::proto::{ClientId, WorkerId};
-use crate::{bytes::Bytes, protocols::wrapper::ChannelKeyWrapper};
+use crate::protocols::wrapper::ChannelKeyWrapper;
 
 use std::hash::{Hash, Hasher};
 

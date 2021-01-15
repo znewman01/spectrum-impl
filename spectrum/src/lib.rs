@@ -26,7 +26,6 @@ pub mod publisher;
 pub mod worker;
 
 pub mod cli;
-pub use crypto::bytes;
 pub mod config;
 pub mod experiment;
 pub mod net;

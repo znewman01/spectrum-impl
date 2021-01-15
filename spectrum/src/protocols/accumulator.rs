@@ -1,8 +1,8 @@
 use std::ops::{Deref, DerefMut};
 use tokio::sync::RwLock;
 
-use crate::bytes::Bytes;
 use crate::crypto::prg::group::ElementVector;
+use spectrum_primitives::bytes::Bytes;
 
 pub trait Accumulatable: Default {
     // TODO: other should be a reference?
