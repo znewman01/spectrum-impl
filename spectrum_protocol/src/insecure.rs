@@ -1,16 +1,16 @@
 use crate::proto;
-use crate::protocols::Protocol;
+use crate::Protocol;
 use spectrum_primitives::bytes::Bytes;
 
 use serde::{Deserialize, Serialize};
 
 use std::convert::TryInto;
 
+#[cfg(any(test, feature = "testing"))]
+use proptest::prelude::*;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ChannelKey(
-    pub(in crate::protocols) usize,
-    pub(in crate::protocols) String,
-);
+pub struct ChannelKey(pub(in crate) usize, pub(in crate) String);
 
 impl ChannelKey {
     pub fn new(idx: usize, password: String) -> Self {
@@ -167,24 +167,33 @@ impl Protocol for InsecureProtocol {
     }
 }
 
-#[cfg(test)]
-mod tests {
+/// Test helpers
+#[cfg(any(test, feature = "testing"))]
+mod testing {
     use super::*;
-    use crate::protocols::tests::*;
-    use proptest::prelude::*;
+    use crate::tests::*;
 
-    impl Arbitrary for InsecureProtocol {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (1..10usize).prop_flat_map(protocols).boxed()
-        }
-    }
-
-    fn protocols(channels: usize) -> impl Strategy<Value = InsecureProtocol> {
+    pub fn protocols(channels: usize) -> impl Strategy<Value = InsecureProtocol> {
         (2..100usize).prop_map(move |p| InsecureProtocol::new(p, channels, MSG_LEN))
     }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl Arbitrary for InsecureProtocol {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        use testing::*;
+        (1..10usize).prop_flat_map(protocols).boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::testing::*;
+    use super::*;
+    use crate::tests::*;
 
     fn keys(channels: usize) -> impl Strategy<Value = Vec<ChannelKey>> {
         Just(

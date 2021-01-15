@@ -1,4 +1,4 @@
-use crate::protocols::{
+use crate::{
     insecure,
     secure::{self, BasicVdpf, MultiKeyVdpf},
     Protocol,

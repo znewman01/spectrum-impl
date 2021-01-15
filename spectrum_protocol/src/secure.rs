@@ -1,7 +1,7 @@
 #![allow(clippy::unknown_clippy_lints)] // below issue triggers only on clippy beta/nightly
 #![allow(clippy::match_single_binding)] // https://github.com/mcarton/rust-derivative/issues/58
 use crate::proto;
-use crate::protocols::{accumulator::Accumulatable, Protocol};
+use crate::{accumulator::Accumulatable, Protocol};
 
 use derivative::Derivative;
 use rug::Integer;
@@ -34,8 +34,8 @@ pub use spectrum_primitives::vdpf::{BasicVdpf, MultiKeyVdpf};
     Eq(bound = "V::AuthKey: Eq")
 )]
 pub struct ChannelKey<V: VDPF> {
-    pub(in crate::protocols) idx: usize,
-    pub(in crate::protocols) secret: V::AuthKey,
+    pub(in crate) idx: usize,
+    pub(in crate) secret: V::AuthKey,
 }
 
 impl<V: VDPF> ChannelKey<V> {
@@ -201,7 +201,7 @@ where
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct SecureProtocol<V> {
-    pub(in crate) vdpf: V,
+    pub vdpf: V, // TODO: should remove pub (need to add some method like sample_keys below)
 }
 
 impl<V: VDPF> SecureProtocol<V> {
@@ -324,7 +324,7 @@ pub mod tests {
 
     use std::convert::TryInto;
 
-    use crate::protocols::tests::*;
+    use crate::tests::*;
     use spectrum_primitives::field::FieldElement;
 
     impl Arbitrary for ChannelKey<BasicVdpf> {

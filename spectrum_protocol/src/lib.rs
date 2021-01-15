@@ -7,6 +7,12 @@ pub mod wrapper;
 use accumulator::Accumulatable;
 use spectrum_primitives::bytes::Bytes;
 
+pub mod proto {
+    tonic::include_proto!("spectrum");
+
+    pub use spectrum_primitives::proto::Integer;
+}
+
 pub trait Protocol {
     type ChannelKey;
     type WriteToken;
@@ -35,10 +41,10 @@ pub trait Protocol {
     fn to_accumulator(&self, token: Self::WriteToken) -> Vec<Self::Accumulator>;
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub mod tests {
     use super::*;
-    use crate::protocols::accumulator::Accumulatable;
+    use crate::accumulator::Accumulatable;
     use proptest::prelude::*;
     use std::fmt::Debug;
 

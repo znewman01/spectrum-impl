@@ -253,13 +253,13 @@ pub mod two_key {
                 let access_keys = vdpf.new_access_keys();
                 let point_idx = point_idx.index(access_keys.len());
 
-                vdpf_tests::run_test_audit_check_correct(vdpf, &access_keys, data, point_idx);
+                vdpf_tests::run_test_audit_check_correct(vdpf, &access_keys, data, point_idx)?;
             }
 
             #[test]
             fn test_audit_check_correct_for_noop(vdpf: BasicVdpf) {
                 let access_keys = vdpf.new_access_keys();
-                vdpf_tests::run_test_audit_check_correct_for_noop(vdpf, &access_keys);
+                vdpf_tests::run_test_audit_check_correct_for_noop(vdpf, &access_keys)?;
             }
 
         }
@@ -406,13 +406,13 @@ pub mod multi_key {
                 let access_keys = vdpf.new_access_keys();
                 let point_idx = point_idx.index(access_keys.len());
 
-                vdpf_tests::run_test_audit_check_correct(vdpf, &access_keys, data, point_idx);
+                vdpf_tests::run_test_audit_check_correct(vdpf, &access_keys, data, point_idx)?;
             }
 
             #[test]
             fn test_audit_check_correct_for_noop(vdpf: MultiKeyVdpf) {
                 let access_keys = vdpf.new_access_keys();
-                vdpf_tests::run_test_audit_check_correct_for_noop(vdpf, &access_keys);
+                vdpf_tests::run_test_audit_check_correct_for_noop(vdpf, &access_keys)?;
             }
 
         }
@@ -490,7 +490,7 @@ pub mod tests {
         auth_keys: &[V::AuthKey],
         data: <V as DPF>::Message,
         point_idx: usize,
-    ) {
+    ) -> Result<(), TestCaseError> {
         let dpf_keys = vdpf.gen(data, point_idx);
         let proof_shares = vdpf.gen_proofs(&auth_keys[point_idx], point_idx, &dpf_keys);
         let audit_tokens = dpf_keys
@@ -498,13 +498,14 @@ pub mod tests {
             .zip(proof_shares.iter())
             .map(|(dpf_key, proof_share)| vdpf.gen_audit(&auth_keys, dpf_key, proof_share))
             .collect();
-        assert!(vdpf.check_audit(audit_tokens));
+        prop_assert!(vdpf.check_audit(audit_tokens));
+        Ok(())
     }
 
     pub(super) fn run_test_audit_check_correct_for_noop<V: VDPF>(
         vdpf: V,
         auth_keys: &[V::AuthKey],
-    ) {
+    ) -> Result<(), TestCaseError> {
         let dpf_keys = vdpf.gen_empty();
         let proof_shares = vdpf.gen_proofs_noop(&dpf_keys);
         let audit_tokens = dpf_keys
@@ -512,6 +513,7 @@ pub mod tests {
             .zip(proof_shares.iter())
             .map(|(dpf_key, proof_share)| vdpf.gen_audit(&auth_keys, dpf_key, proof_share))
             .collect();
-        assert!(vdpf.check_audit(audit_tokens));
+        prop_assert!(vdpf.check_audit(audit_tokens));
+        Ok(())
     }
 }

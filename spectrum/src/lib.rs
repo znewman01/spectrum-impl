@@ -18,9 +18,10 @@ use tokio::{
     time::delay_for,
 };
 
+pub use spectrum_protocol as protocols;
+
 pub mod client;
 pub mod leader;
-pub mod protocols;
 pub mod publisher;
 pub mod worker;
 
@@ -33,9 +34,11 @@ pub mod services;
 mod proto {
     use tonic::Status;
 
-    tonic::include_proto!("spectrum");
+    // TODO: use these from spectrum_protocol only
+    // tonic::include_proto!("spectrum");
 
     pub use spectrum_primitives::proto::Integer;
+    pub use spectrum_protocol::proto::*;
 
     pub fn expect_field<T>(opt: Option<T>, name: &str) -> Result<T, Status> {
         opt.ok_or_else(|| Status::invalid_argument(format!("{} must be set.", name)))

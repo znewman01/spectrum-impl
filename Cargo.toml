@@ -2,6 +2,7 @@
 members = [
     "spectrum",
     "spectrum_primitives",
+    "spectrum_protocol",
 ]
 
 [profile.release]
