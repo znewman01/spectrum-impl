@@ -79,7 +79,6 @@ pub mod tests {
     use prop::collection::hash_map;
     use proptest::prelude::*;
     use std::collections::HashSet;
-    use std::iter::FromIterator;
 
     pub fn services() -> impl Strategy<Value = Service> {
         prop_oneof![
@@ -96,11 +95,10 @@ pub mod tests {
 
     fn node_sets() -> impl Strategy<Value = HashSet<Node>> {
         hash_map(services(), addrs(), ..100).prop_map(|services_to_addrs| {
-            HashSet::from_iter(
-                services_to_addrs
-                    .into_iter()
-                    .map(|(service, addr)| Node::new(service, addr)),
-            )
+            services_to_addrs
+                .into_iter()
+                .map(|(service, addr)| Node::new(service, addr))
+                .collect::<HashSet<_>>()
         })
     }
 
@@ -112,9 +110,7 @@ pub mod tests {
                     register(&store, node.clone()).await.unwrap();
                 }
 
-                let actual = HashSet::from_iter(
-                    resolve_all(&store).await.unwrap().into_iter()
-                );
+                let actual: HashSet<_> = resolve_all(&store).await.unwrap().into_iter().collect();
 
                 assert_eq!(actual, nodes);
             };

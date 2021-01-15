@@ -2,7 +2,6 @@
 #![allow(clippy::same_item_push)]
 use crate::services::ClientInfo;
 
-use std::iter::FromIterator;
 use tokio::sync::Mutex;
 
 // Starts as Some((None, vec![])).
@@ -41,7 +40,7 @@ impl<S, T> AuditRegistry<S, T> {
         let mut lock = self.0[info.idx as usize].lock().await;
         let (token, mut vec): (Option<T>, Vec<S>) = lock.take().expect("May only drain once.");
         let token = token.expect("Should only call drain() after init().");
-        let shares = Vec::from_iter(vec.drain(..));
+        let shares: Vec<_> = vec.drain(..).collect();
         (token, shares)
     }
 

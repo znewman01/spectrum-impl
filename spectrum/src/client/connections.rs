@@ -14,7 +14,6 @@ use rand::{seq::IteratorRandom, thread_rng};
 use tokio::time::delay_for;
 
 use std::collections::HashSet;
-use std::iter::FromIterator;
 use std::time::Duration;
 
 type TokioError = Box<dyn std::error::Error + Sync + Send>;
@@ -25,11 +24,13 @@ fn pick_worker_shards(nodes: Vec<Node>) -> Vec<Node> {
         .into_iter()
         .filter(|node| matches!(node.service, Service::Worker(_)))
         .collect();
-    let groups: HashSet<Group> =
-        HashSet::from_iter(workers.iter().map(|node| match node.service {
+    let groups: HashSet<Group> = workers
+        .iter()
+        .map(|node| match node.service {
             Service::Worker(info) => info.group,
             _ => panic!("Already filtered to just workers."),
-        }));
+        })
+        .collect();
     let mut shards = vec![];
     for group in groups {
         let workers_in_group = workers.iter().filter(|node| match node.service {
@@ -113,14 +114,14 @@ mod tests {
     proptest! {
         #[test]
         fn test_pick_worker_shards_subset(experiment: Experiment) {
-            let services: HashSet<Service> = HashSet::from_iter(experiment.iter_services());
+            let services: HashSet<Service> = experiment.iter_services().collect();
             let nodes: Vec<Node> = services.iter().cloned().map(|service| {
                 Node::new(service, "127.0.0.1:22".parse().unwrap())
             }).collect();
 
             let shards = pick_worker_shards(nodes);
 
-            let shard_services = HashSet::from_iter(shards.iter().map(|node| node.service.clone()));
+            let shard_services: HashSet<_> = shards.iter().map(|node| node.service.clone()).collect();
             prop_assert!(shard_services.is_subset(&services));
         }
 
@@ -132,14 +133,14 @@ mod tests {
 
             let shards = pick_worker_shards(nodes);
 
-            let shard_groups: HashSet<Group> = HashSet::from_iter(
-                shards.iter()
-                    .cloned()
-                    .map(|node| match node.service {
-                        Service::Worker(info) => info.group,
-                        _ => { panic!("All shards should be workers."); }
-                    })
-            );
+            let shard_groups: HashSet<Group> = shards
+                .iter()
+                .cloned()
+                .map(|node| match node.service {
+                    Service::Worker(info) => info.group,
+                    _ => { panic!("All shards should be workers."); }
+                })
+                .collect();
             prop_assert_eq!(shard_groups.len(), shards.len(),
                             "Each shard should be from a distinct group.");
         }
@@ -153,21 +154,18 @@ mod tests {
 
             let shards = pick_worker_shards(nodes);
 
-            let shard_groups: HashSet<Group> = HashSet::from_iter(
-                shards.iter()
+            let shard_groups: HashSet<Group> = shards.iter()
                     .cloned()
                     .map(|node| match node.service {
                         Service::Worker(info) => info.group,
                         _ => { panic!("All shards should be workers."); }
-                    })
-            );
-            let original_groups: HashSet<Group> = HashSet::from_iter(
-                services.iter()
-                    .filter_map(|service| match service {
-                        Service::Worker(info) => Some(info.group),
-                        _ => None
-                    })
-            );
+                    }).collect();
+            let original_groups: HashSet<Group> = services
+                .iter()
+                .filter_map(|service| match service {
+                    Service::Worker(info) => Some(info.group),
+                    _ => None
+                }).collect() ;
 
             prop_assert_eq!(shard_groups.len(), original_groups.len(),
                             "Each group should be represented.");
@@ -179,13 +177,13 @@ mod tests {
                 Node::new(service, "127.0.0.1:22".parse().unwrap())
             }).collect();
 
-            let shards: HashSet<Node> = HashSet::from_iter(pick_worker_shards(nodes.clone()).into_iter());
+            let shards: HashSet<Node> = pick_worker_shards(nodes.clone()).into_iter().collect();
             // Worst-case is 1 group, 2 workers per group. In this setting, the
             // odds that we pick the same thing every time are 1/2^{t-1} (where
             // t is the number of trials). We can live with a 1 in 2^20 failure
             // rate.
             for _ in 0..20 {
-                let shards_prime = HashSet::from_iter(pick_worker_shards(nodes.clone()).into_iter());
+                let shards_prime: HashSet<_> = pick_worker_shards(nodes.clone()).into_iter().collect();
                 if shards != shards_prime {
                     return Ok(());
                 }

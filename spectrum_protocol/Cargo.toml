@@ -5,23 +5,20 @@ authors = ["Zachary Newman <zjn@mit.edu>", "Sacha Servan-Schreiber <3s@mit.edu>"
 edition = "2018"
 
 [features]
-testing = ["proptest", "proptest-derive"]
+testing = ["proptest"]
 
 [dependencies]
 spectrum_primitives = { path = "../spectrum_primitives" }
 derivative = "2.0.2"  # https://github.com/rust-lang/rust/issues/26925
 rug = { version = "1.10", features = [ "serde" ] }
 serde = { version = "1.0", features = ["derive", "rc"] }
-serde_json = "1.0"
 tokio = { version = "0.2.22", features = [ "sync" ] }
 tonic = "0.3"
 prost = "0.6"
 proptest = { version = "0.9.6", optional = true }
-proptest-derive = { version = "0.1.2", optional = true }
 
 [dev-dependencies]
 proptest = "0.9.6"
-proptest-derive = "0.1.2"
 tokio = { version = "0.2.22", features = [ "macros", "sync" ] }
 spectrum_primitives = { path = "../spectrum_primitives", features = [ "testing" ] }
 

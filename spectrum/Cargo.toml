@@ -38,7 +38,6 @@ tonic-build = "0.2.0"
 
 [dev-dependencies]
 proptest = "0.9.6"
-proptest-derive = "0.1.2"
 criterion = "0.3.0"
 spectrum_primitives = { path = "../spectrum_primitives", features = [ "testing" ] }
 spectrum_protocol = { path = "../spectrum_protocol", features = [ "testing" ] }

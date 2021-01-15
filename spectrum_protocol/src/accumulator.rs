@@ -43,7 +43,7 @@ where
     D: Accumulatable + Clone,
 {
     pub fn new(accum: D) -> Accumulator<D> {
-        let data = (accum, 0 as usize);
+        let data = (accum, 0_usize);
         Accumulator {
             lock: RwLock::new(data),
         }

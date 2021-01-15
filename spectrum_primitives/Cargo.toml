@@ -5,7 +5,7 @@ authors = ["Zachary Newman <zjn@mit.edu>", "Sacha Servan-Schreiber <3s@mit.edu>"
 edition = "2018"
 
 [features]
-testing = ["proptest", "proptest-derive"]
+testing = ["proptest"]
 
 [dependencies]
 blake3 = "0.3.0"
@@ -19,7 +19,6 @@ tonic = "0.3"  # TODO: feature-gate
 prost = "0.6"  # TODO: feature-gate
 openssl = "0.10"
 proptest = { version = "0.9.6", optional = true }
-proptest-derive = { version = "0.1.2", optional = true }
 serde_json = { version = "1.0", optional = true }
 
 [build-dependencies]
@@ -27,5 +26,4 @@ tonic-build = "0.2.0"
 
 [dev-dependencies]
 proptest = "0.9.6"
-proptest-derive = "0.1.2"
 serde_json = "1.0"

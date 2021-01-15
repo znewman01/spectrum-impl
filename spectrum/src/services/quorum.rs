@@ -1,14 +1,13 @@
 use crate::{
     config::store::{Error, Store},
     experiment::Experiment,
-    services::{discovery::resolve_all, retry::error_policy, Service},
+    services::{discovery::resolve_all, retry::error_policy},
 };
 
 use chrono::prelude::*;
 use futures_retry::FutureRetry;
 use log::{debug, warn};
 use std::collections::HashSet;
-use std::iter::FromIterator;
 use std::time::{Duration, Instant};
 use tokio::time::delay_until as tokio_delay_until;
 
@@ -63,9 +62,8 @@ pub async fn delay_until(dt: DateTime<FixedOffset>) {
 
 async fn has_quorum<C: Store>(config: &C, experiment: &Experiment) -> Result<(), Error> {
     let nodes = resolve_all(config).await?;
-    let actual: HashSet<Service> =
-        HashSet::from_iter(nodes.iter().map(|node| node.service.clone()));
-    let expected: HashSet<Service> = HashSet::from_iter(experiment.iter_services());
+    let actual: HashSet<_> = nodes.iter().map(|node| node.service.clone()).collect();
+    let expected: HashSet<_> = experiment.iter_services().collect();
 
     if actual == expected {
         Ok(())
@@ -110,6 +108,7 @@ mod test {
         net::tests::addrs,
         protocols::insecure,
         services::discovery::{register, tests::services, Node},
+        services::Service,
     };
     use futures::executor::block_on;
     use proptest::prelude::*;

@@ -482,6 +482,7 @@ pub mod group {
         type Output = ElementVector;
 
         // apply the group operation on each component in the vector
+        #[allow(clippy::suspicious_arithmetic_impl)]
         fn bitxor(self, rhs: ElementVector) -> ElementVector {
             ElementVector(
                 self.0
