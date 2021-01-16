@@ -30,8 +30,8 @@ clap = { git = "http://github.com/clap-rs/clap/", rev = "37889c661134e8286102f7d
 csv = "1.1"
 etcd-rs = "0.2.2"
 tempfile = "3"
-spectrum_primitives = { path = "../spectrum_primitives" }
-spectrum_protocol = { path = "../spectrum_protocol" }
+spectrum_primitives = { path = "../spectrum_primitives", features = [ "proto" ] }
+spectrum_protocol = { path = "../spectrum_protocol", features = [ "proto" ] }
 
 [build-dependencies]
 tonic-build = "0.2.0"

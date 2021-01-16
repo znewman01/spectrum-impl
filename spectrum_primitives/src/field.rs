@@ -1,9 +1,6 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
-use crate::proto;
 
-#[cfg(any(test, feature = "testing"))]
-use proptest::prelude::*;
 use rug::{integer::IsPrime, integer::Order, rand::RandState, Integer};
 use serde::{Deserialize, Serialize};
 
@@ -12,14 +9,22 @@ use std::fmt::Debug;
 use std::ops;
 use std::sync::Arc;
 
+#[cfg(feature = "proto")]
+use crate::proto;
+
+#[cfg(any(test, feature = "testing"))]
+use proptest::prelude::*;
+
 const BYTE_ORDER: Order = Order::LsfLe;
 
 // NOTE: can't use From/Into due to Rust orphaning rules. Define an extension trait?
 // TODO(zjn): more efficient data format?
+#[cfg(feature = "proto")]
 fn parse_integer(data: &str) -> Integer {
     Integer::parse(data).unwrap().into()
 }
 
+#[cfg(feature = "proto")]
 fn emit_integer(value: &Integer) -> String {
     value.to_string()
 }
@@ -36,12 +41,14 @@ impl From<Integer> for Field {
     }
 }
 
+#[cfg(feature = "proto")]
 impl From<proto::Integer> for Field {
     fn from(msg: proto::Integer) -> Field {
         parse_integer(msg.data.as_ref()).into()
     }
 }
 
+#[cfg(feature = "proto")]
 impl Into<proto::Integer> for Field {
     fn into(self) -> proto::Integer {
         proto::Integer {
@@ -91,6 +98,7 @@ impl Field {
         }
     }
 
+    #[cfg(feature = "proto")]
     pub fn from_proto(&self, msg: proto::Integer) -> FieldElement {
         FieldElement::new(parse_integer(msg.data.as_ref()), self.clone())
     }
@@ -126,6 +134,7 @@ impl Into<Bytes> for FieldElement {
     }
 }
 
+#[cfg(feature = "proto")]
 impl Into<proto::Integer> for FieldElement {
     fn into(self) -> proto::Integer {
         proto::Integer {

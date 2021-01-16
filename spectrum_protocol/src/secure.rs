@@ -1,6 +1,5 @@
 #![allow(clippy::unknown_clippy_lints)] // below issue triggers only on clippy beta/nightly
 #![allow(clippy::match_single_binding)] // https://github.com/mcarton/rust-derivative/issues/58
-use crate::proto;
 use crate::{accumulator::Accumulatable, Protocol};
 
 use derivative::Derivative;
@@ -8,21 +7,35 @@ use rug::Integer;
 use serde::{Deserialize, Serialize};
 use spectrum_primitives::bytes::Bytes;
 use spectrum_primitives::{
-    dpf::{self, BasicDPF, MultiKeyDPF, DPF},
+    dpf::{BasicDPF, MultiKeyDPF, DPF},
     field::Field,
-    lss::SecretShare,
     prg::{
         aes::{AESSeed, AESPRG},
         group::GroupPRG,
-        PRG,
     },
-    vdpf::{self, FieldProofShare, FieldToken, FieldVDPF, VDPF},
+    vdpf::{FieldVDPF, VDPF},
 };
 
-use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::iter::repeat;
-use std::sync::Arc;
+
+#[cfg(test)]
+use proptest::prelude::*;
+
+#[cfg(feature = "proto")]
+use {
+    crate::proto,
+    spectrum_primitives::{
+        dpf,
+        lss::SecretShare,
+        prg::PRG,
+        vdpf::{self, FieldProofShare, FieldToken},
+    },
+    std::{
+        convert::{TryFrom, TryInto},
+        sync::Arc,
+    },
+};
 
 pub use spectrum_primitives::vdpf::{BasicVdpf, MultiKeyVdpf};
 
@@ -59,6 +72,7 @@ impl<V: VDPF> WriteToken<V> {
     }
 }
 
+#[cfg(feature = "proto")]
 impl<D, P> Into<proto::WriteToken> for WriteToken<FieldVDPF<D>>
 where
     FieldVDPF<D>: VDPF<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare>,
@@ -97,6 +111,7 @@ where
     }
 }
 
+#[cfg(feature = "proto")]
 impl<D, P> TryFrom<proto::WriteToken> for WriteToken<FieldVDPF<D>>
 where
     FieldVDPF<D>: VDPF<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare>,
@@ -135,6 +150,23 @@ where
     }
 }
 
+#[cfg(test)]
+impl<V> Arbitrary for WriteToken<V>
+where
+    V: VDPF,
+    <V as DPF>::Key: Arbitrary + 'static,
+    V::ProofShare: Arbitrary + 'static,
+{
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        (any::<<V as DPF>::Key>(), any::<V::ProofShare>())
+            .prop_map(|(dpf_key, share)| WriteToken::new(dpf_key, share))
+            .boxed()
+    }
+}
+
 #[derive(Derivative)]
 #[derivative(
     Clone(bound = "V::Token: Clone"),
@@ -152,6 +184,7 @@ impl<V: VDPF> AuditShare<V> {
     }
 }
 
+#[cfg(feature = "proto")]
 impl<V> Into<proto::AuditShare> for AuditShare<V>
 where
     V: VDPF<Token = vdpf::FieldToken>,
@@ -174,6 +207,7 @@ where
     }
 }
 
+#[cfg(feature = "proto")]
 impl<V> TryFrom<proto::AuditShare> for AuditShare<V>
 where
     V: VDPF<Token = vdpf::FieldToken>,
@@ -196,6 +230,20 @@ where
         } else {
             Err("Invalid proto::AuditShare.")
         }
+    }
+}
+
+#[cfg(test)]
+impl<V> Arbitrary for AuditShare<V>
+where
+    V: VDPF + 'static,
+    V::Token: Arbitrary + fmt::Debug + 'static,
+{
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        any::<V::Token>().prop_map(AuditShare::new).boxed()
     }
 }
 
@@ -318,11 +366,21 @@ where
 }
 
 #[cfg(test)]
+impl<V> Arbitrary for SecureProtocol<V>
+where
+    V: VDPF + Arbitrary + 'static,
+{
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        any::<V>().prop_map(SecureProtocol::new).boxed()
+    }
+}
+
+#[cfg(test)]
 pub mod tests {
     use super::*;
-    use proptest::prelude::*;
-
-    use std::convert::TryInto;
 
     use crate::tests::*;
     use spectrum_primitives::field::FieldElement;
@@ -448,55 +506,16 @@ pub mod tests {
         }
     }
 
-    impl<V> Arbitrary for WriteToken<V>
-    where
-        V: VDPF,
-        <V as DPF>::Key: Arbitrary + 'static,
-        V::ProofShare: Arbitrary + 'static,
-    {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (any::<<V as DPF>::Key>(), any::<V::ProofShare>())
-                .prop_map(|(dpf_key, share)| WriteToken::new(dpf_key, share))
-                .boxed()
-        }
-    }
-
-    impl<V> Arbitrary for AuditShare<V>
-    where
-        V: VDPF + 'static,
-        V::Token: Arbitrary + fmt::Debug + 'static,
-    {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            any::<V::Token>().prop_map(AuditShare::new).boxed()
-        }
-    }
-
-    impl<V> Arbitrary for SecureProtocol<V>
-    where
-        V: VDPF + Arbitrary + 'static,
-    {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            any::<V>().prop_map(SecureProtocol::new).boxed()
-        }
-    }
-
     proptest! {
         #[test]
+        #[cfg(feature = "proto")]
         fn test_write_token_proto_roundtrip(token in any::<WriteToken<BasicVdpf>>()) {
             let wrapped: proto::WriteToken = token.clone().into();
             assert_eq!(token, wrapped.try_into().unwrap());
         }
 
         #[test]
+        #[cfg(feature = "proto")]
         fn test_audit_share_proto_roundtrip(share in any::<AuditShare<BasicVdpf>>()) {
             let wrapped: proto::AuditShare = share.clone().into();
             assert_eq!(share, wrapped.try_into().unwrap());
@@ -505,12 +524,14 @@ pub mod tests {
 
     proptest! {
         #[test]
+        #[cfg(feature = "proto")]
         fn test_multi_key_write_token_proto_roundtrip(token in any::<WriteToken<MultiKeyVdpf>>()) {
             let wrapped: proto::WriteToken = token.clone().into();
             assert_eq!(token, wrapped.try_into().unwrap());
         }
 
         #[test]
+        #[cfg(feature = "proto")]
         fn test_multi_key_audit_share_proto_roundtrip(share in any::<AuditShare<MultiKeyVdpf>>()) {
             let wrapped: proto::AuditShare = share.clone().into();
             assert_eq!(share, wrapped.try_into().unwrap());

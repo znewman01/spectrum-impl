@@ -1,13 +1,13 @@
-use crate::proto;
 use crate::Protocol;
 use spectrum_primitives::bytes::Bytes;
 
 use serde::{Deserialize, Serialize};
 
-use std::convert::TryInto;
-
 #[cfg(any(test, feature = "testing"))]
 use proptest::prelude::*;
+
+#[cfg(feature = "proto")]
+use {crate::proto, std::convert::TryInto};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ChannelKey(pub(in crate) usize, pub(in crate) String);
@@ -21,6 +21,7 @@ impl ChannelKey {
 #[derive(Debug, Clone)]
 pub struct WriteToken(Option<(Bytes, ChannelKey)>);
 
+#[cfg(feature = "proto")]
 impl From<proto::WriteToken> for WriteToken {
     fn from(token: proto::WriteToken) -> Self {
         if let proto::write_token::Inner::Insecure(inner) = token.inner.unwrap() {
@@ -39,6 +40,7 @@ impl From<proto::WriteToken> for WriteToken {
     }
 }
 
+#[cfg(feature = "proto")]
 impl Into<proto::WriteToken> for WriteToken {
     fn into(self) -> proto::WriteToken {
         proto::WriteToken {
@@ -67,6 +69,7 @@ impl WriteToken {
 #[derive(Debug, Clone)]
 pub struct AuditShare(bool);
 
+#[cfg(feature = "proto")]
 impl From<proto::AuditShare> for AuditShare {
     fn from(share: proto::AuditShare) -> Self {
         if let proto::audit_share::Inner::Insecure(inner) = share.inner.unwrap() {
@@ -77,6 +80,7 @@ impl From<proto::AuditShare> for AuditShare {
     }
 }
 
+#[cfg(feature = "proto")]
 impl Into<proto::AuditShare> for AuditShare {
     fn into(self) -> proto::AuditShare {
         proto::AuditShare {

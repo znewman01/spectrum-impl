@@ -7,6 +7,7 @@ pub mod wrapper;
 use accumulator::Accumulatable;
 use spectrum_primitives::bytes::Bytes;
 
+#[cfg(feature = "proto")]
 pub mod proto {
     tonic::include_proto!("spectrum");
 
