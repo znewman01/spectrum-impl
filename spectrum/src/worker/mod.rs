@@ -267,7 +267,7 @@ where
         let state = self.state.clone();
         let leader = self.services.get_my_leader();
         let start_time = {
-            let start_lock = (*self.start_rx.borrow()).clone();
+            let start_lock = *self.start_rx.borrow();
             start_lock.ok_or_else(|| {
                 Status::unavailable("Verification request before experiment start time set.")
             })?
@@ -361,9 +361,9 @@ where
     register(&config, Node::new(info.into(), net.public_addr())).await?;
 
     let start_time = wait_for_start_time_set(&config).await.unwrap();
+    registry_remote.init(info, &config).await?;
     delay_until(start_time).await;
     start_tx.broadcast(Some(Instant::now()))?;
-    registry_remote.init(info, &config).await?;
 
     server_task.await??;
     info!("Worker shutting down.");
