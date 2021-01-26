@@ -1,9 +1,3 @@
-use crate::proto::{
-    self, expect_field,
-    worker_server::{Worker, WorkerServer},
-    AggregateWorkerRequest, RegisterClientRequest, RegisterClientResponse, Share, UploadRequest,
-    UploadResponse, VerifyRequest, VerifyResponse,
-};
 use crate::{
     config::store::Store,
     experiment::Experiment,
@@ -20,8 +14,17 @@ use crate::{
         ClientInfo, WorkerInfo,
     },
 };
+use crate::{
+    proto::{
+        self, expect_field,
+        worker_server::{Worker, WorkerServer},
+        AggregateWorkerRequest, RegisterClientRequest, RegisterClientResponse, Share,
+        UploadRequest, UploadResponse, VerifyRequest, VerifyResponse,
+    },
+    services::quorum::delay_until,
+};
+use std::time::Instant;
 
-use chrono::prelude::*;
 use futures::prelude::*;
 use log::{error, info, trace, warn};
 use std::convert::{TryFrom, TryInto};
@@ -160,7 +163,7 @@ where
 }
 
 pub struct MyWorker<P: Protocol> {
-    start_rx: watch::Receiver<Option<DateTime<FixedOffset>>>,
+    start_rx: watch::Receiver<Option<Instant>>,
     services: ServiceRegistry,
     state: Arc<WorkerState<P>>,
 }
@@ -171,7 +174,7 @@ where
     P::Accumulator: Clone,
 {
     fn new(
-        start_rx: watch::Receiver<Option<DateTime<FixedOffset>>>,
+        start_rx: watch::Receiver<Option<Instant>>,
         services: ServiceRegistry,
         experiment: Experiment,
         protocol: P,
@@ -195,18 +198,14 @@ where
     }
 
     fn check_not_started(&self) -> Result<(), Status> {
-        match *self.start_rx.borrow() {
-            Some(start_time) => {
-                if Utc::now() > start_time {
-                    Err(Status::failed_precondition(
-                        "Client registration after start time.",
-                    ))
-                } else {
-                    Ok(())
-                }
-            }
-            None => Err(Status::unavailable("Worker not ready to start.")),
+        let started = *self.start_rx.borrow();
+        if let Some(_) = started {
+            return Err(Status::failed_precondition(
+                "Client registration after start time.",
+            ));
         }
+
+        Ok(())
     }
 }
 
@@ -290,9 +289,8 @@ where
                 }
                 Ok(VerifyStatus::ShareVerified { clients }) => {
                     if clients % 10 == 0 {
-                        let now = DateTime::<FixedOffset>::from(Utc::now());
                         let elapsed_ms: usize =
-                            (now - start_time).num_milliseconds().try_into().unwrap();
+                            start_time.elapsed().as_millis().try_into().unwrap();
                         let qps: usize = (clients * 1000) / elapsed_ms;
                         info!(
                             "{} clients processed in time {}ms ({} qps)",
@@ -363,7 +361,8 @@ where
     register(&config, Node::new(info.into(), net.public_addr())).await?;
 
     let start_time = wait_for_start_time_set(&config).await.unwrap();
-    start_tx.broadcast(Some(start_time))?;
+    delay_until(start_time).await;
+    start_tx.broadcast(Some(Instant::now()))?;
     registry_remote.init(info, &config).await?;
 
     server_task.await??;
