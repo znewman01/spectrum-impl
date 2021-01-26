@@ -30,7 +30,7 @@ use log::{error, info, trace, warn};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::sync::Arc;
-use tokio::{spawn, sync::watch, task::spawn_blocking};
+use tokio::{spawn, sync::watch, sync::RwLock, task::spawn_blocking};
 use tonic::{Request, Response, Status};
 
 mod audit_registry;
@@ -164,6 +164,7 @@ where
 
 pub struct MyWorker<P: Protocol> {
     start_rx: watch::Receiver<Option<Instant>>,
+    start_time: Arc<RwLock<Option<Instant>>>,
     services: ServiceRegistry,
     state: Arc<WorkerState<P>>,
 }
@@ -182,9 +183,28 @@ where
         let state = WorkerState::from_experiment(experiment, protocol);
         MyWorker {
             start_rx,
+            start_time: Default::default(),
             services,
             state: Arc::new(state),
         }
+    }
+
+    async fn get_start_time(&self) -> Result<Instant, Error> {
+        {
+            let start_time_guard = self.start_time.read().await;
+            if let Some(start_time) = *start_time_guard {
+                return Ok(start_time);
+            }
+        }
+
+        let start_lock = *self.start_rx.borrow();
+        let start_time = start_lock
+            .ok_or_else(|| Error::new("Verification request before experiment start time set."))?;
+
+        let mut start_time_lock = self.start_time.write().await;
+        *start_time_lock = Some(start_time);
+
+        Ok(start_time)
     }
 
     async fn get_peers(&self, client: &ClientInfo) -> Result<Vec<SharedClient>, Status> {
@@ -266,12 +286,10 @@ where
         let share = share.try_into().unwrap();
         let state = self.state.clone();
         let leader = self.services.get_my_leader();
-        let start_time = {
-            let start_lock = *self.start_rx.borrow();
-            start_lock.ok_or_else(|| {
-                Status::unavailable("Verification request before experiment start time set.")
-            })?
-        };
+        let start_time = self
+            .get_start_time()
+            .await
+            .map_err(|e| Status::unavailable(e.message))?;
 
         spawn(async move {
             match state.verify(&client_info, share).await {
