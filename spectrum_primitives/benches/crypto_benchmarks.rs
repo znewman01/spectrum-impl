@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate criterion;
 use criterion::Criterion;
 use rug::Integer;
 use spectrum_impl::{
