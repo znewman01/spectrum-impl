@@ -34,9 +34,6 @@ pub mod services;
 mod proto {
     use tonic::Status;
 
-    // TODO: use these from spectrum_protocol only
-    // tonic::include_proto!("spectrum");
-
     pub use spectrum_primitives::proto::Integer;
     pub use spectrum_protocol::proto::*;
 
