@@ -22,7 +22,7 @@ use crate::{
 };
 
 use futures::prelude::*;
-use log::{error, info, trace, warn};
+use log::{info, trace, warn};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::sync::Arc;
@@ -37,7 +37,8 @@ use audit_registry::AuditRegistry;
 use client_registry::Registry as ClientRegistry;
 use service_registry::{Registry as ServiceRegistry, SharedClient};
 
-type Error = Box<dyn std::error::Error + Sync + Send>;
+type Error = crate::config::store::Error;
+type BoxedErorr = Box<dyn std::error::Error + Sync + Send>;
 
 struct WorkerState<P: Protocol> {
     audit_registry: AuditRegistry<P::AuditShare, P::WriteToken>,
@@ -61,6 +62,12 @@ where
             protocol,
         }
     }
+}
+
+enum VerifyStatus<P: Protocol> {
+    AwaitingShares,
+    ShareVerified { clients: usize },
+    AllClientsVerified { accumulator: Vec<P::Accumulator> },
 }
 
 impl<P> WorkerState<P>
@@ -94,7 +101,7 @@ where
         &self,
         client: &ClientInfo,
         share: P::AuditShare,
-    ) -> Option<Vec<P::Accumulator>> {
+    ) -> Result<VerifyStatus<P>, Error> {
         trace!("verify() task for client_info: {:?}", client);
         let check_count = self.audit_registry.add(client, share).await;
         trace!(
@@ -104,7 +111,7 @@ where
             client.clone()
         );
         if check_count < self.protocol.num_parties() {
-            return None;
+            return Ok(VerifyStatus::AwaitingShares);
         }
         trace!("Running verification.");
 
@@ -125,19 +132,25 @@ where
             .expect("Accepting write token should never fail.");
 
         if accumulator.len() != self.protocol.num_channels() {
-            error!(
+            return Err(Error::new(&format!(
                 "Invalid number of accumulator channels! {} != {}",
                 accumulator.len(),
                 self.protocol.message_len()
-            );
+            )));
         }
         let accumulated_clients = self.accumulator.accumulate(accumulator).await;
         let total_clients = self.client_registry.num_clients().await;
         trace!("{}/{} clients", accumulated_clients, total_clients);
+
         if accumulated_clients == total_clients {
-            return Some(self.accumulator.get().await);
+            Ok(VerifyStatus::AllClientsVerified {
+                accumulator: self.accumulator.get().await,
+            })
+        } else {
+            Ok(VerifyStatus::ShareVerified {
+                clients: accumulated_clients,
+            })
         }
-        None
     }
 
     async fn register_client(&self, client: &ClientInfo, shards: Vec<WorkerInfo>) {
@@ -251,11 +264,14 @@ where
         let leader = self.services.get_my_leader();
 
         spawn(async move {
-            if let Some(share) = state.verify(&client_info, share).await {
-                let share: Vec<Vec<u8>> = share.into_iter().map(Into::<Vec<u8>>::into).collect();
+            if let Ok(VerifyStatus::AllClientsVerified { accumulator }) =
+                state.verify(&client_info, share).await
+            {
+                let accumulator: Vec<Vec<u8>> =
+                    accumulator.into_iter().map(Into::<Vec<u8>>::into).collect();
                 info!("Forwarding to leader.");
                 let req = Request::new(AggregateWorkerRequest {
-                    share: Some(Share { data: share }),
+                    share: Some(Share { data: accumulator }),
                 });
                 leader.lock().await.aggregate_worker(req).await.unwrap();
             }
@@ -287,7 +303,7 @@ async fn inner_run<C, F, P>(
     info: WorkerInfo,
     net: NetConfig,
     shutdown: F,
-) -> Result<(), Error>
+) -> Result<(), BoxedErorr>
 where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
@@ -333,7 +349,7 @@ pub async fn run<C, F>(
     info: WorkerInfo,
     net: NetConfig,
     shutdown: F,
-) -> Result<(), Error>
+) -> Result<(), BoxedErorr>
 where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
