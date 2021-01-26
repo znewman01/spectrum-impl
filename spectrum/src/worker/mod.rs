@@ -39,7 +39,7 @@ use client_registry::Registry as ClientRegistry;
 use service_registry::{Registry as ServiceRegistry, SharedClient};
 
 type Error = crate::config::store::Error;
-type BoxedErorr = Box<dyn std::error::Error + Sync + Send>;
+type BoxedError = Box<dyn std::error::Error + Sync + Send>;
 
 struct WorkerState<P: Protocol> {
     audit_registry: AuditRegistry<P::AuditShare, P::WriteToken>,
@@ -332,7 +332,7 @@ async fn inner_run<C, F, P>(
     info: WorkerInfo,
     net: NetConfig,
     shutdown: F,
-) -> Result<(), BoxedErorr>
+) -> Result<(), BoxedError>
 where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
@@ -378,7 +378,7 @@ pub async fn run<C, F>(
     info: WorkerInfo,
     net: NetConfig,
     shutdown: F,
-) -> Result<(), BoxedErorr>
+) -> Result<(), BoxedError>
 where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
