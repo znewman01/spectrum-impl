@@ -16,13 +16,14 @@ use crate::{
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
-        quorum::{delay_until, wait_for_start_time_set},
+        quorum::wait_for_start_time_set,
         ClientInfo, WorkerInfo,
     },
 };
 
+use chrono::prelude::*;
 use futures::prelude::*;
-use log::{info, trace, warn};
+use log::{error, info, trace, warn};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::sync::Arc;
@@ -159,7 +160,7 @@ where
 }
 
 pub struct MyWorker<P: Protocol> {
-    start_rx: watch::Receiver<bool>,
+    start_rx: watch::Receiver<Option<DateTime<FixedOffset>>>,
     services: ServiceRegistry,
     state: Arc<WorkerState<P>>,
 }
@@ -170,7 +171,7 @@ where
     P::Accumulator: Clone,
 {
     fn new(
-        start_rx: watch::Receiver<bool>,
+        start_rx: watch::Receiver<Option<DateTime<FixedOffset>>>,
         services: ServiceRegistry,
         experiment: Experiment,
         protocol: P,
@@ -194,13 +195,17 @@ where
     }
 
     fn check_not_started(&self) -> Result<(), Status> {
-        let started_lock = self.start_rx.borrow();
-        if *started_lock {
-            Err(Status::failed_precondition(
-                "Client registration after start time.",
-            ))
-        } else {
-            Ok(())
+        match *self.start_rx.borrow() {
+            Some(start_time) => {
+                if Utc::now() > start_time {
+                    Err(Status::failed_precondition(
+                        "Client registration after start time.",
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+            None => Err(Status::unavailable("Worker not ready to start.")),
         }
     }
 }
@@ -262,18 +267,42 @@ where
         let share = share.try_into().unwrap();
         let state = self.state.clone();
         let leader = self.services.get_my_leader();
+        let start_time = {
+            let start_lock = (*self.start_rx.borrow()).clone();
+            start_lock.ok_or_else(|| {
+                Status::unavailable("Verification request before experiment start time set.")
+            })?
+        };
 
         spawn(async move {
-            if let Ok(VerifyStatus::AllClientsVerified { accumulator }) =
-                state.verify(&client_info, share).await
-            {
-                let accumulator: Vec<Vec<u8>> =
-                    accumulator.into_iter().map(Into::<Vec<u8>>::into).collect();
-                info!("Forwarding to leader.");
-                let req = Request::new(AggregateWorkerRequest {
-                    share: Some(Share { data: accumulator }),
-                });
-                leader.lock().await.aggregate_worker(req).await.unwrap();
+            match state.verify(&client_info, share).await {
+                Ok(VerifyStatus::AllClientsVerified { accumulator }) => {
+                    let accumulator: Vec<Vec<u8>> =
+                        accumulator.into_iter().map(Into::<Vec<u8>>::into).collect();
+                    info!("Forwarding to leader.");
+                    let req = Request::new(AggregateWorkerRequest {
+                        share: Some(Share { data: accumulator }),
+                    });
+                    leader.lock().await.aggregate_worker(req).await.unwrap();
+                }
+                Ok(VerifyStatus::AwaitingShares) => {
+                    // nothing to do
+                }
+                Ok(VerifyStatus::ShareVerified { clients }) => {
+                    if clients % 10 == 0 {
+                        let now = DateTime::<FixedOffset>::from(Utc::now());
+                        let elapsed_ms: usize =
+                            (now - start_time).num_milliseconds().try_into().unwrap();
+                        let qps: usize = (clients * 1000) / elapsed_ms;
+                        info!(
+                            "{} clients processed in time {}ms ({} qps)",
+                            clients, elapsed_ms, qps
+                        );
+                    }
+                }
+                Err(err) => {
+                    error!("Error during verification: {}", err)
+                }
             }
         });
 
@@ -318,7 +347,7 @@ where
 {
     info!("Worker starting up.");
 
-    let (start_tx, start_rx) = watch::channel(false);
+    let (start_tx, start_rx) = watch::channel(None);
     let (registry, registry_remote) = ServiceRegistry::new_with_remote();
 
     let worker = MyWorker::new(start_rx, registry, experiment, protocol);
@@ -334,8 +363,8 @@ where
     register(&config, Node::new(info.into(), net.public_addr())).await?;
 
     let start_time = wait_for_start_time_set(&config).await.unwrap();
+    start_tx.broadcast(Some(start_time))?;
     registry_remote.init(info, &config).await?;
-    spawn(delay_until(start_time).then(|_| async move { start_tx.broadcast(true) }));
 
     server_task.await??;
     info!("Worker shutting down.");
