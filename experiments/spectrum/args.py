@@ -49,11 +49,18 @@ def _get_git_root() -> Path:
 
 
 def _get_last_sha(git_root: Path) -> SHA:
-    # Last sha at which the spectrum/ directory was modified
+    # Last sha at which the Spectrum code directories were modified
     # (i.e., changes to the actual code, not infrastructure)
     # This is mostly a hack to make changing the infrastructure bearable because
     # Packer builds take a long time.
-    cmd = ["git", "rev-list", "-1", "HEAD", "--", "spectrum"]
+    paths = [
+        "spectrum",
+        "spectrum_primitives",
+        "spectrum_protocol",
+        ".cargo/config",
+        "Cargo.toml",
+    ]
+    cmd = ["git", "rev-list", "-1", "HEAD", "--"] + paths
     return SHA(check_output(cmd, cwd=git_root).decode("ascii").strip())
 
 
