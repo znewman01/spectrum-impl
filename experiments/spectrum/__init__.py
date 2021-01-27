@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import math
+import re
 
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from itertools import chain, starmap, product
+from operator import attrgetter
 from pathlib import Path
 from subprocess import check_call
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -22,6 +24,7 @@ from typing import (
     Union,
     Tuple,
 )
+from statistics import mean
 
 import asyncssh
 
@@ -30,7 +33,7 @@ from tenacity import stop_after_attempt, wait_fixed, AsyncRetrying
 
 from experiments import system, packer
 
-from experiments.system import Milliseconds, Result, Machine
+from experiments.system import Result, Machine, Milliseconds
 from experiments.cloud import InstanceType, SHA, AWS_REGION
 from experiments.util import Bytes
 
@@ -39,6 +42,8 @@ BuildProfile = NewType("BuildProfile", str)
 
 # Need to update install.sh to change this
 MAX_WORKERS_PER_MACHINE = 10
+
+EXPERIMENT_TIMEOUT = 60.0
 
 
 @dataclass
@@ -222,6 +227,11 @@ async def _prepare_worker(
     }
     await _install_spectrum_config(machine, spectrum_config)
 
+    # don't let this same output confuse us if we run on this machine again
+    await machine.ssh.run(
+        "sudo journalctl --rotate && sudo journalctl --vacuum-time=1s", check=True,
+    )
+
     await machine.ssh.run(
         f"sudo systemctl start spectrum-worker@{{1..{num_workers}}}", check=True
     )
@@ -236,25 +246,6 @@ async def _prepare_client(
         f"sudo systemctl start viewer@{{{client_range.start}..{client_range.stop}}}",
         check=True,
     )
-
-
-async def _execute_experiment(
-    publisher: Machine, etcd_env: Dict[str, Any]
-) -> Milliseconds:
-    await _install_spectrum_config(publisher, etcd_env)
-    await publisher.ssh.run(
-        "sudo systemctl start spectrum-publisher --wait", check=True
-    )
-
-    result = await publisher.ssh.run(
-        "journalctl --unit spectrum-publisher "
-        "    | grep -o 'Elapsed time: .*' "
-        "    | sed 's/Elapsed time: \\(.*\\)ms/\\1/'",
-        check=True,
-    )
-    result = Milliseconds(int(result.stdout.strip()))
-
-    return result
 
 
 @dataclass(frozen=True)
@@ -300,6 +291,78 @@ class Experiment(system.Experiment):
         if protocol is not None:
             data["protocol"] = Protocol.from_dict(protocol)
         return cls(**data)
+
+    async def _fetch_timing(self, worker: Machine) -> Result:
+        """Timing for one worker.
+
+        We look across all worker processes and get the best intermediate result from each.
+        We then report the *total* QPS.
+        """
+        total_qps = 0
+        min_time = None
+        for worker_process in range(1, self.workers_per_machine + 1):
+            cmd_result = await worker.ssh.run(
+                f"journalctl --unit spectrum-worker@{worker_process}"
+                r"    | grep -Eo '[0-9]+ clients processed in time [0-9]+ms \([0-9]+ qps\)'",
+            )
+            process_results = []
+            for line in cmd_result.stdout.split("\n"):
+                match = re.match(
+                    r"([0-9]+) clients processed in time ([0-9]+)ms \([0-9]+ qps\)",
+                    line,
+                )
+                if not match:
+                    continue
+                clients, time = match.groups()
+                process_results.append(
+                    Result(
+                        experiment=self,
+                        queries=int(clients),
+                        time=Milliseconds(int(time)),
+                    )
+                )
+            if not process_results:
+                continue
+            best_result = max(process_results, key=attrgetter("qps"))
+            total_qps += best_result.qps
+            if min_time is None:
+                min_time = best_result.time
+            else:
+                min_time = min(min_time, best_result.time)
+        if min_time is None:
+            raise RuntimeError("No successful runs.")
+        result = Result(
+            experiment=self,
+            queries=int(total_qps * int(min_time) / 1000),
+            time=min_time,
+        )
+        assert result.qps - total_qps < 0.1
+        return result
+
+    async def _execute_experiment(
+        self, publisher: Machine, workers: List[Machine], etcd_env: Dict[str, Any]
+    ) -> Result:
+        await _install_spectrum_config(publisher, etcd_env)
+        timeout = EXPERIMENT_TIMEOUT - 2  # give some cleanup time
+        try:
+            await publisher.ssh.run(
+                "sudo systemctl start spectrum-publisher --wait",
+                check=True,
+                timeout=timeout,
+            )
+        except asyncssh.process.TimeoutError:
+            pass
+
+        results = await asyncio.gather(*map(self._fetch_timing, workers))
+        # We now have the total QPS per machine; let's aggregate.
+        # Divide by self.groups so we don't double-count.
+        total_qps = sum(map(attrgetter("qps"), results)) / self.groups
+        min_time = min(map(attrgetter("time"), results))
+        return Result(
+            experiment=self,
+            time=min_time,
+            queries=int(total_qps * int(min_time) / 1000),
+        )
 
     async def run(self, setting: Setting, spinner: Halo) -> Result:
         try:
@@ -372,10 +435,10 @@ class Experiment(system.Experiment):
             )
 
             spinner.text = "[experiment] running"
-            time = await asyncio.wait_for(
-                _execute_experiment(publisher, etcd_env), timeout=60.0
+            return await asyncio.wait_for(
+                self._execute_experiment(publisher, workers, etcd_env),
+                timeout=EXPERIMENT_TIMEOUT,
             )
-            return Result(self, time, queries=self.clients)
         finally:
             spinner.text = "[experiment] shutting everything down"
             shutdowns = []
