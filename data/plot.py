@@ -1,8 +1,11 @@
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
 import argparse
 import json
 import sys
+import re
+import statistics
 
 from typing import List, Optional, Tuple
 from pathlib import Path
@@ -14,6 +17,28 @@ def load_df(path: Path) -> pd.DataFrame:
         for result in data:
             result.update(result.pop("experiment"))
         return pd.DataFrame.from_dict(data)
+
+
+# Last line of `openssl speed` reports overall throughput
+_OPENSSL_SPEED_RE = re.compile(r"([0-9]+\.[0-9]+)k")
+
+
+def calculate_aes_rate(path: Path):
+    """Rate (in bytes per second) of OpenSSL based on the output of `openssl speed`.
+
+    Takes a path to file with the stderr of the command.
+
+    Depends on OpenSSL version.
+    """
+    speed_file = path / "openssl-speed.txt"
+    lines = filter(None, speed_file.read_text().split("\n"))
+    *_, last_line = lines
+    matches = _OPENSSL_SPEED_RE.finditer(last_line)
+    speeds = [float(m.group(1)) for m in matches]
+    # aggregate across varying chunk sizes which isn't totally sound but close
+    # enough
+    avg_speed = statistics.mean(speeds)
+    return avg_speed * 1000  # openssl reports in units of 1000 bytes
 
 
 def merge_many(dfs: List[Tuple[str, pd.DataFrame]], on=List[str]) -> pd.DataFrame:
@@ -107,7 +132,12 @@ def plot_manychannel(results_dir: Path, benchmark: Optional[List[str]], show: bo
         plt.show()
 
 
-def plot_onechannel(results_dir: Path, benchmark: Optional[List[str]], show: bool):
+def plot_onechannel(
+    results_dir: Path,
+    benchmark: Optional[List[str]],
+    aes_rate: Optional[float] = None,
+    show: bool = False,
+):
     if benchmark:
         old = process_spectrum(
             load_df(results_dir / benchmark[0] / "spectrum-onechannel.json")
@@ -136,7 +166,12 @@ def plot_onechannel(results_dir: Path, benchmark: Optional[List[str]], show: boo
         dfs = [("express", express), ("spectrum", spectrum)]
 
     big = merge_many(dfs, on=["message_size"])
-    big.plot(x="message_size", title="one channel", marker=".")
+    subplot = big.plot(x="message_size", title="one channel", marker=".")
+    x = np.linspace(min(big.message_size), max(big.message_size))
+    # TODO: make label show up
+    subplot.plot(x, aes_rate / x, color="black", ls="--", label="Max AES Rate")
+    # Our bandwidth is >> the maximum AES rate so don't bother plotting it
+    # Approx 10 Gb/s vs. 5 Gb/s
 
     if show:
         plt.show()
@@ -219,7 +254,10 @@ def main(args):
     results_dir = Path(args.results_dir)
     benchmark = args.benchmark.split(":") if args.benchmark else None
 
-    plot_onechannel(results_dir, benchmark, show=args.show)
+    aes_rate = calculate_aes_rate(results_dir)
+    print(f"AES rate: {aes_rate}")
+
+    plot_onechannel(results_dir, benchmark, aes_rate=aes_rate, show=args.show)
     plot_manychannel(results_dir, benchmark, show=args.show)
     plot_horizontal(results_dir, benchmark, show=args.show)
     plot_multiserver(results_dir, benchmark, show=args.show)

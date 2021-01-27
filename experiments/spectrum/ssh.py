@@ -8,8 +8,10 @@ import tempfile
 from subprocess import check_output, check_call, CalledProcessError
 
 
-def main():
-    parser = argparse.ArgumentParser(description="SSH into a Terraform machine.")
+def main(argv):
+    parser = argparse.ArgumentParser(
+        prog=argv[0], description="SSH into a Terraform machine."
+    )
     parser.add_argument(
         "--publisher",
         action="store_true",
@@ -29,7 +31,12 @@ def main():
         const=0,
         help="SSH into some/(the nth) worker machine",
     )
-    args = parser.parse_args()
+    if "--" in argv:
+        idx = argv.index("--")
+        argv, extra = argv[:idx], argv[idx + 1 :]
+    else:
+        extra = []
+    args = parser.parse_args(argv[1:])
 
     cwd = os.path.dirname(__file__)  # terraform needs to be in *this* directory
     data = json.loads(check_output(["terraform", "output", "-json"], cwd=cwd))
@@ -56,10 +63,11 @@ def main():
                     "-o",
                     "StrictHostKeyChecking=no",
                 ]
+                + extra
             )
     except CalledProcessError as err:
         sys.exit(err.returncode)
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv)

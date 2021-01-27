@@ -37,6 +37,14 @@ main() {
     # Clean up AWS resources
     var="ran_${system}"
     if [ ! -z ${!var} ]; then
+      if [ $system = "spectrum" ]; then
+        python -m experiments.spectrum.ssh --worker -- \
+          "ec2metadata | grep instance-type" \
+          > ${TMP_DIR}/results/instance-type.txt
+        python -m experiments.spectrum.ssh --worker -- \
+          "openssl speed -elapsed -evp aes-128-ctr 2>&1" \
+          > ${TMP_DIR}/results/openssl-speed.txt
+      fi
       echo "[]" | python -m experiments --cleanup ${system} -
     fi
   done
