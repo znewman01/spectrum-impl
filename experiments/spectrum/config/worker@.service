@@ -3,7 +3,7 @@ Description=Spectrum worker %i
 
 [Service]
 # Bash is needed for arithmetic with %i
-ExecStart=/bin/bash -c "/home/ubuntu/spectrum/worker --local-port $((6100 + %i - 1)) --public-address $(hostname):$((5100 + %i - 1)) --index $(($SPECTRUM_WORKER_START_INDEX + %i)) --log-level debug"
+ExecStart=/bin/bash -c "/home/ubuntu/spectrum/worker --local-port $((6100 + %i - 1)) --public-address $(hostname):$((6100 + %i - 1)) --index $(($SPECTRUM_WORKER_START_INDEX + %i)) --log-level debug"
 Type=simple
 Restart=no
 EnvironmentFile=/etc/spectrum.conf

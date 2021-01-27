@@ -374,6 +374,8 @@ where
 
     let server_task = spawn(server);
 
+    tokio::time::delay_for(std::time::Duration::from_millis(500)).await;
+
     wait_for_health(format!("http://{}", net.public_addr())).await?;
     trace!("Worker {:?} healthy and serving.", info);
     register(&config, Node::new(info.into(), net.public_addr())).await?;
