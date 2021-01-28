@@ -1,85 +1,93 @@
-use criterion::Criterion;
-use rug::Integer;
-use spectrum_impl::{
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
+use rand::thread_rng;
+use spectrum_primitives::{
     bytes::Bytes,
-    crypto::{
-        dpf::{BasicDPF, MultiKeyDPF, DPF},
-        field::Field,
-        group::Group,
-        prg::{aes::AESSeed, aes::AESPRG, group::GroupPRG, PRG},
-        vdpf::{FieldVDPF, VDPF},
-    },
+    dpf::{BasicDPF, DPF},
+    prg::{aes::AESPRG, PRG},
 };
-
-const EVAL_SIZE: usize = 1 << 20; // (in bytes) approx 1MB
+use std::thread::sleep;
+use std::time::Duration;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("PRG eval", |b| {
-        let prg = AESPRG::new(16, EVAL_SIZE);
-        let seed = prg.new_seed();
-        b.iter(|| prg.eval(&seed))
-    });
+    static KB: usize = 1000;
+    static MB: usize = 1000000;
+    static SIZES: [usize; 6] = [KB, 10 * KB, 100 * KB, 250 * KB, 500 * KB, 1 * MB];
 
-    c.bench_function("group PRG eval", |b| {
-        let prg = GroupPRG::from_aes_seed(EVAL_SIZE, AESSeed::random(16));
-        let seed = prg.new_seed();
-        b.iter(|| prg.eval(&seed))
-    });
+    // Bytes per second of AES on Zack's laptop via `openssl speed`.
+    // TODO: run inline while we're collecting benchmarks
+    static AES_RATE: u64 = 3500000000;
+    static NS_PER_S: u64 = 1000000000; // microseconds per second
 
-    c.bench_function("group operation", |b| {
-        let el1 = Group::rand_element();
-        let el2 = Group::rand_element();
-        b.iter(|| el1.clone() * &el2)
-    });
+    let mut group = c.benchmark_group("AESPRG");
+    for size in SIZES.iter() {
+        group.throughput(Throughput::Bytes(*size as u64));
+        group.bench_with_input(BenchmarkId::new("PRG", size), size, |b, &size| {
+            let prg = AESPRG::new(16, size);
+            let seed = prg.new_seed();
+            b.iter_with_large_drop(|| prg.eval(&seed))
+        });
+        if *size >= 100 * KB {
+            // We know, roughly, the max rate of AES on our system. We want to
+            // have that on the plots to compare against, but there's no easy
+            // way to just add a line. Instead, we fake it.
+            group.bench_with_input(BenchmarkId::new("Max AES Rate", size), size, |b, &size| {
+                let delay = Duration::from_nanos(NS_PER_S * (size as u64) / AES_RATE / 2);
+                b.iter_with_large_drop(|| sleep(delay))
+            });
+        }
+    }
+    group.finish();
 
-    let num_points = 1;
-    let point_idx = 0;
-    c.bench_function("DPF (AES) eval", |b| {
-        let dpf = BasicDPF::new(AESPRG::new(16, EVAL_SIZE), num_points);
-        let data = Bytes::empty(EVAL_SIZE);
-        let keys = dpf.gen(data, point_idx);
-        let key = &keys[0];
-        b.iter(|| dpf.eval(key))
-    });
+    let mut group = c.benchmark_group("DPF (AES) Evaluation");
+    for size in SIZES.iter() {
+        group.throughput(Throughput::Bytes(*size as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+            let dpf = BasicDPF::new(AESPRG::new(16, size), 1);
+            let keys = dpf.gen_empty();
+            let key = &keys[0];
+            b.iter_with_large_drop(|| dpf.eval(key))
+        });
+    }
+    group.finish();
 
-    let num_points = 1;
-    let point_idx = 0;
-    c.bench_function("DPF (Seed-Homomorhic) eval 3-keys", |b| {
-        let prg = GroupPRG::from_aes_seed(EVAL_SIZE, AESSeed::random(16));
-        let dpf = MultiKeyDPF::new(prg.clone(), num_points, 3);
-        let data = prg.eval(&prg.new_seed());
-        let keys = dpf.gen(data, point_idx);
-        let key = &keys[0];
-        b.iter(|| dpf.eval(key))
-    });
+    let mut group = c.benchmark_group("XOR");
+    for size in SIZES.iter() {
+        group.throughput(Throughput::Bytes(*size as u64));
+        group.bench_with_input(BenchmarkId::new("Bytes", size), size, |b, &size| {
+            b.iter_batched(
+                || {
+                    (
+                        Bytes::random(size, &mut thread_rng()),
+                        Bytes::random(size, &mut thread_rng()),
+                    )
+                },
+                |(left, right)| left ^ right,
+                BatchSize::LargeInput,
+            )
+        });
+        group.bench_with_input(BenchmarkId::new("Vec<u8>()", size), size, |b, &size| {
+            b.iter_batched_ref(
+                || (vec![0; size], vec![0; size]),
+                |(left, right)| {
+                    left.iter_mut()
+                        .zip(right.iter())
+                        .for_each(|(l, r)| *l ^= *r)
+                },
+                BatchSize::LargeInput,
+            )
+        });
+        // TODO: try with chunking
+    }
 
-    c.bench_function("DPF (Seed-Homomorhic) eval 10-keys", |b| {
-        let prg = GroupPRG::from_aes_seed(EVAL_SIZE, AESSeed::random(16));
-        let dpf = MultiKeyDPF::new(prg.clone(), num_points, 10);
-        let data = prg.eval(&prg.new_seed());
-        let keys = dpf.gen(data, point_idx);
-        let key = &keys[0];
-        b.iter(|| dpf.eval(key))
-    });
-
-    let point_idx = 0;
-    let num_points = 1;
-    let prime: Integer = Integer::from(800_000_000).next_prime_ref().into();
-    c.bench_function("gen_audit", |b| {
-        let field = Field::new(prime.clone());
-        let dpf = BasicDPF::new(AESPRG::new(16, EVAL_SIZE), num_points);
-        let vdpf = FieldVDPF::new(dpf, field.clone());
-
-        let data = Bytes::empty(EVAL_SIZE);
-        let dpf_keys = vdpf.gen(data, point_idx);
-        let auth_keys = vec![field.zero(); 2];
-        let proof_shares = vdpf.gen_proofs(&auth_keys[point_idx], point_idx, &dpf_keys);
-
-        let dpf_key = &dpf_keys[0];
-        let proof_share = &proof_shares[0];
-        b.iter(|| vdpf.gen_audit(&auth_keys, dpf_key, proof_share))
-    });
+    // TODO: more benchmarks
+    // - GroupPRG
+    // - DPF with Group PRG
+    // - Group/Field Ops
+    // - VDPF Features
 }
+
+// TODO: integrate profiling?
+// https://www.jibbow.com/posts/criterion-flamegraphs/
 
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
