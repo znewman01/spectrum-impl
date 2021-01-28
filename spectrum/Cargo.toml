@@ -9,32 +9,34 @@ default = []
 etcd-tests = []  # run etcd integration tests
 
 [dependencies]
-futures = "0.3"
-prost = "0.6"
+futures = "0.3.12"
+prost = "0.7"
 rand = "0.7.3"
-tonic = "0.3"
+tonic = "0.4"
 log = "0.4"
 simplelog = "^0.7.4"
 lazy_static = "1.4.0"
-tokio = { version = "0.2.22", features = [ "macros", "signal", "sync", "rt-threaded", "process" ] }
-async-trait = "0.1.38"
+tokio = { version = "1.1.0", features = [ "macros", "signal", "sync", "rt-multi-thread", "process" ] }
+async-trait = "0.1.42"
 chrono = "0.4"
-futures-retry = "0.4"
-rug = { version = "1.10", features = [ "serde" ] }
+futures-retry = "0.6"
+rug = { version = "1.11", features = [ "serde" ] }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
+# tower-layer = "0.3.1"  # we don't need this directly, but somehow we wind up picking versions of tower and tower-layer that are incompatible otherwise
 port_check = "0.1.5"
 derivative = "2.0.2"  # https://github.com/rust-lang/rust/issues/26925
-itertools = "0.9.0"
+itertools = "0.10"
 clap = { git = "http://github.com/clap-rs/clap/", rev = "37889c661134e8286102f7d2ab3267965d010403" }
 csv = "1.1"
-etcd-rs = "0.2.2"
+etcd-rs = { git = "https://github.com/luncj/etcd-rs", rev = "9b72ee0ca451ef59955ac16e7471575134024981" }
+# # etcd-rs = "0.2"
 tempfile = "3"
 spectrum_primitives = { path = "../spectrum_primitives", features = [ "proto" ] }
 spectrum_protocol = { path = "../spectrum_protocol", features = [ "proto" ] }
 
 [build-dependencies]
-tonic-build = "0.2.0"
+tonic-build = "0.4.0"
 
 [dev-dependencies]
 proptest = "0.9.6"

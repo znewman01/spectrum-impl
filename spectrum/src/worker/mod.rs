@@ -30,7 +30,7 @@ use log::{error, info, trace, warn};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::sync::Arc;
-use tokio::{spawn, sync::watch, sync::RwLock, task::spawn_blocking};
+use tokio::{spawn, sync::watch, sync::RwLock, task::spawn_blocking, time::sleep};
 use tonic::{Request, Response, Status};
 
 mod audit_registry;
@@ -219,7 +219,7 @@ where
 
     fn check_not_started(&self) -> Result<(), Status> {
         let started = *self.start_rx.borrow();
-        if let Some(_) = started {
+        if started.is_some() {
             return Err(Status::failed_precondition(
                 "Client registration after start time.",
             ));
@@ -374,7 +374,7 @@ where
 
     let server_task = spawn(server);
 
-    tokio::time::delay_for(std::time::Duration::from_millis(500)).await;
+    sleep(std::time::Duration::from_millis(500)).await;
 
     wait_for_health(format!("http://{}", net.public_addr())).await?;
     trace!("Worker {:?} healthy and serving.", info);
@@ -383,7 +383,7 @@ where
     let start_time = wait_for_start_time_set(&config).await.unwrap();
     registry_remote.init(info, &config).await?;
     delay_until(start_time).await;
-    start_tx.broadcast(Some(Instant::now()))?;
+    start_tx.send(Some(Instant::now()))?;
 
     server_task.await??;
     info!("Worker shutting down.");

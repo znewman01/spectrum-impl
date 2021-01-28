@@ -13,7 +13,7 @@ use log::debug;
 use tempfile::TempDir;
 use tokio::{
     process::{Child, Command},
-    time::delay_for,
+    time::sleep,
 };
 use tonic::async_trait;
 
@@ -36,6 +36,7 @@ impl EtcdStore {
         let client_config = ClientConfig {
             endpoints: endpoints.clone(),
             auth: None,
+            tls: None,
         };
         let mut client = Client::connect(client_config).await;
         for _ in 0..10u8 {
@@ -43,10 +44,11 @@ impl EtcdStore {
                 break;
             }
             debug!("Error connecting to etcd; sleep+retry.");
-            delay_for(Duration::from_millis(50)).await;
+            sleep(Duration::from_millis(50)).await;
             let client_config = ClientConfig {
                 endpoints: endpoints.clone(),
                 auth: None,
+                tls: None,
             };
             client = Client::connect(client_config).await;
         }
@@ -98,7 +100,7 @@ impl Runner {
             .expect("`etcd` failed to spawn. Is it installed?");
 
         // wait for etcd to start up
-        delay_for(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
 
         Ok(Runner {
             addr: client_addr.public_addr(),

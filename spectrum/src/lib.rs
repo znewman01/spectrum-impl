@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use tokio::{
     process::Command,
     sync::{Barrier, Notify},
-    time::delay_for,
+    time::sleep,
 };
 
 pub use spectrum_protocol as protocols;
@@ -90,7 +90,7 @@ impl PublisherRemote {
 #[tonic::async_trait]
 impl publisher::Remote for PublisherRemote {
     async fn start(&self) {
-        self.start.notify()
+        self.start.notify_one()
     }
 
     async fn done(&self) {
@@ -161,7 +161,7 @@ where
         barrier.wait().await;
         start_time.elapsed()
     });
-    let delay_task = tokio::spawn(delay_for(TIMEOUT));
+    let delay_task = tokio::spawn(sleep(TIMEOUT));
     let (work, abort_rx) = AbortHandle::new_pair();
     tokio::spawn(Abortable::new(
         async move {
@@ -261,6 +261,7 @@ where
     // TODO: kill everybody on ^C
     publisher_handle
         .expect("Must have at least one publisher in the experiment.")
+        .wait()
         .await?;
     // TODO: should:
     // - kill (probably just killing at first is okay too)

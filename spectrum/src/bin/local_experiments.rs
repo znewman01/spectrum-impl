@@ -6,7 +6,7 @@ use clap::{crate_authors, crate_version, Clap};
 use itertools::iproduct;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use std::fs::File;
 use std::io::{self, Write};
@@ -212,7 +212,7 @@ async fn main() -> Result<()> {
         };
 
         // allow time for wrap-up before next experiment
-        delay_for(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
     }
 
     Ok(())

@@ -149,7 +149,7 @@ where
     let publisher = Arc::new(Mutex::new(
         PublisherClient::connect(format!("http://{}", publisher_addr)).await?,
     ));
-    tx.broadcast(Some(publisher))
+    tx.send(Some(publisher))
         .map_err(|_| "Error sending service registry.")?;
 
     server_task.await??;

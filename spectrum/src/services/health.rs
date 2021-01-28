@@ -1,7 +1,7 @@
 use crate::config::store::Error;
 use log::debug;
 use std::time::Duration;
-use tokio::time::delay_for;
+use tokio::time::sleep;
 use tonic::{Request, Response, Status};
 
 pub mod spectrum {
@@ -61,7 +61,7 @@ pub async fn wait_for_health_helper(
                 debug!("Error checking health: {}", err);
             }
         }
-        delay_for(delay).await;
+        sleep(delay).await;
     }
     Err(Error::new(&format!(
         "Service not healthy after {} attempts",

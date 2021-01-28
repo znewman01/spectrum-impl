@@ -12,7 +12,7 @@ use crate::{
 use config::store::Store;
 use futures::prelude::*;
 use log::{debug, info, trace, warn};
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
@@ -52,7 +52,7 @@ where
     delay_until(start_time).await;
     const MAX_JITTER_MILLIS: u64 = 100;
     let jitter = Duration::from_millis(rand::random::<u64>() % MAX_JITTER_MILLIS);
-    delay_for(jitter).await;
+    sleep(jitter).await;
     debug!("Client detected start time ready.");
 
     for (client, write_token) in clients.iter_mut().zip(write_tokens) {
@@ -71,7 +71,7 @@ where
                 }
                 Err(err) => warn!("Error, trying again: {}", err),
             };
-            delay_for(Duration::from_millis(50)).await;
+            sleep(Duration::from_millis(50)).await;
         }
         debug!("RESPONSE={:?}", response.into_inner());
     }

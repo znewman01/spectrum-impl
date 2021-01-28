@@ -62,7 +62,7 @@ impl Remote {
     {
         let map = Map::from_config(worker, config).await?;
         self.0
-            .broadcast(Some(map))
+            .send(Some(map))
             .map_err(|_| "Error sending service registry.")?;
         Ok(())
     }

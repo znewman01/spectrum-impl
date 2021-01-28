@@ -9,7 +9,7 @@ use futures_retry::FutureRetry;
 use log::{debug, warn};
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
-use tokio::time::delay_until as tokio_delay_until;
+use tokio::time::sleep_until as tokio_sleep_until;
 
 // TODO(zjn): make configurable. Short for local testing; long for real deployments
 const RETRY_DELAY: Duration = Duration::from_millis(100);
@@ -42,6 +42,8 @@ async fn wait_for_start_time_set_helper<C: Store>(
         error_policy(delay, attempts),
     )
     .await
+    .map(|(result, _)| result)
+    .map_err(|(err, _)| err)
 }
 
 pub async fn wait_for_start_time_set<C: Store>(config: &C) -> Result<DateTime<FixedOffset>, Error> {
@@ -57,7 +59,7 @@ pub async fn delay_until(dt: DateTime<FixedOffset>) {
     debug!("Delaying for {}", diff);
     let diff = diff.to_std().expect("Already checked >0.");
     let start_time_local = Instant::now() + diff;
-    tokio_delay_until(start_time_local.into()).await;
+    tokio_sleep_until(start_time_local.into()).await;
 }
 
 async fn has_quorum<C: Store>(config: &C, experiment: &Experiment) -> Result<(), Error> {
@@ -90,6 +92,8 @@ async fn wait_for_quorum_helper<C: Store + Sync + Send>(
         error_policy(delay, attempts),
     )
     .await
+    .map_err(|(err, _)| err)?;
+    Ok(())
 }
 
 pub async fn wait_for_quorum<C: Store + Sync + Send>(

@@ -66,7 +66,7 @@ mod tests {
     proptest! {
         #[test]
         fn test_error_policy_many_attempts_success(attempts in 1usize..10usize) {
-            let mut runtime = Runtime::new().unwrap();
+            let runtime = Runtime::new().unwrap();
             runtime.block_on(async {
                 let results = repeat(err(()))
                     .take(attempts - 1)
@@ -79,7 +79,7 @@ mod tests {
 
         #[test]
         fn test_error_policy_many_attempts_failure(attempts in 1usize..10usize) {
-            let mut runtime = Runtime::new().unwrap();
+            let runtime = Runtime::new().unwrap();
             runtime.block_on(async {
                 let results = repeat(err(()))
                     .take(attempts)

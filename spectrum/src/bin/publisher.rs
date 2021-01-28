@@ -49,7 +49,7 @@ impl publisher::Remote for CliRemote {
         let start = self.start.lock().await;
         let elapsed = start.expect("Can't call done() before start()!").elapsed();
         eprintln!("Elapsed time: {}ms", elapsed.as_millis());
-        self.done.notify();
+        self.done.notify_one();
     }
 }
 

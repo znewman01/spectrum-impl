@@ -13,15 +13,15 @@ spectrum_primitives = { path = "../spectrum_primitives" }
 derivative = "2.0.2"  # https://github.com/rust-lang/rust/issues/26925
 rug = { version = "1.10", features = [ "serde" ] }
 serde = { version = "1.0", features = ["derive", "rc"] }
-tokio = { version = "0.2.22", features = [ "sync" ] }
-tonic = { version = "0.3", optional = true }
-prost = { version = "0.6", optional = true }
+tokio = { version = "1.1", features = [ "sync" ] }
+tonic = { version = "0.4", optional = true }
+prost = { version = "0.7", optional = true }
 proptest = { version = "0.9.6", optional = true }
 
 [dev-dependencies]
 proptest = "0.9.6"
-tokio = { version = "0.2.22", features = [ "macros", "sync", "rt-core" ] }
+tokio = { version = "1.1", features = [ "macros", "sync", "rt" ] }
 spectrum_primitives = { path = "../spectrum_primitives", features = [ "testing" ] }
 
 [build-dependencies]
-tonic-build = "0.2.0"
+tonic-build = "0.4.0"

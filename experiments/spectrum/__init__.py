@@ -91,7 +91,7 @@ class Setting(system.Setting):
                 "    > /dev/null",
                 check=True,
             )
-            await self.publisher.ssh.run("sudo systemctl start etcd", check=True)
+            await self.publisher.ssh.run("sudo systemctl restart etcd", check=True)
             # Make sure etcd is healthy
             async for attempt in AsyncRetrying(
                 wait=wait_fixed(2), stop=stop_after_attempt(20)

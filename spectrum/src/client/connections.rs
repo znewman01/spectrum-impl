@@ -11,7 +11,7 @@ use config::store::Store;
 
 use log::{debug, trace};
 use rand::{seq::IteratorRandom, thread_rng};
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -56,7 +56,7 @@ async fn connect(
             return Ok(client?);
         }
         debug!("Failed to connect to worker; sleeping: {:?}", client);
-        delay_for(Duration::from_millis(50)).await;
+        sleep(Duration::from_millis(50)).await;
         client = WorkerClient::connect(format!("http://{}", addr)).await;
     }
     Err(Box::new(Error::from(format!(
