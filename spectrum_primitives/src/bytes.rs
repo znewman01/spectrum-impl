@@ -109,32 +109,31 @@ impl ops::BitXor<Bytes> for Bytes {
     type Output = Bytes;
 
     fn bitxor(self, rhs: Bytes) -> Bytes {
-        assert_eq!(self.len(), rhs.len());
-        self.0
-            .iter()
-            .zip(rhs.0.iter())
-            .map(|(x, y)| x ^ y)
-            .collect()
+        self ^ &rhs
     }
 }
 
 impl ops::BitXorAssign<&Bytes> for Bytes {
     fn bitxor_assign(&mut self, rhs: &Bytes) {
         assert_eq!(self.len(), rhs.len());
-        self.0
-            .iter_mut()
-            .zip(rhs.0.iter())
-            .for_each(|(x, y)| *x ^= y);
+        if self.len() > 100000 {
+            let chunks_l = self.0.as_mut_slice().chunks_mut(128);
+            let chunks_r = rhs.0.as_slice().chunks(128);
+            chunks_l.zip(chunks_r).for_each(|(chunk_l, chunk_r)| {
+                chunk_l.iter_mut().zip(chunk_r).for_each(|(l, r)| *l ^= r);
+            });
+        } else {
+            self.0
+                .iter_mut()
+                .zip(rhs.0.iter())
+                .for_each(|(x, y)| *x ^= y);
+        }
     }
 }
 
 impl ops::BitXorAssign<Bytes> for Bytes {
     fn bitxor_assign(&mut self, rhs: Bytes) {
-        assert_eq!(self.len(), rhs.len());
-        self.0
-            .iter_mut()
-            .zip(rhs.0.iter())
-            .for_each(|(x, y)| *x ^= y);
+        *self ^= &rhs;
     }
 }
 
@@ -166,6 +165,10 @@ pub mod tests {
 
     const SIZE_RANGE: Range<usize> = 0..4097;
 
+    fn is_all_zero(bytes: Bytes) -> bool {
+        bytes.0.iter().all(|x| *x == 0)
+    }
+
     proptest! {
 
         #[test]
@@ -184,20 +187,29 @@ pub mod tests {
                 // if we OR, every bit that ever gets set in rand will stay set in accum
                 accum |= &rand
             }
-            assert!(accum.0.iter().all(|x| *x != 0 ),
+            prop_assert!(accum.0.iter().all(|x| *x != 0 ),
                     "Every byte should be non-zero sometimes.");
         }
 
         #[test]
         fn test_bytes_empty_correct_size(size in SIZE_RANGE) {
             let bytes = Bytes::empty(size);
-            assert_eq!(bytes.len(), size);
+            prop_assert_eq!(bytes.len(), size);
         }
+
         #[test]
         fn test_bytes_empty_zero(size in SIZE_RANGE) {
             let value = Bytes::empty(size);
-            assert!(value.0.iter().all(|x| *x == 0 ),
+            prop_assert!(is_all_zero(value),
                     "Every byte should be zero always.");
+        }
+
+        #[test]
+        fn test_bytes_xor_zero(size in SIZE_RANGE) {
+            let mut value = Bytes::random(size, &mut thread_rng());
+            value ^= value.clone();
+            prop_assert!(is_all_zero(value),
+                    "XORing with self should give 0.");
         }
     }
 }
