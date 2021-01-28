@@ -1,9 +1,12 @@
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
+use rug::Integer;
 use spectrum_primitives::{
     bytes::Bytes,
     dpf::{BasicDPF, DPF},
+    field::Field,
     prg::{aes::AESPRG, PRG},
+    vdpf::{FieldVDPF, VDPF},
 };
 use std::thread::sleep;
 use std::time::Duration;
@@ -77,6 +80,25 @@ fn criterion_benchmark(c: &mut Criterion) {
             )
         });
         // TODO: try with chunking
+    }
+    group.finish();
+
+    let mut group = c.benchmark_group("VDPF.gen_audit() (AES)");
+    for size in SIZES.iter() {
+        group.throughput(Throughput::Bytes(*size as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+            let num_points = 1;
+            let prime: Integer = Integer::from(800_000_000).next_prime_ref().into();
+            let field = Field::new(prime.clone());
+            let dpf = BasicDPF::new(AESPRG::new(16, size), num_points);
+            let vdpf = FieldVDPF::new(dpf, field.clone());
+            let dpf_keys = vdpf.gen_empty();
+            let auth_keys = vec![field.zero(); num_points];
+            let proof_shares = vdpf.gen_proofs(&field.zero(), 0, &dpf_keys);
+            let dpf_key = &dpf_keys[0];
+            let proof_share = &proof_shares[0];
+            b.iter(|| vdpf.gen_audit(&auth_keys, dpf_key, proof_share))
+        });
     }
 
     // TODO: more benchmarks
