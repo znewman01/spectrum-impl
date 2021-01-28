@@ -222,7 +222,12 @@ pub mod two_key {
 
             // TODO: switch to blake3 in parallel when input is ~1 Mbit or greater
             let mut hasher = blake3::Hasher::new();
-            hasher.update(dpf_key.encoded_msg.as_ref());
+            let input = dpf_key.encoded_msg.as_ref();
+            if dpf_key.encoded_msg.len() >= 125000 {
+                hasher.update_with_join::<blake3::join::RayonJoin>(input);
+            } else {
+                hasher.update(input);
+            }
             let data: [u8; 32] = hasher.finalize().into();
 
             FieldToken {

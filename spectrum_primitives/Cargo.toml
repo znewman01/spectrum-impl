@@ -9,7 +9,7 @@ testing = ["proptest"]
 proto = ["tonic", "prost"]
 
 [dependencies]
-blake3 = "0.3.0"
+blake3 = { version = "0.3.7", features = [ "rayon", "std"] }
 jubjub = "0.4"
 derivative = "2.0.2"  # https://github.com/rust-lang/rust/issues/26925
 itertools = "0.9.0"
