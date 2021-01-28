@@ -46,11 +46,10 @@ main() {
     done
 
     # 2. Plot
-    python data/plot_benchmark_diff.py \
+    python data/plot.py \
         --results-dir "${RESULTS_DIR}" \
-        --new "${COMMIT1}" \
-        --baseline "${COMMIT2}" \
-        # --output "${RESULTS_DIR}/${COMMIT1}-${COMMIT2}.png"
+        --benchmark "${COMMIT1}:${COMMIT2}" \
+        --show
     exit 0
 }
 
