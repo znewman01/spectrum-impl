@@ -6,6 +6,7 @@ import json
 import sys
 import re
 import statistics
+import subprocess
 
 from typing import List, Optional, Tuple
 from pathlib import Path
@@ -23,7 +24,7 @@ def load_df(path: Path) -> pd.DataFrame:
 _OPENSSL_SPEED_RE = re.compile(r"([0-9]+\.[0-9]+)k")
 
 
-def calculate_aes_rate(path: Path):
+def calculate_aes_rate(path: Path) -> Optional[int]:
     """Rate (in bytes per second) of OpenSSL based on the output of `openssl speed`.
 
     Takes a path to file with the stderr of the command.
@@ -31,6 +32,9 @@ def calculate_aes_rate(path: Path):
     Depends on OpenSSL version.
     """
     speed_file = path / "openssl-speed.txt"
+
+    if not speed_file.exists():
+        return None
     lines = filter(None, speed_file.read_text().split("\n"))
     *_, last_line = lines
     matches = _OPENSSL_SPEED_RE.finditer(last_line)
@@ -72,6 +76,7 @@ def process_spectrum(df: pd.DataFrame) -> pd.DataFrame:
             "queries",
         ],
         1,
+        errors="ignore",
     )
     return df
 
@@ -132,6 +137,18 @@ def plot_manychannel(results_dir: Path, benchmark: Optional[List[str]], show: bo
         plt.show()
 
 
+def _process_spectrum_onechannel(parent_dir: Path):
+    fname = parent_dir / "spectrum-onechannel.json"
+    df = process_spectrum(load_df(fname))
+    df = df.drop(
+        ["channels", "worker_machines_per_group", "protocol"], 1, errors="ignore"
+    )
+    df = make_means(df, ["message_size"])
+    if df.empty:
+        raise ValueError(f"{fname} parsed as empty dataframe! Something is wrong.")
+    return df
+
+
 def plot_onechannel(
     results_dir: Path,
     benchmark: Optional[List[str]],
@@ -139,39 +156,27 @@ def plot_onechannel(
     show: bool = False,
 ):
     if benchmark:
-        old = process_spectrum(
-            load_df(results_dir / benchmark[0] / "spectrum-onechannel.json")
-        )
-        old = old.drop(["channels", "worker_machines_per_group", "protocol"], 1)
-        old = make_means(old, ["message_size"])
-
-        new = process_spectrum(
-            load_df(results_dir / benchmark[1] / "spectrum-onechannel.json")
-        )
-        new = new.drop(["channels", "worker_machines_per_group", "protocol"], 1)
-        new = make_means(new, ["message_size"])
-
+        old = _process_spectrum_onechannel(results_dir / benchmark[0])
+        new = _process_spectrum_onechannel(results_dir / benchmark[1])
         dfs = [("old", old), ("new", new)]
     else:
         express = process_express(load_df(results_dir / "express-onechannel.json"))
         express = express.drop("channels", 1)
         express = make_means(express, ["message_size"])
 
-        spectrum = process_spectrum(load_df(results_dir / "spectrum-onechannel.json"))
-        spectrum = spectrum.drop(
-            ["channels", "worker_machines_per_group", "protocol"], 1
-        )
-        spectrum = make_means(spectrum, ["message_size"])
+        spectrum = _process_spectrum_onechannel(results_dir)
 
         dfs = [("express", express), ("spectrum", spectrum)]
 
     big = merge_many(dfs, on=["message_size"])
     subplot = big.plot(x="message_size", title="one channel", marker=".")
-    x = np.linspace(min(big.message_size), max(big.message_size))
-    # TODO: make label show up
-    subplot.plot(x, aes_rate / x, color="black", ls="--", label="Max AES Rate")
-    # Our bandwidth is >> the maximum AES rate so don't bother plotting it
-    # Approx 10 Gb/s vs. 5 Gb/s
+
+    if aes_rate:
+        x = np.linspace(min(big.message_size), max(big.message_size))
+        # TODO: make label show up
+        subplot.plot(x, aes_rate / x, color="black", ls="--", label="Max AES Rate")
+        # Our bandwidth is >> the maximum AES rate so don't bother plotting it
+        # Approx 10 Gb/s vs. 5 Gb/s
 
     if show:
         plt.show()
@@ -252,10 +257,18 @@ def main(args):
     args = parser.parse_args(args[1:])
 
     results_dir = Path(args.results_dir)
-    benchmark = args.benchmark.split(":") if args.benchmark else None
+
+    benchmark = None
+    if args.benchmark:
+        benchmark = list(
+            subprocess.check_output(["git", "rev-parse", refname]).decode("ascii")[:6]
+            for refname in args.benchmark.split(":")
+        )
+        print(f"Resolved SHAs for benchmark (old, new): {benchmark}")
 
     aes_rate = calculate_aes_rate(results_dir)
-    print(f"AES rate: {aes_rate}")
+    if aes_rate is not None:
+        print(f"AES rate: {aes_rate}")
 
     plot_onechannel(results_dir, benchmark, aes_rate=aes_rate, show=args.show)
     plot_manychannel(results_dir, benchmark, show=args.show)
