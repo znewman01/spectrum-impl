@@ -9,6 +9,7 @@ use rug::{integer::Order, Integer};
 use serde::{Deserialize, Serialize};
 
 use std::convert::TryFrom;
+use std::fmt;
 use std::hash::Hash;
 use std::iter::repeat;
 
@@ -99,10 +100,21 @@ pub mod aes {
     use super::*;
 
     /// PRG uses AES to expand a seed to desired length
-    #[derive(Default, Clone, PartialEq, Debug, Copy, Serialize, Deserialize)]
+    #[derive(Clone, PartialEq, Copy, Serialize, Deserialize)]
     pub struct AESPRG {
         seed_size: usize,
         eval_size: usize,
+        #[serde(skip, default = "Cipher::aes_128_ctr")]
+        cipher: Cipher,
+    }
+
+    impl fmt::Debug for AESPRG {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("AESPRG")
+                .field("seed_size", &self.seed_size)
+                .field("eval_size", &self.eval_size)
+                .finish()
+        }
     }
 
     /// seed for AES-based PRG
@@ -148,6 +160,7 @@ pub mod aes {
             AESPRG {
                 seed_size,
                 eval_size,
+                cipher: Cipher::aes_128_ctr(),
             }
         }
     }
@@ -177,9 +190,8 @@ pub mod aes {
             let data = vec![0; self.eval_size];
 
             // crt mode is fastest and ok for PRG
-            let cipher = Cipher::aes_128_ctr();
             let mut ciphertext = encrypt(
-                cipher,
+                self.cipher,
                 seed.bytes.as_ref(), // use seed bytes as the AES "key"
                 Some(&iv),
                 &data,
