@@ -2,7 +2,7 @@
 Description=Spectrum leader
 
 [Service]
-ExecStart=/bin/bash -c "/home/ubuntu/spectrum/leader --local-port 6000 --public-address $(hostname):5000 --log-level trace"
+ExecStart=/bin/bash -c "/home/ubuntu/spectrum/leader --local-port 6000 --public-address $(hostname):6000 --log-level trace"
 Type=simple
 Restart=no
 EnvironmentFile=/etc/spectrum.conf

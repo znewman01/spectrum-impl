@@ -2,7 +2,7 @@
 Description=Spectrum publisher
 
 [Service]
-ExecStart=/bin/bash -c "/home/ubuntu/spectrum/publisher --local-port 6001 --public-address $(hostname):5001 --log-level trace"
+ExecStart=/bin/bash -c "/home/ubuntu/spectrum/publisher --local-port 6001 --public-address $(hostname):6001 --log-level trace"
 Type=simple
 Restart=no
 EnvironmentFile=/etc/spectrum.conf
