@@ -30,7 +30,12 @@ use log::{error, info, trace, warn};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::sync::Arc;
-use tokio::{spawn, sync::watch, sync::RwLock, task::spawn_blocking, time::sleep};
+use tokio::{
+    spawn,
+    sync::{watch, Mutex, RwLock},
+    task::spawn_blocking,
+    time::sleep,
+};
 use tonic::{Request, Response, Status};
 
 mod audit_registry;
@@ -45,7 +50,10 @@ type Error = crate::config::store::Error;
 type BoxedError = Box<dyn std::error::Error + Sync + Send>;
 
 struct WorkerState<P: Protocol> {
-    audit_registry: AuditRegistry<P::AuditShare, P::WriteToken>,
+    // TODO: less heavyweight than a full mutex...
+    // Maybe follow the actor model?
+    // https://book.async.rs/tutorial/connecting_readers_and_writers.html
+    audit_registry: Mutex<AuditRegistry<P::AuditShare, P::WriteToken>>,
     accumulator: Accumulator<Vec<P::Accumulator>>,
     experiment: Experiment,
     client_registry: ClientRegistry,
@@ -59,7 +67,10 @@ where
 {
     fn from_experiment(experiment: Experiment, protocol: P) -> Self {
         WorkerState {
-            audit_registry: AuditRegistry::new(experiment.clients(), experiment.groups()),
+            audit_registry: Mutex::new(AuditRegistry::new(
+                experiment.clients(),
+                experiment.groups(),
+            )),
             accumulator: Accumulator::new(protocol.new_accumulator()),
             experiment,
             client_registry: ClientRegistry::new(),
@@ -85,7 +96,13 @@ where
 {
     async fn upload(&self, client: &ClientInfo, write_token: P::WriteToken) -> Vec<P::AuditShare> {
         trace!("upload() task for client_info: {:?}", client);
-        self.audit_registry.init(&client, write_token.clone()).await;
+        {
+            self.audit_registry
+                .lock()
+                .await
+                .init(&client, write_token.clone())
+                .await;
+        }
         trace!("init'd for client_info: {:?}", client);
 
         let protocol = self.protocol.clone();
@@ -107,7 +124,7 @@ where
         share: P::AuditShare,
     ) -> Result<VerifyStatus<P>, Error> {
         trace!("verify() task for client_info: {:?}", client);
-        let check_count = self.audit_registry.add(client, share).await;
+        let check_count = self.audit_registry.lock().await.add(client, share).await;
         trace!(
             "{}/{} shares received for {:?}",
             check_count,
@@ -119,8 +136,9 @@ where
         }
         trace!("Running verification.");
 
-        let (token, shares) = self.audit_registry.drain(client).await;
+        let state = self.audit_registry.lock().await.drain(client).await;
         let protocol = self.protocol.clone();
+        let shares = state.audit_shares;
         let verify = spawn_blocking(move || protocol.check_audit(shares))
             .await
             .unwrap();
@@ -131,6 +149,7 @@ where
         }
 
         let protocol = self.protocol.clone();
+        let token = state.write_token;
         let accumulator = spawn_blocking(move || protocol.to_accumulator(token))
             .await
             .expect("Accepting write token should never fail.");
