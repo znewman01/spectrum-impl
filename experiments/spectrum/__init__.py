@@ -292,7 +292,7 @@ class Experiment(system.Experiment):
             data["protocol"] = Protocol.from_dict(protocol)
         return cls(**data)
 
-    async def _fetch_timing(self, worker: Machine) -> Result:
+    async def _fetch_timing(self, worker: Machine) -> Optional[Result]:
         """Timing for one worker.
 
         We look across all worker processes and get the best intermediate result from each.
@@ -330,7 +330,7 @@ class Experiment(system.Experiment):
             else:
                 min_time = min(min_time, best_result.time)
         if min_time is None:
-            raise RuntimeError("No successful runs.")
+            return None
         result = Result(
             experiment=self,
             queries=int(total_qps * int(min_time) / 1000),
@@ -354,6 +354,9 @@ class Experiment(system.Experiment):
             pass
 
         results = await asyncio.gather(*map(self._fetch_timing, workers))
+        results = list(filter(None, results))
+        if not results:
+            raise RuntimeError("No successful runs.")
         # We now have the total QPS per machine; let's aggregate.
         # Divide by self.groups so we don't double-count.
         total_qps = sum(map(attrgetter("qps"), results)) / self.groups
