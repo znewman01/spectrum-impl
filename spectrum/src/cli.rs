@@ -29,7 +29,7 @@ impl From<Args> for Experiment {
 #[derive(Clap)]
 pub struct LogArgs {
     /// Log level.
-    #[clap(short = "v", long, default_value = "debug")]
+    #[clap(short = "v", long, default_value = "debug", env = "SPECTRUM_LOG_LEVEL")]
     log_level: LevelFilter,
 }
 
