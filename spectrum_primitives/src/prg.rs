@@ -37,6 +37,7 @@ pub trait SeedHomomorphicPRG: PRG {
 mod tests {
     extern crate rand;
     use super::*;
+    use proptest::prelude::TestCaseError;
     use std::collections::HashSet;
     use std::fmt::Debug;
     use std::ops;
@@ -67,13 +68,14 @@ mod tests {
         );
     }
 
-    pub fn run_test_prg_seed_random<P>(prg: P)
+    pub fn run_test_prg_seed_random<P>(prg: P) -> Result<(), TestCaseError>
     where
         P: PRG,
         P::Seed: Eq + Debug,
         P::Output: Eq + Debug,
     {
-        assert_ne!(prg.new_seed(), prg.new_seed());
+        prop_assert_ne!(prg.new_seed(), prg.new_seed());
+        Ok(())
     }
 
     pub fn run_test_prg_eval_deterministic<P>(prg: P, seed: P::Seed)
@@ -85,14 +87,15 @@ mod tests {
         assert_eq!(prg.eval(&seed), prg.eval(&seed));
     }
 
-    pub fn run_test_prg_eval_random<P>(prg: P, seeds: &[P::Seed])
+    pub fn run_test_prg_eval_random<P>(prg: P, seeds: &[P::Seed]) -> Result<(), TestCaseError>
     where
         P: PRG,
         P::Seed: Eq + Debug,
         P::Output: Eq + Debug + Hash,
     {
         let results: HashSet<_> = seeds.iter().map(|s| prg.eval(s)).collect();
-        assert_eq!(results.len(), seeds.len());
+        prop_assert_eq!(results.len(), seeds.len());
+        Ok(())
     }
 }
 
@@ -248,7 +251,6 @@ pub mod aes {
         use super::super::tests as prg_tests;
         use super::*;
 
-        // aes prg testing
         proptest! {
             #[test]
             fn test_aes_prg_seed_random(prg in any::<AESPRG>()) {
@@ -268,7 +270,7 @@ pub mod aes {
                 prg in any::<AESPRG>(),
                 seeds in prop::collection::vec(any::<AESSeed>(), 10),
             ) {
-                prg_tests::run_test_prg_eval_random(prg, &seeds);
+                prg_tests::run_test_prg_eval_random(prg, &seeds)?;
             }
         }
     }
@@ -627,7 +629,10 @@ pub mod group {
         }
 
         /// tests for seed-homomorphism with null seeds
-        fn run_test_prg_eval_homomorphism_null_seed<P>(prg: P, seeds: Vec<P::Seed>)
+        fn run_test_prg_eval_homomorphism_null_seed<P>(
+            prg: P,
+            seeds: Vec<P::Seed>,
+        ) -> Result<(), TestCaseError>
         where
             P: SeedHomomorphicPRG,
             P::Seed: Eq + Clone + Debug + ops::Sub<Output = P::Seed>,
@@ -639,22 +644,24 @@ pub mod group {
             let expected = prg.combine_outputs(outputs.clone());
             outputs.push(prg.eval(&prg.null_seed()));
 
-            assert_eq!(prg.combine_outputs(outputs), expected);
+            prop_assert_eq!(prg.combine_outputs(outputs), expected);
 
             // null seed produces null output
             let seed = seeds[0].clone();
             let neg = prg.null_seed() - seeds[0].clone();
-            assert_eq!(
+            prop_assert_eq!(
                 prg.combine_outputs(vec![prg.eval(&seed), prg.eval(&neg)]),
                 prg.null_output()
             );
+
+            Ok(())
         }
 
         // group prg testing
         proptest! {
             #[test]
             fn test_group_prg_seed_random(prg: GroupPRG) {
-                prg_tests::run_test_prg_seed_random(prg);
+                prg_tests::run_test_prg_seed_random(prg)?;
             }
 
             #[test]
@@ -668,7 +675,7 @@ pub mod group {
              {
                 let unique: HashSet<_> = seeds.iter().cloned().collect();
                 prop_assume!(unique.len() == seeds.len(), "eval must be different for different seeds");
-                prg_tests::run_test_prg_eval_random(prg, &seeds);
+                prg_tests::run_test_prg_eval_random(prg, &seeds)?;
             }
         }
 
@@ -685,7 +692,7 @@ pub mod group {
             fn test_group_prg_eval_homomorphism_null(
                 prg: GroupPRG, seeds in seeds(),
             ) {
-                run_test_prg_eval_homomorphism_null_seed(prg, seeds);
+                run_test_prg_eval_homomorphism_null_seed(prg, seeds)?;
             }
 
             // make sure that a null_seed doesn't change the output
@@ -693,7 +700,7 @@ pub mod group {
             fn test_null_seed(
                 prg: GroupPRG,
             ) {
-                assert_eq!(prg.eval(&prg.null_seed()), prg.null_output());
+                prop_assert_eq!(prg.eval(&prg.null_seed()), prg.null_output());
             }
 
             #[test]
