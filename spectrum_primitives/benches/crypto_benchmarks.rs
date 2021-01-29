@@ -8,18 +8,11 @@ use spectrum_primitives::{
     prg::{aes::AESPRG, PRG},
     vdpf::{FieldVDPF, VDPF},
 };
-use std::thread::sleep;
-use std::time::Duration;
 
 fn criterion_benchmark(c: &mut Criterion) {
     static KB: usize = 1000;
     static MB: usize = 1000000;
     static SIZES: [usize; 6] = [KB, 10 * KB, 100 * KB, 250 * KB, 500 * KB, 1 * MB];
-
-    // Bytes per second of AES on Zack's laptop via `openssl speed`.
-    // TODO: run inline while we're collecting benchmarks
-    static AES_RATE: u64 = 3500000000;
-    static NS_PER_S: u64 = 1000000000; // microseconds per second
 
     let mut group = c.benchmark_group("AESPRG");
     for size in SIZES.iter() {
@@ -29,15 +22,6 @@ fn criterion_benchmark(c: &mut Criterion) {
             let seed = prg.new_seed();
             b.iter_with_large_drop(|| prg.eval(&seed))
         });
-        if *size >= 100 * KB {
-            // We know, roughly, the max rate of AES on our system. We want to
-            // have that on the plots to compare against, but there's no easy
-            // way to just add a line. Instead, we fake it.
-            group.bench_with_input(BenchmarkId::new("Max AES Rate", size), size, |b, &size| {
-                let delay = Duration::from_nanos(NS_PER_S * (size as u64) / AES_RATE / 2);
-                b.iter_with_large_drop(|| sleep(delay))
-            });
-        }
     }
     group.finish();
 
