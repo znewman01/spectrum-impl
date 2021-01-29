@@ -1,4 +1,7 @@
+use std::iter::repeat_with;
+
 use clap::{crate_authors, crate_version, Clap};
+use futures::stream::{FuturesUnordered, StreamExt};
 use spectrum_impl::{cli, client, config, experiment, services::ClientInfo};
 
 /// Run a Spectrum viewing client.
@@ -19,6 +22,9 @@ struct Args {
     logs: cli::LogArgs,
     #[clap(flatten)]
     client: ViewerArgs,
+    /// Run this many threads in parallel.
+    #[clap(long, env = "SPECTRUM_VIEWER_THREADS", default_value = "1")]
+    threads: u16,
 }
 
 #[derive(Clap)]
@@ -42,11 +48,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env().await?;
     let experiment = experiment::read_from_store(&config).await?;
     let info = ClientInfo::from(args.client);
-    client::viewer::run(
-        config,
-        experiment.get_protocol().clone(),
-        info,
-        futures::future::ready(()),
-    )
+
+    repeat_with(|| {
+        let protocol = experiment.get_protocol().clone();
+        let info = info.clone();
+        let config = config.clone();
+        tokio::spawn(async move {
+            client::viewer::run(config, protocol, info, futures::future::ready(())).await
+        })
+    })
+    .take(args.threads.into())
+    .collect::<FuturesUnordered<_>>()
+    .map(|r: Result<Result<(), _>, _>| match r {
+        Ok(Ok(())) => Ok::<(), Box<dyn std::error::Error + Sync + Send>>(()),
+        Ok(Err(err)) => Err(err),
+        Err(err) => Err(err.into()),
+    })
+    .collect::<Vec<Result<(), _>>>()
     .await
+    .into_iter()
+    .collect::<Result<Vec<()>, _>>()
+    .map(|_| ())
 }
