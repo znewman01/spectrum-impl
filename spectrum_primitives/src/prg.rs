@@ -254,7 +254,7 @@ pub mod aes {
         proptest! {
             #[test]
             fn test_aes_prg_seed_random(prg in any::<AESPRG>()) {
-               prg_tests::run_test_prg_seed_random(prg);
+               prg_tests::run_test_prg_seed_random(prg)?;
             }
 
             #[test]
