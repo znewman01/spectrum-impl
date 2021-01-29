@@ -238,7 +238,6 @@ where
                     handles.push(
                         Command::new(bin_dir.join("broadcaster"))
                             .args(&["--log-level", "info"])
-                            .args(&["--index", &(info.idx + 1).to_string()])
                             .args(&["--key-file", &key_file.to_string_lossy()])
                             .args(&["--message-file", &msg_file.to_string_lossy()])
                             .env(&etcd_env.0, &etcd_env.1)
@@ -249,7 +248,6 @@ where
                     handles.push(
                         Command::new(bin_dir.join("viewer"))
                             .args(&["--log-level", "warn"])
-                            .args(&["--index", &(info.idx + 1).to_string()])
                             .env(&etcd_env.0, &etcd_env.1)
                             .spawn()?,
                     );

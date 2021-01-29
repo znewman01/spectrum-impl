@@ -1,5 +1,6 @@
 use clap::{crate_authors, crate_version, ArgGroup, Clap};
 use futures::prelude::*;
+use rand::{thread_rng, Rng};
 use spectrum_impl::{
     cli, client, config, experiment, protocols::wrapper::ChannelKeyWrapper, services::ClientInfo,
 };
@@ -30,10 +31,6 @@ struct Args {
 #[derive(Clap)]
 #[clap(group = ArgGroup::with_name("message").required(true))]
 struct BroadcasterArgs {
-    /// The index of this broadcaster among all clients.
-    #[clap(long = "index", env = "SPECTRUM_BROADCASTER_INDEX")]
-    idx: u128,
-
     /// The message to broadcast
     #[clap(long = "message", group = "message")]
     msg: Option<String>,
@@ -73,7 +70,7 @@ impl TryFrom<BroadcasterArgs> for ClientInfo {
             .map_err(|e| format!("Could not read key file [{}]: {}", key_file, e.to_string()))?;
         // -1 because the CLI needs non-zero or it thinks we didn't supply it
         // from environment variable
-        Ok(Self::new_broadcaster(args.idx - 1, msg, key))
+        Ok(Self::new_broadcaster(thread_rng().gen(), msg, key))
     }
 }
 
