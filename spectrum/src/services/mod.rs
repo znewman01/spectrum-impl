@@ -60,7 +60,7 @@ impl PublisherInfo {
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct ClientInfo {
-    pub idx: u16,
+    pub idx: u128,
     pub broadcast: Option<(Bytes, ChannelKeyWrapper)>,
 }
 
@@ -79,14 +79,14 @@ impl PartialEq for ClientInfo {
 impl Eq for ClientInfo {}
 
 impl ClientInfo {
-    pub fn new(idx: u16) -> Self {
+    pub fn new(idx: u128) -> Self {
         ClientInfo {
             idx,
             broadcast: None,
         }
     }
 
-    pub fn new_broadcaster(idx: u16, message: Bytes, key: ChannelKeyWrapper) -> Self {
+    pub fn new_broadcaster(idx: u128, message: Bytes, key: ChannelKeyWrapper) -> Self {
         ClientInfo {
             idx,
             broadcast: Some((message, key)),

@@ -90,7 +90,7 @@ pub struct ExperimentArgs {
     /// This includes both viewers and broadcasters (one per channel), so it
     /// must be at least as great as the number of channels.
     #[clap(long, default_value = "10")]
-    clients: u16,
+    clients: u128,
 
     /// Number of workers per group.
     #[clap(long, default_value = "2")]

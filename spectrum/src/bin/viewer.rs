@@ -31,7 +31,7 @@ struct Args {
 struct ViewerArgs {
     /// The index of this viewer among all clients.
     #[clap(long = "index", env = "SPECTRUM_VIEWER_INDEX")]
-    idx: u16,
+    idx: u128,
 }
 
 impl From<ViewerArgs> for ClientInfo {

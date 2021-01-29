@@ -16,11 +16,11 @@ pub struct Experiment {
     // TODO(zjn): when nonzero types hit stable, replace u16 with NonZeroU16.
     // https://github.com/rust-lang/rfcs/blob/master/text/2307-concrete-nonzero-types.md
     group_size: u16,
-    clients: u16, // TODO(zjn): make u32
+    clients: u128,
 }
 
 impl Experiment {
-    pub fn new(protocol: ProtocolWrapper, group_size: u16, clients: u16) -> Experiment {
+    pub fn new(protocol: ProtocolWrapper, group_size: u16, clients: u128) -> Experiment {
         assert!(group_size >= 1, "Expected at least 1 worker per group.");
         assert!(clients >= 1, "Expected at least 1 client.");
         assert!(
@@ -42,7 +42,7 @@ impl Experiment {
         self.group_size
     }
 
-    pub fn clients(&self) -> u16 {
+    pub fn clients(&self) -> u128 {
         self.clients
     }
 
@@ -68,7 +68,7 @@ impl Experiment {
     // TODO(zjn): combine with iter_services
     pub fn iter_clients(&self) -> impl Iterator<Item = Service> + '_ {
         let msg_size = self.msg_size();
-        let viewers = (0..(self.channels() as u16))
+        let viewers = (0..(self.channels() as u128))
             .zip(self.get_keys().into_iter())
             .map(move |(idx, key)| {
                 let msg = (1usize..msg_size)
@@ -79,7 +79,7 @@ impl Experiment {
                 ClientInfo::new_broadcaster(idx, msg, key)
             })
             .map(Service::from);
-        let broadcasters = ((self.channels() as u16)..self.clients())
+        let broadcasters = ((self.channels() as u128)..self.clients())
             .map(ClientInfo::new)
             .map(Service::from);
         viewers.chain(broadcasters)
@@ -156,7 +156,7 @@ pub mod tests {
             let protocols = any::<insecure::InsecureProtocol>().prop_map(ProtocolWrapper::from);
             (protocols, group_size)
                 .prop_flat_map(|(protocol, group_size)| {
-                    let clients: Range<u16> = (protocol.num_channels() as u16)..20;
+                    let clients: Range<u128> = (protocol.num_channels() as u128)..20;
                     clients.prop_map(move |clients| {
                         Experiment::new(protocol.clone(), group_size, clients)
                     })

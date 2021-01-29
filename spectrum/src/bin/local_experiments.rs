@@ -17,7 +17,7 @@ use std::time::Duration;
 struct InputRecord {
     groups: usize,
     group_size: u16,
-    clients: u16,
+    clients: u128,
     channels: usize,
     security_bits: Option<u32>,
     msg_size: usize,
@@ -27,7 +27,7 @@ impl InputRecord {
     fn new(
         groups: usize,
         group_size: u16,
-        clients: u16,
+        clients: u128,
         channels: usize,
         security_bits: Option<u32>,
         msg_size: usize,
@@ -55,7 +55,7 @@ impl InputRecord {
     fn default_input_records() -> impl Iterator<Item = InputRecord> {
         let groups = once(2usize);
         let group_sizes = once(2u16);
-        let clients = (10u16..=50).step_by(10);
+        let clients = (10u128..=50).step_by(10);
         let channels = once(1usize);
         let security_settings = vec![None, Some(40)].into_iter();
         let msg_sizes = once(2 << 19); // 1 MB
@@ -95,7 +95,7 @@ impl From<InputRecord> for Experiment {
 struct OutputRecord {
     groups: usize,
     group_size: u16,
-    clients: u16,
+    clients: u128,
     channels: usize,
     security_bits: Option<u32>,
     msg_size: usize,
