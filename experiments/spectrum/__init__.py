@@ -43,7 +43,7 @@ BuildProfile = NewType("BuildProfile", str)
 # Need to update install.sh to change this
 MAX_WORKERS_PER_MACHINE = 10
 
-EXPERIMENT_TIMEOUT = 60.0
+EXPERIMENT_TIMEOUT = 120.0
 
 
 @dataclass
@@ -343,7 +343,7 @@ class Experiment(system.Experiment):
         self, publisher: Machine, workers: List[Machine], etcd_env: Dict[str, Any]
     ) -> Result:
         await _install_spectrum_config(publisher, etcd_env)
-        timeout = EXPERIMENT_TIMEOUT - 2  # give some cleanup time
+        timeout = EXPERIMENT_TIMEOUT - 5  # give some cleanup time
         try:
             await publisher.ssh.run(
                 "sudo systemctl start spectrum-publisher --wait",

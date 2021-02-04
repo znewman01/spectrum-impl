@@ -23,10 +23,6 @@ impl Experiment {
     pub fn new(protocol: ProtocolWrapper, group_size: u16, clients: u128) -> Experiment {
         assert!(group_size >= 1, "Expected at least 1 worker per group.");
         assert!(clients >= 1, "Expected at least 1 client.");
-        assert!(
-            clients as usize >= protocol.num_channels(),
-            "Expected at least as many clients as channels."
-        );
         Experiment {
             protocol,
             group_size,

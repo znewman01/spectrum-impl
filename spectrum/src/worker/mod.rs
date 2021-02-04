@@ -208,22 +208,24 @@ where
         }
     }
 
-    async fn get_start_time(&self) -> Result<Instant, Error> {
+    async fn get_start_time(&self) -> Option<Instant> {
         {
             let start_time_guard = self.start_time.read().await;
-            if let Some(start_time) = *start_time_guard {
-                return Ok(start_time);
+            if start_time_guard.is_some() {
+                return *start_time_guard;
             }
         }
 
         let start_lock = *self.start_rx.borrow();
-        let start_time = start_lock
-            .ok_or_else(|| Error::new("Verification request before experiment start time set."))?;
+        if start_lock.is_none() {
+            return None;
+        }
 
+        // Need to populate self.start_time if we can
         let mut start_time_lock = self.start_time.write().await;
-        *start_time_lock = Some(start_time);
+        *start_time_lock = start_lock;
 
-        Ok(start_time)
+        start_lock
     }
 
     async fn get_peers(&self, client: &ClientInfo) -> Result<Vec<SharedClient>, Status> {
@@ -305,10 +307,7 @@ where
         let share = share.try_into().unwrap();
         let state = self.state.clone();
         let leader = self.services.get_my_leader();
-        let start_time = self
-            .get_start_time()
-            .await
-            .map_err(|e| Status::unavailable(e.message))?;
+        let start_time = self.get_start_time().await;
 
         spawn(async move {
             match state.verify(&client_info, share).await {
@@ -325,14 +324,16 @@ where
                     // nothing to do
                 }
                 Ok(VerifyStatus::ShareVerified { clients }) => {
-                    if clients % 10 == 0 {
-                        let elapsed_ms: usize =
-                            start_time.elapsed().as_millis().try_into().unwrap();
-                        let qps: usize = (clients * 1000) / elapsed_ms;
-                        info!(
-                            "{} clients processed in time {}ms ({} qps)",
-                            clients, elapsed_ms, qps
-                        );
+                    if let Some(start_time) = start_time {
+                        if clients % 10 == 0 {
+                            let elapsed_ms: usize =
+                                start_time.elapsed().as_millis().try_into().unwrap();
+                            let qps: usize = (clients * 1000) / elapsed_ms;
+                            info!(
+                                "{} clients processed in time {}ms ({} qps)",
+                                clients, elapsed_ms, qps
+                            );
+                        }
                     }
                 }
                 Err(err) => {

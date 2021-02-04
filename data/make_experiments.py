@@ -19,7 +19,7 @@ MESSAGE_SIZES_ONE_CHANNEL = [
     10_000_000,
 ]
 MESSAGE_SIZES_MANY_CHANNEL = [1_000, 5_000, 10_000, 20_000]
-CHANNELS = [100, 1000, 2000, 3000, 5000, 8000]
+CHANNELS = [100, 500, 1000, 2000, 3000, 5000, 8000]
 
 # Doesn't include "full broadcast" plots which are a special case.
 PLOTS_SPECTRUM = {
@@ -29,8 +29,11 @@ PLOTS_SPECTRUM = {
         "clients": [1000],
         "message_size": MESSAGE_SIZES_ONE_CHANNEL,
     },
-    # "Their turf": number clients = number channels
-    "manychannel": {"channels": CHANNELS, "message_size": MESSAGE_SIZES_MANY_CHANNEL,},
+    "manychannel": {
+        "channels": CHANNELS,
+        "message_size": MESSAGE_SIZES_MANY_CHANNEL,
+        "clients": ["250000/"],
+    },
     # Horizontal scaling experiment
     "horizontal": {
         "worker_machines_per_group": [1, 2, 3, 4, 5, 6, 7, 8],
@@ -81,6 +84,12 @@ def make_experiments_spectrum(trials, params):
     # support for "full broadcast" plots (# channels = # clients) by omitting clients/channels
     # other services don't need this
     for experiment in make_experiments(trials, params):
+        if "clients" in experiment:
+            clients = experiment["clients"]
+            if isinstance(clients, str) and clients.endswith("/"):
+                experiment["clients"] = int(
+                    int(clients.rstrip("/")) / experiment["channels"]
+                )
         if "clients" in experiment and "channels" not in experiment:
             experiment["channels"] = experiment["clients"]
         elif "channels" in experiment and "clients" not in experiment:
