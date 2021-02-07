@@ -17,21 +17,28 @@ main() {
   for system in express riposte spectrum; do
     for exp_path in ${TMP_DIR}/experiments/*${system}*.json; do
       exp=$(basename "$exp_path")
-      if [ ! -z ${1+nonempty} ] && [[ ! "$exp" =~ "${1}" ]]; then
-        # a filter was given, but it doesn't match this experiment
-        continue
-      else
-        echo "Running ${exp}"
-        declare "ran_${system}=1"  # so we clean up later
-        if [ ${system} == "spectrum" ] && [ ! -z ${COMMIT+nonempty} ]; then
-          extra_args="--commit ${COMMIT}"
-        else
-          extra_args=""
+      any_match=0
+      for filter in $@; do
+        if [[ "$exp" =~ "${filter}" ]]; then
+          # a filter was given and matches the experiment file
+          any_match=1
+          break
         fi
-        python -m experiments \
-          --output ${TMP_DIR}/results/${exp} \
-          ${system} ${extra_args} ${exp_path} || true
+      done
+      if [ $# -gt 0 ] && [ $any_match -eq 0 ]; then
+        # filter(s) were provided, but none matched: skip!
+        continue
       fi
+      echo "Running ${exp}"
+      declare "ran_${system}=1"  # so we clean up later
+      if [ ${system} == "spectrum" ] && [ ! -z ${COMMIT+nonempty} ]; then
+        extra_args="--commit ${COMMIT}"
+      else
+        extra_args=""
+      fi
+      python -m experiments \
+        --output ${TMP_DIR}/results/${exp} \
+        ${system} ${extra_args} ${exp_path} || true
     done
 
     # Clean up AWS resources
