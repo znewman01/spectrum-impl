@@ -23,6 +23,10 @@ resource "tls_private_key" "key" {
 
 resource "aws_key_pair" "key" {
   public_key = tls_private_key.key.public_key_openssh
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_riposte_keypair"
+  }
 }
 
 resource "aws_security_group" "allow_ssh" {
@@ -50,6 +54,11 @@ resource "aws_security_group" "allow_ssh" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_riposte_security_group"
+  }
 }
 
 resource "aws_instance" "leader" {
@@ -57,6 +66,10 @@ resource "aws_instance" "leader" {
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_riposte_leader"
+  }
 }
 
 resource "aws_instance" "server" {
@@ -64,6 +77,10 @@ resource "aws_instance" "server" {
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_riposte_server"
+  }
 }
 
 resource "aws_instance" "auditor" {
@@ -71,6 +88,10 @@ resource "aws_instance" "auditor" {
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_riposte_auditor"
+  }
 }
 
 resource "aws_instance" "client" {
@@ -79,6 +100,10 @@ resource "aws_instance" "client" {
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_riposte_client"
+  }
 }
 
 output "leader" {

@@ -23,6 +23,10 @@ resource "tls_private_key" "key" {
 
 resource "aws_key_pair" "key" {
   public_key = tls_private_key.key.public_key_openssh
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_express_keypair"
+  }
 }
 
 resource "aws_security_group" "allow_ssh" {
@@ -50,6 +54,11 @@ resource "aws_security_group" "allow_ssh" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_express_security_group"
+  }
 }
 
 resource "aws_instance" "serverA" {
@@ -57,6 +66,10 @@ resource "aws_instance" "serverA" {
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_express_serverA"
+  }
 }
 
 resource "aws_instance" "serverB" {
@@ -64,6 +77,10 @@ resource "aws_instance" "serverB" {
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_express_serverB"
+  }
 }
 
 # TODO(zjn): add more client servers?
@@ -73,6 +90,10 @@ resource "aws_instance" "client" {
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_express_client"
+  }
 }
 
 output "serverA" {

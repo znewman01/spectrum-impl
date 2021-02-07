@@ -30,11 +30,15 @@ provider "tls" {
 
 resource "tls_private_key" "key" {
   algorithm = "RSA"
-  rsa_bits = 4096
+  rsa_bits  = 4096
 }
 
 resource "aws_key_pair" "key" {
   public_key = tls_private_key.key.public_key_openssh
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_keypair"
+  }
 }
 
 resource "aws_security_group" "allow_ssh" {
@@ -62,6 +66,11 @@ resource "aws_security_group" "allow_ssh" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_security_group"
+  }
 }
 
 resource "aws_instance" "publisher" {
@@ -69,6 +78,10 @@ resource "aws_instance" "publisher" {
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_publisher"
+  }
 }
 
 resource "aws_instance" "worker" {
@@ -77,6 +90,10 @@ resource "aws_instance" "worker" {
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_worker"
+  }
 }
 
 resource "aws_instance" "client" {
@@ -85,6 +102,10 @@ resource "aws_instance" "client" {
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
+  tags = {
+    Project = "spectrum",
+    Name    = "spectrum_client"
+  }
 }
 
 output "publisher" {

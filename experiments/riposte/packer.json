@@ -23,7 +23,11 @@
         "most_recent": true
       },
       "ssh_username": "ubuntu",
-      "type": "amazon-ebs"
+      "type": "amazon-ebs",
+      "tags": {
+        "Proj": "spectrum",
+        "Name": "spectrum_image"
+      }
     }
   ],
 
