@@ -21,7 +21,7 @@ AMI = NewType("AMI", str)
 InstanceType = NewType("InstanceType", str)
 
 AWS_REGION = Region("us-east-2")
-DEFAULT_INSTANCE_TYPE = InstanceType("c5.9xlarge")
+DEFAULT_INSTANCE_TYPE = InstanceType("c5.4xlarge")
 
 
 def format_args(var_dict: Dict[str, Any]) -> List:
