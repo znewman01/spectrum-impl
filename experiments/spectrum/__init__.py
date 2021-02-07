@@ -34,7 +34,7 @@ from tenacity import stop_after_attempt, wait_fixed, AsyncRetrying
 from experiments import system, packer
 
 from experiments.system import Result, Machine, Milliseconds
-from experiments.cloud import InstanceType, SHA, AWS_REGION
+from experiments.cloud import DEFAULT_INSTANCE_TYPE, InstanceType, SHA, AWS_REGION
 from experiments.util import Bytes
 
 BuildProfile = NewType("BuildProfile", str)
@@ -253,7 +253,7 @@ class Experiment(system.Experiment):
     clients: int
     channels: int
     message_size: Bytes
-    instance_type: InstanceType = InstanceType("c5.9xlarge")
+    instance_type: InstanceType = DEFAULT_INSTANCE_TYPE
     clients_per_machine: int = 250
     workers_per_machine: int = 1  # TODO: better default
     worker_machines_per_group: int = 1

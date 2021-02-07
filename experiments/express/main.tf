@@ -8,8 +8,7 @@ variable "region" {
 }
 
 variable "instance_type" {
-  type    = string
-  default = "c5.9xlarge"
+  type = string
 }
 
 provider "aws" {

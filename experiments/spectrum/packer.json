@@ -3,7 +3,7 @@
     "aws_access_key": "{{env `AWS_ACCESS_KEY_ID`}}",
     "aws_secret_key": "{{env `AWS_SECRET_ACCESS_KEY`}}",
     "region": "us-east-2",
-    "instance_type": "c5.9xlarge",
+    "instance_type": null,
     "src_archive": "",
     "profile": "debug"
   },

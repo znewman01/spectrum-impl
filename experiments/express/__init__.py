@@ -13,7 +13,7 @@ from halo import Halo
 
 from experiments import system, packer
 from experiments.system import Milliseconds, Result, Machine
-from experiments.cloud import InstanceType, AWS_REGION
+from experiments.cloud import DEFAULT_INSTANCE_TYPE, InstanceType, AWS_REGION
 from experiments.util import Bytes
 
 
@@ -70,7 +70,7 @@ class Environment(system.Environment):
 
 @dataclass(frozen=True)
 class Experiment(system.Experiment):
-    instance_type: InstanceType = InstanceType("c5.9xlarge")
+    instance_type: InstanceType = DEFAULT_INSTANCE_TYPE
     server_threads: int = 18  # Express: "1x or 2x the number of cores on the system"
     client_threads: int = 36  # "larger than the actual number of cores on the machine"
     channels: int = 1

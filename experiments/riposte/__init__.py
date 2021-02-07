@@ -14,11 +14,10 @@ from halo import Halo
 
 from experiments import system, packer
 from experiments.system import Milliseconds, Result, Machine
-from experiments.cloud import InstanceType, AWS_REGION
+from experiments.cloud import DEFAULT_INSTANCE_TYPE, InstanceType, AWS_REGION
 from experiments.util import Bytes
 
 
-# RESULT_RE = r"Processed (?P<queries>.*) queries at rate (?P<qps>.*) reqs/sec"
 RESULT_RE = r"Processed (?P<queries>\d*) queries in (?P<time>[\d.]*)s"
 WAIT_TIME = 15  # the servers usually stop accepting requests about 6-7 seconds in
 HOME = Path("/home/ubuntu")
@@ -94,7 +93,7 @@ class Environment(system.Environment):
 
 @dataclass(frozen=True)
 class Experiment(system.Experiment):
-    instance_type: InstanceType = InstanceType("c5.9xlarge")
+    instance_type: InstanceType = DEFAULT_INSTANCE_TYPE
     server_threads: int = 18  # num cores
     client_threads: int = 36  # 2 * (num cores)
     channels: int = 1
