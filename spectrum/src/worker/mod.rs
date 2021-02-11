@@ -186,6 +186,7 @@ pub struct MyWorker<P: Protocol> {
     start_time: Arc<RwLock<Option<Instant>>>,
     services: ServiceRegistry,
     state: Arc<WorkerState<P>>,
+    notify: Arc<tokio::sync::Notify>,
 }
 
 impl<P> MyWorker<P>
@@ -205,6 +206,7 @@ where
             start_time: Default::default(),
             services,
             state: Arc::new(state),
+            notify: Default::default(),
         }
     }
 
@@ -292,6 +294,8 @@ where
             Ok::<_, Status>(())
         });
 
+        self.notify.notified().await;
+
         Ok(Response::new(UploadResponse {}))
     }
 
@@ -308,10 +312,12 @@ where
         let state = self.state.clone();
         let leader = self.services.get_my_leader();
         let start_time = self.get_start_time().await;
+        let notify = self.notify.clone();
 
         spawn(async move {
             match state.verify(&client_info, share).await {
                 Ok(VerifyStatus::AllClientsVerified { accumulator }) => {
+                    notify.notify_one();
                     let accumulator: Vec<Vec<u8>> =
                         accumulator.into_iter().map(Into::<Vec<u8>>::into).collect();
                     info!("Forwarding to leader.");
@@ -324,6 +330,7 @@ where
                     // nothing to do
                 }
                 Ok(VerifyStatus::ShareVerified { clients }) => {
+                    notify.notify_one();
                     if let Some(start_time) = start_time {
                         if clients % 10 == 0 {
                             let elapsed_ms: usize =

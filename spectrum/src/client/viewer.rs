@@ -11,7 +11,8 @@ use crate::{
 
 use config::store::Store;
 use futures::prelude::*;
-use log::{debug, info, trace, warn};
+use futures::stream::FuturesUnordered;
+use log::{debug, error, info, trace, warn};
 use tokio::time::sleep;
 
 use std::convert::{TryFrom, TryInto};
@@ -32,13 +33,13 @@ where
     P: Protocol,
     P::ChannelKey: TryFrom<ChannelKeyWrapper>,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
-    P::WriteToken: Into<proto::WriteToken> + fmt::Debug,
+    P::WriteToken: Into<proto::WriteToken> + fmt::Debug + Send,
 {
     info!("Client starting");
     let start_time = wait_for_start_time_set(&config).await?;
     debug!("Received configuration from configuration server; initializing.");
 
-    let mut clients = connections::connect_and_register(&config, info.clone()).await?;
+    let clients: Vec<_> = connections::connect_and_register(&config, info.clone()).await?;
     let client_id = info.to_proto(); // before we move info
     let write_tokens = match info.broadcast {
         Some((msg, key)) => {
@@ -55,26 +56,40 @@ where
     sleep(jitter).await;
     debug!("Client detected start time ready.");
 
-    for (client, write_token) in clients.iter_mut().zip(write_tokens) {
-        let response;
-        let write_token = write_token.into();
-        loop {
-            let req = tonic::Request::new(UploadRequest {
-                client_id: Some(client_id.clone()),
-                write_token: Some(write_token.clone()),
-            });
-            trace!("About to send upload request.");
-            match client.upload(req).await {
-                Ok(r) => {
-                    response = r;
-                    break;
+    clients
+        .iter()
+        .cloned()
+        .zip(write_tokens.into_iter())
+        .map(|(mut client, write_token)| {
+            let client_id = client_id.clone();
+            let write_token = write_token.into();
+            tokio::spawn(async move {
+                let response;
+                loop {
+                    let req = tonic::Request::new(UploadRequest {
+                        client_id: Some(client_id.clone()),
+                        write_token: Some(write_token.clone()),
+                    });
+                    trace!("About to send upload request.");
+                    {
+                        match client.upload(req).await {
+                            Ok(r) => {
+                                response = r;
+                                break;
+                            }
+                            Err(err) => warn!("Error, trying again: {}", err),
+                        };
+                    }
+                    sleep(Duration::from_millis(50)).await;
                 }
-                Err(err) => warn!("Error, trying again: {}", err),
-            };
-            sleep(Duration::from_millis(50)).await;
-        }
-        debug!("RESPONSE={:?}", response.into_inner());
-    }
+                debug!("RESPONSE={:?}", response.into_inner());
+            })
+        })
+        .collect::<FuturesUnordered<_>>()
+        .inspect_err(|err| error!("{:?}", err))
+        .try_collect::<Vec<_>>()
+        .await
+        .expect("tokio spawn should succeed");
 
     shutdown.await;
 
