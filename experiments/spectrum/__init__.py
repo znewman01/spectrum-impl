@@ -43,7 +43,7 @@ BuildProfile = NewType("BuildProfile", str)
 # Need to update install.sh to change this
 MAX_WORKERS_PER_MACHINE = 10
 
-EXPERIMENT_TIMEOUT = 120.0
+EXPERIMENT_TIMEOUT = 60.0
 
 
 @dataclass
@@ -221,7 +221,6 @@ async def _prepare_worker(
 ):
     spectrum_config: Dict[str, Any] = {
         "SPECTRUM_WORKER_GROUP": group,
-        "SPECTRUM_LEADER_GROUP": group,
         "SPECTRUM_WORKER_START_INDEX": worker_start_idx,
         **etcd_env,
     }
@@ -235,7 +234,6 @@ async def _prepare_worker(
     await machine.ssh.run(
         f"sudo systemctl start spectrum-worker@{{1..{num_workers}}}", check=True
     )
-    await machine.ssh.run("sudo systemctl start spectrum-leader", check=True)
 
 
 async def _prepare_client(
@@ -254,7 +252,7 @@ class Experiment(system.Experiment):
     channels: int
     message_size: Bytes
     instance_type: InstanceType = DEFAULT_INSTANCE_TYPE
-    clients_per_machine: int = 250
+    clients_per_machine: int = 100
     workers_per_machine: int = 1  # TODO: better default
     worker_machines_per_group: int = 1
     protocol: Protocol = Symmetric()
@@ -299,7 +297,7 @@ class Experiment(system.Experiment):
         We then report the *total* QPS.
         """
         total_qps = 0
-        min_time = None
+        max_time = None
         for worker_process in range(1, self.workers_per_machine + 1):
             cmd_result = await worker.ssh.run(
                 f"journalctl --unit spectrum-worker@{worker_process}"
@@ -325,16 +323,16 @@ class Experiment(system.Experiment):
                 continue
             best_result = max(process_results, key=attrgetter("qps"))
             total_qps += best_result.qps
-            if min_time is None:
-                min_time = best_result.time
+            if max_time is None:
+                max_time = best_result.time
             else:
-                min_time = min(min_time, best_result.time)
-        if min_time is None:
+                max_time = max(max_time, best_result.time)
+        if max_time is None:
             return None
         result = Result(
             experiment=self,
-            queries=int(total_qps * int(min_time) / 1000),
-            time=min_time,
+            queries=int(total_qps * int(max_time) / 1000),
+            time=max_time,
         )
         assert result.qps - total_qps < 0.1
         return result
@@ -343,15 +341,9 @@ class Experiment(system.Experiment):
         self, publisher: Machine, workers: List[Machine], etcd_env: Dict[str, Any]
     ) -> Result:
         await _install_spectrum_config(publisher, etcd_env)
-        timeout = EXPERIMENT_TIMEOUT - 5  # give some cleanup time
-        try:
-            await publisher.ssh.run(
-                "sudo systemctl start spectrum-publisher --wait",
-                check=True,
-                timeout=timeout,
-            )
-        except asyncssh.process.TimeoutError:
-            pass
+        timeout = EXPERIMENT_TIMEOUT - 10  # give some cleanup time
+        await publisher.ssh.run("sudo systemctl start spectrum-publisher", check=True)
+        await asyncio.sleep(timeout)
 
         results = await asyncio.gather(*map(self._fetch_timing, workers))
         results = list(filter(None, results))
@@ -392,6 +384,7 @@ class Experiment(system.Experiment):
                 f"SPECTRUM_CONFIG_SERVER={etcd_url} "
                 "/home/ubuntu/spectrum/setup"
                 f"    {self.protocol.flag}"
+                f"    --hammer "
                 f"    --channels {self.channels}"
                 f"    --clients {self.clients}"
                 f"    --group-size {self.group_size}"
@@ -446,9 +439,6 @@ class Experiment(system.Experiment):
             spinner.text = "[experiment] shutting everything down"
             shutdowns = []
             for worker in workers:
-                shutdowns.append(
-                    worker.ssh.run("sudo systemctl stop spectrum-leader", check=False)
-                )
                 shutdowns.append(
                     worker.ssh.run(
                         "sudo systemctl stop 'spectrum-worker@*'", check=False

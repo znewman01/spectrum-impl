@@ -21,34 +21,40 @@ MESSAGE_SIZES_ONE_CHANNEL = [
 MESSAGE_SIZES_MANY_CHANNEL = [1_000, 5_000, 10_000, 20_000]
 CHANNELS = [100, 500, 1000, 2000, 3000, 5000, 8000]
 
+_MULTI_SERVER_CHANNELS = [100]
+_MULTI_SERVER_MESSAGE_SIZES = [100_000]
 # Doesn't include "full broadcast" plots which are a special case.
 PLOTS_SPECTRUM = {
     # "Our turf": one channel, many clients, measure QPS
     "onechannel": {
         "channels": [1],
-        "clients": [1000],
+        "clients": [250],
         "message_size": MESSAGE_SIZES_ONE_CHANNEL,
+        "clients_per_machine": [50],
+        "workers_per_machine": [2],
     },
     "manychannel": {
         "channels": CHANNELS,
+        "clients": [100],
         "message_size": MESSAGE_SIZES_MANY_CHANNEL,
-        "clients": ["250000/"],
+        "workers_per_machine": [4],
     },
     # Horizontal scaling experiment
     "horizontal": {
+        "clients": [500],
         "worker_machines_per_group": [1, 2, 3, 4, 5, 6, 7, 8],
         # too many total workers appears to lead to higher tail latencies
         "workers_per_machine": [4],
         "message_size": [100_000],
-        "clients": [1500],
         "channels": [500],
     },
     # Test the scaling of seed homomorphic protocol
     "multi-server": {
-        "clients": [1400],
-        "clients_per_machine": [200],
-        "channels": [100],
-        "message_size": [100_000],
+        "clients": [200],
+        "clients_per_machine": [50],
+        "workers_per_machine": [4],
+        "channels": _MULTI_SERVER_CHANNELS,
+        "message_size": _MULTI_SERVER_MESSAGE_SIZES,
         "protocol": [
             {"SeedHomomorphic": {"parties": 2,},},
             {"SeedHomomorphic": {"parties": 3,},},
@@ -56,9 +62,10 @@ PLOTS_SPECTRUM = {
         ],
     },
     "multi-server-control": {
-        "clients": [1400],
-        "channels": [100],
-        "message_size": [100_000],
+        "clients": [200],
+        "workers_per_machine": [4],
+        "channels": _MULTI_SERVER_CHANNELS,
+        "message_size": _MULTI_SERVER_MESSAGE_SIZES,
     },
 }
 
@@ -84,16 +91,6 @@ def make_experiments_spectrum(trials, params):
     # support for "full broadcast" plots (# channels = # clients) by omitting clients/channels
     # other services don't need this
     for experiment in make_experiments(trials, params):
-        if "clients" in experiment:
-            clients = experiment["clients"]
-            if isinstance(clients, str) and clients.endswith("/"):
-                experiment["clients"] = int(
-                    int(clients.rstrip("/")) / experiment["channels"]
-                )
-        if "clients" in experiment and "channels" not in experiment:
-            experiment["channels"] = experiment["clients"]
-        elif "channels" in experiment and "clients" not in experiment:
-            experiment["clients"] = experiment["channels"]
         yield experiment
 
 
@@ -104,22 +101,23 @@ def _write_file(path, data):
 
 def main(args):
     parser = argparse.ArgumentParser(args[0])
+    parser.add_argument("--trials", type=int, default=1)
     parser.add_argument("output_dir", nargs="?", default=".")
     args = parser.parse_args(args[1:])
 
     for name, params in PLOTS_SPECTRUM.items():
         path = os.path.join(args.output_dir, f"spectrum-{name}.json")
-        experiments = list(make_experiments_spectrum(TRIALS, params))
+        experiments = list(make_experiments_spectrum(args.trials, params))
         _write_file(path, experiments)
 
     for name, params in PLOTS_EXPRESS.items():
         path = os.path.join(args.output_dir, f"express-{name}.json")
-        experiments = list(make_experiments(TRIALS, params))
+        experiments = list(make_experiments(args.trials, params))
         _write_file(path, experiments)
 
     for name, params in PLOTS_RIPOSTE.items():
         path = os.path.join(args.output_dir, f"riposte-{name}.json")
-        experiments = list(make_experiments(TRIALS, params))
+        experiments = list(make_experiments(args.trials, params))
         _write_file(path, experiments)
 
 
