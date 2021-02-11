@@ -184,7 +184,7 @@ where
 pub struct MyWorker<P: Protocol> {
     start_rx: watch::Receiver<Option<Instant>>,
     start_time: Arc<RwLock<Option<Instant>>>,
-    services: ServiceRegistry,
+    services: Arc<ServiceRegistry>,
     state: Arc<WorkerState<P>>,
     notify: Arc<tokio::sync::Notify>,
 }
@@ -196,7 +196,7 @@ where
 {
     fn new(
         start_rx: watch::Receiver<Option<Instant>>,
-        services: ServiceRegistry,
+        services: Arc<ServiceRegistry>,
         experiment: Experiment,
         protocol: P,
     ) -> Self {
@@ -392,8 +392,10 @@ where
 
     let (start_tx, start_rx) = watch::channel(None);
     let (registry, registry_remote) = ServiceRegistry::new_with_remote();
+    let registry = Arc::new(registry);
 
-    let worker = MyWorker::new(start_rx, registry, experiment, protocol);
+    let worker = MyWorker::new(start_rx, registry.clone(), experiment, protocol);
+    let state = worker.state.clone();
     let server = tonic::transport::server::Server::builder()
         .add_service(HealthServer::new(AllGoodHealthServer::default()))
         .add_service(WorkerServer::new(worker))
@@ -411,6 +413,21 @@ where
     registry_remote.init(info, &config).await?;
     delay_until(start_time).await;
     start_tx.send(Some(Instant::now()))?;
+
+    if state.client_registry.num_clients().await == 0 {
+        spawn(async move {
+            warn!("No clients registered; forwarding empty accumulator to leader.");
+            let leader = registry.get_my_leader();
+            let accumulator = state.accumulator.get().await;
+            let accumulator: Vec<Vec<u8>> =
+                accumulator.into_iter().map(Into::<Vec<u8>>::into).collect();
+            let req = Request::new(AggregateWorkerRequest {
+                share: Some(Share { data: accumulator }),
+            });
+            leader.lock().await.aggregate_worker(req).await.unwrap();
+        });
+        //
+    }
 
     server_task.await??;
     info!("Worker shutting down.");
