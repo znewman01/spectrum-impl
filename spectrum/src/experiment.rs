@@ -17,16 +17,23 @@ pub struct Experiment {
     // https://github.com/rust-lang/rfcs/blob/master/text/2307-concrete-nonzero-types.md
     group_size: u16,
     clients: u128,
+    pub hammer: bool,
 }
 
 impl Experiment {
-    pub fn new(protocol: ProtocolWrapper, group_size: u16, clients: u128) -> Experiment {
+    pub fn new(
+        protocol: ProtocolWrapper,
+        group_size: u16,
+        clients: u128,
+        hammer: bool,
+    ) -> Experiment {
         assert!(group_size >= 1, "Expected at least 1 worker per group.");
         assert!(clients >= 1, "Expected at least 1 client.");
         Experiment {
             protocol,
             group_size,
             clients,
+            hammer,
         }
     }
 
@@ -53,12 +60,18 @@ impl Experiment {
     pub fn iter_services(&self) -> impl Iterator<Item = Service> + '_ {
         let publishers = once((PublisherInfo::new()).into());
         let groups = (0..self.groups()).map(Group::new);
-        let leaders = groups.clone().map(LeaderInfo::new).map(Service::from);
-        let workers = groups.flat_map(move |group| {
+        let workers = groups.clone().flat_map(move |group| {
             (0..self.group_size()).map(move |idx| (WorkerInfo::new(group, idx)).into())
         });
 
-        publishers.chain(leaders).chain(workers)
+        let iter = publishers.chain(workers);
+
+        if self.hammer {
+            return Box::new(iter) as Box<dyn Iterator<Item = Service>>;
+        }
+
+        let leaders = groups.map(LeaderInfo::new).map(Service::from);
+        Box::new(iter.chain(leaders)) as Box<dyn Iterator<Item = Service>>
     }
 
     // TODO(zjn): combine with iter_services
@@ -143,18 +156,18 @@ pub mod tests {
     use proptest::prelude::*;
 
     impl Arbitrary for Experiment {
-        type Parameters = ();
+        type Parameters = bool;
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with(hammer: bool) -> Self::Strategy {
             let group_size: Range<u16> = 1..10;
             // TODO(zjn): add SecureProtocols too (maybe via impl arbitrary for ProtocolWrapper?)
             let protocols = any::<insecure::InsecureProtocol>().prop_map(ProtocolWrapper::from);
             (protocols, group_size)
-                .prop_flat_map(|(protocol, group_size)| {
+                .prop_flat_map(move |(protocol, group_size)| {
                     let clients: Range<u128> = (protocol.num_channels() as u128)..20;
                     clients.prop_map(move |clients| {
-                        Experiment::new(protocol.clone(), group_size, clients)
+                        Experiment::new(protocol.clone(), group_size, clients, hammer)
                     })
                 })
                 .boxed()
@@ -195,6 +208,28 @@ pub mod tests {
                             (experiment.groups() * experiment.group_size()) as usize);
             prop_assert_eq!(actual, expected);
         }
+
+        #[test]
+        fn test_experiment_iter_services_hammer(experiment in Experiment::arbitrary_with(true)) {
+            let services: Vec<Service> = experiment.iter_services().collect();
+
+            let mut publishers = vec![];
+            let mut workers = vec![];
+            for service in services {
+                match service {
+                    Service::Publisher(_) => { publishers.push(service) },
+                    Service::Leader(_) => { return Err(TestCaseError::fail("Didn't expect leaders in hammer mode")); },
+                    Service::Worker(_) => { workers.push(service) },
+                    Service::Client(_) => {
+                        panic!("Clients not (yet) in iter_services");
+                    }
+                }
+            }
+            let expected_workers = (experiment.groups() * experiment.group_size()) as usize;
+            prop_assert_eq!(workers.len(), expected_workers);
+            prop_assert_eq!(publishers.len(), 1);
+        }
+
 
         #[test]
         fn test_experiment_iter_clients(experiment: Experiment) {

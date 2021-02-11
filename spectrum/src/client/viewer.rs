@@ -25,6 +25,7 @@ async fn inner_run<C, F, P>(
     config: C,
     protocol: P,
     info: ClientInfo,
+    hammer: bool,
     shutdown: F,
 ) -> Result<(), TokioError>
 where
@@ -41,7 +42,7 @@ where
 
     let clients: Vec<_> = connections::connect_and_register(&config, info.clone()).await?;
     let client_id = info.to_proto(); // before we move info
-    let write_tokens = match info.broadcast {
+    let mut write_tokens = match info.broadcast {
         Some((msg, key)) => {
             info!("Broadcaster about to send write token.");
             debug!("Write token: msg.len()={}, key={:?}", msg.len(), key);
@@ -56,40 +57,46 @@ where
     sleep(jitter).await;
     debug!("Client detected start time ready.");
 
-    clients
-        .iter()
-        .cloned()
-        .zip(write_tokens.into_iter())
-        .map(|(mut client, write_token)| {
-            let client_id = client_id.clone();
-            let write_token = write_token.into();
-            tokio::spawn(async move {
-                let response;
-                loop {
-                    let req = tonic::Request::new(UploadRequest {
-                        client_id: Some(client_id.clone()),
-                        write_token: Some(write_token.clone()),
-                    });
-                    trace!("About to send upload request.");
-                    {
-                        match client.upload(req).await {
-                            Ok(r) => {
-                                response = r;
-                                break;
-                            }
-                            Err(err) => warn!("Error, trying again: {}", err),
-                        };
+    loop {
+        clients
+            .iter()
+            .cloned()
+            .zip(write_tokens.into_iter())
+            .map(|(mut client, write_token)| {
+                let client_id = client_id.clone();
+                let write_token = write_token.into();
+                tokio::spawn(async move {
+                    let response;
+                    loop {
+                        let req = tonic::Request::new(UploadRequest {
+                            client_id: Some(client_id.clone()),
+                            write_token: Some(write_token.clone()),
+                        });
+                        trace!("About to send upload request.");
+                        {
+                            match client.upload(req).await {
+                                Ok(r) => {
+                                    response = r;
+                                    break;
+                                }
+                                Err(err) => warn!("Error, trying again: {}", err),
+                            };
+                        }
+                        sleep(Duration::from_millis(50)).await;
                     }
-                    sleep(Duration::from_millis(50)).await;
-                }
-                debug!("RESPONSE={:?}", response.into_inner());
+                    debug!("RESPONSE={:?}", response.into_inner());
+                })
             })
-        })
-        .collect::<FuturesUnordered<_>>()
-        .inspect_err(|err| error!("{:?}", err))
-        .try_collect::<Vec<_>>()
-        .await
-        .expect("tokio spawn should succeed");
+            .collect::<FuturesUnordered<_>>()
+            .inspect_err(|err| error!("{:?}", err))
+            .try_collect::<Vec<_>>()
+            .await
+            .expect("tokio spawn should succeed");
+        if !hammer {
+            break;
+        }
+        write_tokens = protocol.null_broadcast();
+    }
 
     shutdown.await;
 
@@ -100,6 +107,7 @@ pub async fn run<C, F>(
     config: C,
     protocol: ProtocolWrapper,
     info: ClientInfo,
+    hammer: bool,
     shutdown: F,
 ) -> Result<(), TokioError>
 where
@@ -108,13 +116,13 @@ where
 {
     match protocol {
         ProtocolWrapper::Secure(protocol) => {
-            inner_run(config, protocol, info, shutdown).await?;
+            inner_run(config, protocol, info, hammer, shutdown).await?;
         }
         ProtocolWrapper::SecureMultiKey(protocol) => {
-            inner_run(config, protocol, info, shutdown).await?;
+            inner_run(config, protocol, info, hammer, shutdown).await?;
         }
         ProtocolWrapper::Insecure(protocol) => {
-            inner_run(config, protocol, info, shutdown).await?;
+            inner_run(config, protocol, info, hammer, shutdown).await?;
         }
     }
     Ok(())

@@ -33,13 +33,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
 
     let config = config::from_env().await?;
     let experiment = experiment::read_from_store(&config).await?;
+    let hammer = experiment.hammer;
 
     repeat_with(|| {
         let protocol = experiment.get_protocol().clone();
         let info = ClientInfo::new(thread_rng().gen());
         let config = config.clone();
         tokio::spawn(async move {
-            client::viewer::run(config, protocol, info, futures::future::ready(())).await
+            client::viewer::run(config, protocol, info, hammer, futures::future::ready(())).await
         })
     })
     .take(args.threads.into())

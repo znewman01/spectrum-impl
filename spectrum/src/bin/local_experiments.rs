@@ -85,7 +85,8 @@ impl From<InputRecord> for Experiment {
             record.channels,
             record.msg_size,
         );
-        Experiment::new(protocol, record.group_size, record.clients)
+        let hammer = false;
+        Experiment::new(protocol, record.group_size, record.clients, hammer)
     }
 }
 

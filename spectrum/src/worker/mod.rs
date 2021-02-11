@@ -77,6 +77,10 @@ where
             protocol,
         }
     }
+
+    fn hammer(&self) -> bool {
+        self.experiment.hammer
+    }
 }
 
 enum VerifyStatus<P: Protocol> {
@@ -162,6 +166,12 @@ where
             )));
         }
         let accumulated_clients = self.accumulator.accumulate(accumulator).await;
+        if self.hammer() {
+            return Ok(VerifyStatus::ShareVerified {
+                clients: accumulated_clients,
+            });
+        }
+
         let total_clients = self.client_registry.num_clients().await;
         trace!("{}/{} clients", accumulated_clients, total_clients);
 
@@ -219,9 +229,7 @@ where
         }
 
         let start_lock = *self.start_rx.borrow();
-        if start_lock.is_none() {
-            return None;
-        }
+        start_lock?;
 
         // Need to populate self.start_time if we can
         let mut start_time_lock = self.start_time.write().await;
@@ -294,7 +302,10 @@ where
             Ok::<_, Status>(())
         });
 
-        self.notify.notified().await;
+        if self.state.hammer() {
+            // block to apply backpressure to clients
+            self.notify.notified().await;
+        }
 
         Ok(Response::new(UploadResponse {}))
     }
@@ -310,27 +321,44 @@ where
         let share = expect_field(request.audit_share, "Audit Share")?;
         let share = share.try_into().unwrap();
         let state = self.state.clone();
-        let leader = self.services.get_my_leader();
         let start_time = self.get_start_time().await;
-        let notify = self.notify.clone();
+        let leader;
+        let notify;
+        if self.state.hammer() {
+            leader = None;
+            notify = Some(self.notify.clone());
+        } else {
+            leader = Some(self.services.get_my_leader());
+            notify = None;
+        }
 
         spawn(async move {
             match state.verify(&client_info, share).await {
                 Ok(VerifyStatus::AllClientsVerified { accumulator }) => {
-                    notify.notify_one();
+                    if let Some(n) = notify {
+                        n.notify_one()
+                    };
                     let accumulator: Vec<Vec<u8>> =
                         accumulator.into_iter().map(Into::<Vec<u8>>::into).collect();
                     info!("Forwarding to leader.");
                     let req = Request::new(AggregateWorkerRequest {
                         share: Some(Share { data: accumulator }),
                     });
-                    leader.lock().await.aggregate_worker(req).await.unwrap();
+                    leader
+                        .expect("leader should be Some() when not in hammer mode")
+                        .lock()
+                        .await
+                        .aggregate_worker(req)
+                        .await
+                        .unwrap();
                 }
                 Ok(VerifyStatus::AwaitingShares) => {
                     // nothing to do
                 }
                 Ok(VerifyStatus::ShareVerified { clients }) => {
-                    notify.notify_one();
+                    if let Some(n) = notify {
+                        n.notify_one()
+                    };
                     if let Some(start_time) = start_time {
                         if clients % 10 == 0 {
                             let elapsed_ms: usize =
@@ -414,7 +442,7 @@ where
     delay_until(start_time).await;
     start_tx.send(Some(Instant::now()))?;
 
-    if state.client_registry.num_clients().await == 0 {
+    if !state.hammer() && state.client_registry.num_clients().await == 0 {
         spawn(async move {
             warn!("No clients registered; forwarding empty accumulator to leader.");
             let leader = registry.get_my_leader();
@@ -425,8 +453,9 @@ where
                 share: Some(Share { data: accumulator }),
             });
             leader.lock().await.aggregate_worker(req).await.unwrap();
-        });
-        //
+        })
+        .await
+        .expect("tokio spawn should succeed");
     }
 
     server_task.await??;

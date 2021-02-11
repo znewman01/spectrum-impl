@@ -151,7 +151,10 @@ where
                 shutdown,
             )
             .boxed(),
-            Client(info) => client::viewer::run(config.clone(), protocol, info, shutdown).boxed(),
+            Client(info) => {
+                client::viewer::run(config.clone(), protocol, info, experiment.hammer, shutdown)
+                    .boxed()
+            }
         });
     }
 

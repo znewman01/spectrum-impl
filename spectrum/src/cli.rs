@@ -128,6 +128,10 @@ pub struct ExperimentArgs {
     /// At most one of {--security, --no-security} may be set.
     #[clap(long = "no-security", group = "security")]
     no_security: bool,
+
+    /// If true, don't set up a publisher or leaders; just measure raw QPS.
+    #[clap(long)]
+    hammer: bool,
 }
 
 impl ExperimentArgs {
@@ -158,7 +162,8 @@ impl From<ExperimentArgs> for Experiment {
     fn from(args: ExperimentArgs) -> Self {
         let group_size = args.group_size;
         let clients = args.clients;
-        Experiment::new(args.into(), group_size, clients)
+        let hammer = args.hammer;
+        Experiment::new(args.into(), group_size, clients, hammer)
     }
 }
 

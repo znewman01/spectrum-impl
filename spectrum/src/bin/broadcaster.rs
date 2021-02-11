@@ -86,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         config,
         experiment.get_protocol().clone(),
         info,
+        experiment.hammer,
         ctrl_c().map(|_| ()),
     )
     .await

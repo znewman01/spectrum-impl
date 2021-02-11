@@ -193,7 +193,7 @@ mod test {
     async fn test_wait_for_quorum_not_ready() {
         let config = from_string("").await.unwrap();
         let protocol = insecure::InsecureProtocol::new(1, 1, 100).into();
-        let experiment = Experiment::new(protocol, 1, 10);
+        let experiment = Experiment::new(protocol, 1, 10, false);
         wait_for_quorum_helper(&config, &experiment, NO_TIME, 10)
             .await
             .expect_err("Should fail if no quorum.");
@@ -203,7 +203,22 @@ mod test {
     async fn test_wait_for_quorum_okay() {
         let config = from_string("").await.unwrap();
         let protocol = insecure::InsecureProtocol::new(1, 1, 100).into();
-        let experiment = Experiment::new(protocol, 1, 10);
+        let experiment = Experiment::new(protocol, 1, 10, false);
+        for service in experiment.iter_services() {
+            let node = Node::new(service, addr());
+            register(&config, node).await.unwrap();
+        }
+
+        wait_for_quorum_helper(&config, &experiment, NO_TIME, 10)
+            .await
+            .expect("Should succeed if quorum is ready.");
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_quorum_okay_hammer() {
+        let config = from_string("").await.unwrap();
+        let protocol = insecure::InsecureProtocol::new(1, 1, 100).into();
+        let experiment = Experiment::new(protocol, 1, 10, true);
         for service in experiment.iter_services() {
             let node = Node::new(service, addr());
             register(&config, node).await.unwrap();

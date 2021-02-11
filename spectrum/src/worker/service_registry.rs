@@ -18,7 +18,7 @@ type SharedLeaderClient = Arc<Mutex<LeaderClient<Channel>>>;
 #[derive(Clone)]
 struct Map {
     workers: WorkersMap,
-    leader: SharedLeaderClient,
+    leader: Option<SharedLeaderClient>,
 }
 
 impl Map {
@@ -43,11 +43,14 @@ impl Map {
             .find_map(|node| match node.service {
                 Service::Leader(leader) if leader.group == worker.group => Some(node.addr),
                 _ => None,
-            })
-            .expect("Every node should have a corresponding leader.");
-        let leader = Arc::new(Mutex::new(
-            LeaderClient::connect(format!("http://{}", addr)).await?,
-        ));
+            });
+        let leader = if let Some(addr) = addr {
+            Some(Arc::new(Mutex::new(
+                LeaderClient::connect(format!("http://{}", addr)).await?,
+            )))
+        } else {
+            None
+        };
 
         Ok(Map { workers, leader })
     }
@@ -98,6 +101,8 @@ impl Registry {
         lock.as_ref()
             .expect("Should only get_leader() after initialization.")
             .leader
+            .as_ref()
+            .expect("Don't call get_my_leader() in hammer mode.")
             .clone()
     }
 }

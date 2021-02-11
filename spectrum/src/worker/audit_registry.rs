@@ -61,7 +61,7 @@ impl<S, T> AuditRegistry<S, T> {
     pub async fn init(&mut self, info: &ClientInfo, token: T) {
         if let Some(mutex) = self.registry.get(info) {
             let mut state = mutex.lock().await;
-            if state.audit_shares.len() > 0 {
+            if !state.audit_shares.is_empty() {
                 warn!("Re-init before drain.")
             }
             state.write_token.replace(token);
