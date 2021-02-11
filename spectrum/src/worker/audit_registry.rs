@@ -1,6 +1,7 @@
 // https://github.com/rust-lang/rust-clippy/issues/5902
 #![allow(clippy::same_item_push)]
 use crate::services::ClientInfo;
+use log::warn;
 use std::collections::HashMap;
 
 use tokio::sync::Mutex;
@@ -58,8 +59,12 @@ impl<S, T> AuditRegistry<S, T> {
     }
 
     pub async fn init(&mut self, info: &ClientInfo, token: T) {
-        if let Some(state) = self.registry.get(info) {
-            state.lock().await.write_token.replace(token);
+        if let Some(mutex) = self.registry.get(info) {
+            let mut state = mutex.lock().await;
+            if state.audit_shares.len() > 0 {
+                warn!("Re-init before drain.")
+            }
+            state.write_token.replace(token);
         } else {
             let vec = Vec::with_capacity(self.num_parties as usize);
             self.registry.insert(
@@ -165,5 +170,32 @@ mod tests {
         }
 
         reg.drain(&clients.pop().unwrap()).await;
+    }
+
+    #[tokio::test]
+    async fn test_audit_registry_can_reinit_after_drain() {
+        let clients: Vec<ClientInfo> = (0..NUM_CLIENTS).map(ClientInfo::new).collect();
+        let mut reg = AuditRegistry::<(), u128>::new(NUM_CLIENTS, NUM_SHARES);
+
+        for client in &clients {
+            let expected_value = client.idx;
+            reg.init(client, expected_value).await;
+            assert_eq!(reg.drain(client).await.write_token, expected_value);
+            reg.init(client, expected_value + 1).await;
+            assert_eq!(reg.drain(client).await.write_token, expected_value + 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_audit_registry_can_reinit_no_drain() {
+        let clients: Vec<ClientInfo> = (0..NUM_CLIENTS).map(ClientInfo::new).collect();
+        let mut reg = AuditRegistry::<(), u128>::new(NUM_CLIENTS, NUM_SHARES);
+
+        for client in &clients {
+            let expected_value = client.idx;
+            reg.init(client, expected_value).await;
+            reg.init(client, expected_value + 1).await;
+            assert_eq!(reg.drain(client).await.write_token, expected_value + 1);
+        }
     }
 }
