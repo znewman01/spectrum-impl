@@ -12,6 +12,7 @@ use config::store::Store;
 use log::{debug, trace};
 use rand::{seq::IteratorRandom, thread_rng};
 use tokio::time::sleep;
+use tonic::transport::{channel::Channel, Certificate, ClientTlsConfig, Uri};
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -49,26 +50,43 @@ fn pick_worker_shards(nodes: Vec<Node>) -> Vec<Node> {
 
 async fn connect(
     addr: String,
-) -> Result<WorkerClient<tonic::transport::channel::Channel>, TokioError> {
-    let mut client = WorkerClient::connect(format!("http://{}", addr)).await;
-    for _ in 0..10u8 {
-        if client.is_ok() {
-            return Ok(client?);
+    cert: Option<Certificate>,
+) -> Result<WorkerClient<Channel>, TokioError> {
+    let mut attempts: u8 = 0;
+    let uri = format!("http://{}", addr)
+        .parse::<Uri>()
+        .expect("Invalid URI");
+    loop {
+        let mut builder = Channel::builder(uri.clone());
+        if let Some(ref cert) = cert {
+            debug!("TLS for client.");
+            builder = builder.tls_config(
+                ClientTlsConfig::new()
+                    .domain_name("spectrum.example.com")
+                    .ca_certificate(cert.clone()),
+            )?;
         }
-        debug!("Failed to connect to worker; sleeping: {:?}", client);
+        let res = builder.connect().await;
+        if let Ok(channel) = res {
+            return Ok(WorkerClient::new(channel));
+        }
+        debug!("Failed to connect to worker: {:?}", res);
+        attempts += 1;
+        if attempts >= 10 {
+            return Err(Box::new(Error::from(format!(
+                "Failed to connect to worker on every attempt! {:?}",
+                res
+            ))));
+        }
         sleep(Duration::from_millis(50)).await;
-        client = WorkerClient::connect(format!("http://{}", addr)).await;
     }
-    Err(Box::new(Error::from(format!(
-        "Failed to connect to worker on every attempt! {:?}",
-        client
-    ))))
 }
 
 pub async fn connect_and_register<C>(
     config: &C,
     info: ClientInfo,
-) -> Result<Vec<WorkerClient<tonic::transport::channel::Channel>>, TokioError>
+    cert: Option<Certificate>,
+) -> Result<Vec<WorkerClient<Channel>>, TokioError>
 where
     C: Store,
 {
@@ -86,7 +104,7 @@ where
             .collect(),
     };
     for shard in shards {
-        let mut client = connect(shard.addr.clone()).await?;
+        let mut client = connect(shard.addr.clone(), cert.clone()).await?;
         let req = tonic::Request::new(req.clone());
         trace!("Registering with shard {}...", shard.addr);
         client.register_client(req).await?;

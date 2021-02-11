@@ -17,6 +17,7 @@ use tokio::{
     sync::{Barrier, Notify},
     time::sleep,
 };
+use tonic::transport::{Certificate, Identity};
 
 pub use spectrum_protocol as protocols;
 
@@ -101,6 +102,7 @@ impl publisher::Remote for PublisherRemote {
 pub async fn run_in_process<C>(
     experiment: Experiment,
     config: C,
+    tls: Option<(Identity, Certificate)>,
 ) -> Result<Duration, Box<dyn std::error::Error + Sync + Send>>
 where
     C: 'static + Store + Clone + Sync + Send,
@@ -122,7 +124,7 @@ where
         };
 
         let protocol = experiment.get_protocol().clone();
-        let net = net::Config::with_free_port_localhost();
+        let net = net::Config::with_free_port_localhost(tls.clone());
         handles.push(match service {
             Publisher(info) => publisher::run(
                 config.clone(),
@@ -151,10 +153,15 @@ where
                 shutdown,
             )
             .boxed(),
-            Client(info) => {
-                client::viewer::run(config.clone(), protocol, info, experiment.hammer, shutdown)
-                    .boxed()
-            }
+            Client(info) => client::viewer::run(
+                config.clone(),
+                protocol,
+                info,
+                experiment.hammer,
+                net.tls_cert().clone(),
+                shutdown,
+            )
+            .boxed(),
         });
     }
 

@@ -4,10 +4,13 @@ use crate::{
     services::{discovery::resolve_all, Service, WorkerInfo},
 };
 
+use log::debug;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{watch, Mutex};
-use tonic::{transport::Channel, Status};
+use tonic::{
+    transport::Certificate, transport::Channel, transport::ClientTlsConfig, transport::Uri, Status,
+};
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
@@ -22,7 +25,11 @@ struct Map {
 }
 
 impl Map {
-    async fn from_config<C: Store>(worker: WorkerInfo, config: &C) -> Result<Self, Error> {
+    async fn from_config<C: Store>(
+        worker: WorkerInfo,
+        config: &C,
+        tls: Option<Certificate>,
+    ) -> Result<Self, Error> {
         let all_services = resolve_all(config).await?;
 
         let mut workers = WorkersMap::default();
@@ -34,7 +41,22 @@ impl Map {
             })
             .collect();
         for (worker_info, addr) in peer_workers {
-            let worker = WorkerClient::connect(format!("http://{}", addr)).await?;
+            let uri = format!("https://{}", addr)
+                .parse::<Uri>()
+                .expect("bad addr");
+            let mut builder = Channel::builder(uri);
+            if let Some(ref cert) = tls {
+                debug!("TLS for WorkerClient.");
+                builder = builder
+                    .tls_config(
+                        ClientTlsConfig::new()
+                            .domain_name("spectrum.example.com")
+                            .ca_certificate(cert.clone()),
+                    )
+                    .map_err(|e| format!("{:?}", e))?;
+            }
+            let channel = builder.connect().await.map_err(|err| err.to_string())?;
+            let worker = WorkerClient::new(channel);
             workers.insert(worker_info, Arc::new(Mutex::new(worker)));
         }
 
@@ -59,11 +81,16 @@ impl Map {
 pub struct Remote(watch::Sender<Option<Map>>);
 
 impl Remote {
-    pub async fn init<C>(&self, worker: WorkerInfo, config: &C) -> Result<(), Error>
+    pub async fn init<C>(
+        &self,
+        worker: WorkerInfo,
+        config: &C,
+        tls: Option<Certificate>,
+    ) -> Result<(), Error>
     where
         C: Store,
     {
-        let map = Map::from_config(worker, config).await?;
+        let map = Map::from_config(worker, config, tls).await?;
         self.0
             .send(Some(map))
             .map_err(|_| "Error sending service registry.")?;

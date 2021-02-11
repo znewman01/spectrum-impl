@@ -200,7 +200,7 @@ async fn main() -> Result<()> {
 
         let experiment = Experiment::from(record);
         let config = config::from_env().await?;
-        match run_in_process(experiment, config).await {
+        match run_in_process(experiment, config, None).await {
             Ok(elapsed) => {
                 let output = OutputRecord::from_input_record(record, elapsed);
                 wtr.serialize(output)?;

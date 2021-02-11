@@ -4,6 +4,7 @@ use crate::{
 
 use clap::Clap;
 use simplelog::{LevelFilter, SimpleLogger, TermLogger, TerminalMode};
+use tonic::transport::{Certificate, Identity};
 
 #[derive(Clap)]
 pub struct Args {
@@ -70,15 +71,64 @@ pub struct NetArgs {
     /// If not given, use `localhost` and the port from `--local-port`.
     #[clap(long = "public-address")]
     public_addr: Option<String>,
+
+    #[clap(flatten)]
+    tls: TlsServerArgs,
+}
+
+#[derive(Clap)]
+pub struct TlsServerArgs {
+    #[clap(long = "tls-cert", env = "SPECTRUM_TLS_CERT", help = "Path to .crt")]
+    cert_file: Option<String>,
+
+    #[clap(long = "tls-key", env = "SPECTRUM_TLS_KEY", help = "Path to .key")]
+    key_file: Option<String>,
+
+    #[clap(flatten)]
+    tls_ca: TlsCaArgs,
+}
+
+impl Into<Option<(Identity, Certificate)>> for TlsServerArgs {
+    fn into(self) -> Option<(Identity, Certificate)> {
+        match (self.cert_file, self.key_file) {
+            (None, None) => None,
+            (Some(cert_file), Some(key_file)) => {
+                let cert = std::fs::read_to_string(cert_file).unwrap();
+                let key = std::fs::read_to_string(key_file).unwrap();
+                let identity = Identity::from_pem(cert, key);
+                let cert: Option<Certificate> = self.tls_ca.into();
+                Some(identity).zip(cert)
+            }
+            _ => {
+                panic!("TLS cert and key must be provided together.");
+            }
+        }
+    }
+}
+
+#[derive(Clap)]
+pub struct TlsCaArgs {
+    #[clap(long = "tls-ca", env = "SPECTRUM_TLS_CA", help = "Path to ca.pem")]
+    ca_file: Option<String>,
+}
+
+impl Into<Option<Certificate>> for TlsCaArgs {
+    fn into(self) -> Option<Certificate> {
+        self.ca_file.map(|ca_file| {
+            let pem = std::fs::read_to_string(ca_file).unwrap();
+            Certificate::from_pem(pem)
+        })
+    }
 }
 
 impl Into<NetConfig> for NetArgs {
     fn into(self) -> NetConfig {
+        let tls: Option<(Identity, Certificate)> = self.tls.into();
         match (self.local_port, self.public_addr) {
-            (None, None) => NetConfig::with_free_port_localhost(),
-            (None, Some(public_addr)) => NetConfig::with_free_port(public_addr),
-            (Some(local_port), None) => NetConfig::new_localhost(local_port),
-            (Some(local_port), Some(public_addr)) => NetConfig::new(local_port, public_addr),
+            (None, None) => NetConfig::with_free_port_localhost(tls),
+            (None, Some(public_addr)) => NetConfig::with_free_port(public_addr, tls),
+            (Some(local_port), None) => NetConfig::new_localhost(local_port, tls),
+            (Some(local_port), Some(public_addr)) => NetConfig::new(local_port, public_addr, tls),
         }
     }
 }

@@ -36,7 +36,7 @@ use tokio::{
     task::spawn_blocking,
     time::sleep,
 };
-use tonic::{Request, Response, Status};
+use tonic::{transport::ServerTlsConfig, Request, Response, Status};
 
 mod audit_registry;
 mod client_registry;
@@ -424,7 +424,12 @@ where
 
     let worker = MyWorker::new(start_rx, registry.clone(), experiment, protocol);
     let state = worker.state.clone();
-    let server = tonic::transport::server::Server::builder()
+    let mut builder = tonic::transport::server::Server::builder();
+    if let Some(identity) = net.tls_ident() {
+        info!("Adding TLS config.");
+        builder = builder.tls_config(ServerTlsConfig::new().identity(identity))?;
+    }
+    let server = builder
         .add_service(HealthServer::new(AllGoodHealthServer::default()))
         .add_service(WorkerServer::new(worker))
         .serve_with_shutdown(net.local_socket_addr(), shutdown);
@@ -433,12 +438,12 @@ where
 
     sleep(std::time::Duration::from_millis(500)).await;
 
-    wait_for_health(format!("http://{}", net.public_addr())).await?;
+    wait_for_health(format!("http://{}", net.public_addr()), net.tls_cert()).await?;
     trace!("Worker {:?} healthy and serving.", info);
     register(&config, Node::new(info.into(), net.public_addr())).await?;
 
     let start_time = wait_for_start_time_set(&config).await.unwrap();
-    registry_remote.init(info, &config).await?;
+    registry_remote.init(info, &config, net.tls_cert()).await?;
     delay_until(start_time).await;
     start_tx.send(Some(Instant::now()))?;
 

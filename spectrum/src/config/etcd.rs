@@ -77,11 +77,11 @@ impl Runner {
         let data_dir = temp_dir.path().join("test.etcd");
         let data_dir: &OsStr = data_dir.as_ref();
 
-        let client_addr = NetConfig::with_free_port_localhost();
+        let client_addr = NetConfig::with_free_port_localhost(None);
         let client_url = format!("http://{}", client_addr.public_addr());
         let peer_url = format!(
             "http://{}",
-            NetConfig::with_free_port_localhost().public_addr()
+            NetConfig::with_free_port_localhost(None).public_addr()
         );
 
         let process = Command::new("etcd")

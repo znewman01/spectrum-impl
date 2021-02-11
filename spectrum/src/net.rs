@@ -2,6 +2,7 @@
 // TODO(zjn): use portpicker when https://github.com/Dentosal/portpicker-rs/pull/1 merged
 use port_check::free_local_port;
 use std::net::SocketAddr;
+use tonic::transport::{Certificate, Identity};
 
 /// Common configuration for a network service.
 #[derive(Debug, Clone)]
@@ -11,31 +12,42 @@ pub struct Config {
 
     /// Host (and optional port) to publish as the address of this service.
     public_addr: String,
+
+    pub tls: Option<(Identity, Certificate)>,
 }
 
 impl Config {
-    pub fn new(local_port: u16, public_addr: String) -> Self {
+    pub fn new(local_port: u16, public_addr: String, tls: Option<(Identity, Certificate)>) -> Self {
         Self {
             local_port,
             public_addr,
+            tls,
         }
     }
 
-    pub fn new_localhost(local_port: u16) -> Self {
+    pub fn new_localhost(local_port: u16, tls: Option<(Identity, Certificate)>) -> Self {
         Self {
             local_port,
             public_addr: format!("localhost:{}", local_port),
+            tls,
         }
     }
 
-    /// A network configuration useful for running locally.
-    pub fn with_free_port_localhost() -> Self {
-        let local_port = free_local_port().expect("No ports free");
-        Self::new_localhost(local_port)
+    pub fn tls_ident(&self) -> Option<Identity> {
+        self.tls.as_ref().map(|(i, _)| i.clone())
+    }
+    pub fn tls_cert(&self) -> Option<Certificate> {
+        self.tls.as_ref().map(|(_, c)| c.clone())
     }
 
-    pub fn with_free_port(public_addr: String) -> Self {
-        let mut config = Self::with_free_port_localhost();
+    /// A network configuration useful for running locally.
+    pub fn with_free_port_localhost(tls: Option<(Identity, Certificate)>) -> Self {
+        let local_port = free_local_port().expect("No ports free");
+        Self::new_localhost(local_port, tls)
+    }
+
+    pub fn with_free_port(public_addr: String, tls: Option<(Identity, Certificate)>) -> Self {
+        let mut config = Self::with_free_port_localhost(tls);
         config.public_addr = public_addr;
         config
     }

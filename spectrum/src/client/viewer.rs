@@ -14,6 +14,7 @@ use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use log::{debug, error, info, trace, warn};
 use tokio::time::sleep;
+use tonic::transport::Certificate;
 
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
@@ -26,6 +27,7 @@ async fn inner_run<C, F, P>(
     protocol: P,
     info: ClientInfo,
     hammer: bool,
+    cert: Option<Certificate>,
     shutdown: F,
 ) -> Result<(), TokioError>
 where
@@ -40,7 +42,7 @@ where
     let start_time = wait_for_start_time_set(&config).await?;
     debug!("Received configuration from configuration server; initializing.");
 
-    let clients: Vec<_> = connections::connect_and_register(&config, info.clone()).await?;
+    let clients: Vec<_> = connections::connect_and_register(&config, info.clone(), cert).await?;
     let client_id = info.to_proto(); // before we move info
     let mut write_tokens = match info.broadcast {
         Some((msg, key)) => {
@@ -108,6 +110,7 @@ pub async fn run<C, F>(
     protocol: ProtocolWrapper,
     info: ClientInfo,
     hammer: bool,
+    cert: Option<Certificate>,
     shutdown: F,
 ) -> Result<(), TokioError>
 where
@@ -116,13 +119,13 @@ where
 {
     match protocol {
         ProtocolWrapper::Secure(protocol) => {
-            inner_run(config, protocol, info, hammer, shutdown).await?;
+            inner_run(config, protocol, info, hammer, cert, shutdown).await?;
         }
         ProtocolWrapper::SecureMultiKey(protocol) => {
-            inner_run(config, protocol, info, hammer, shutdown).await?;
+            inner_run(config, protocol, info, hammer, cert, shutdown).await?;
         }
         ProtocolWrapper::Insecure(protocol) => {
-            inner_run(config, protocol, info, hammer, shutdown).await?;
+            inner_run(config, protocol, info, hammer, cert, shutdown).await?;
         }
     }
     Ok(())

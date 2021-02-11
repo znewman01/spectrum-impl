@@ -2,7 +2,10 @@ use crate::config::store::Error;
 use log::debug;
 use std::time::Duration;
 use tokio::time::sleep;
-use tonic::{Request, Response, Status};
+use tonic::{
+    transport::Certificate, transport::Channel, transport::ClientTlsConfig, transport::Uri,
+    Request, Response, Status,
+};
 
 pub mod spectrum {
     tonic::include_proto!("grpc.health.v1");
@@ -34,10 +37,20 @@ impl Health for AllGoodHealthServer {
     }
 }
 
-async fn is_healthy(addr: String) -> Result<bool, Error> {
-    let mut client = HealthClient::connect(addr)
-        .await
-        .map_err(|err| err.to_string())?;
+async fn is_healthy(addr: Uri, tls: Option<Certificate>) -> Result<bool, Error> {
+    let mut builder = Channel::builder(addr.clone());
+    if let Some(ref cert) = tls {
+        debug!("TLS for client.");
+        builder = builder
+            .tls_config(
+                ClientTlsConfig::new()
+                    .domain_name("spectrum.example.com")
+                    .ca_certificate(cert.clone()),
+            )
+            .map_err(|e| format!("{:?}", e))?;
+    }
+    let channel = builder.connect().await.map_err(|err| err.to_string())?;
+    let mut client = HealthClient::new(channel);
     let req = Request::new(HealthCheckRequest {
         service: "".to_string(),
     });
@@ -49,9 +62,11 @@ pub async fn wait_for_health_helper(
     addr: String,
     delay: Duration,
     attempts: usize,
+    tls: Option<Certificate>,
 ) -> Result<(), Error> {
+    let uri = addr.parse::<Uri>().expect("invalid addr");
     for _ in 0..attempts {
-        match is_healthy(addr.clone()).await {
+        match is_healthy(uri.clone(), tls.clone()).await {
             Ok(response) => {
                 if response {
                     return Ok(());
@@ -69,6 +84,6 @@ pub async fn wait_for_health_helper(
     )))
 }
 
-pub async fn wait_for_health(addr: String) -> Result<(), Error> {
-    wait_for_health_helper(addr, RETRY_DELAY, RETRY_ATTEMPTS).await
+pub async fn wait_for_health(addr: String, tls: Option<Certificate>) -> Result<(), Error> {
+    wait_for_health_helper(addr, RETRY_DELAY, RETRY_ATTEMPTS, tls).await
 }

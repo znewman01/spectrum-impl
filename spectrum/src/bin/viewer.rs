@@ -40,7 +40,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         let info = ClientInfo::new(thread_rng().gen());
         let config = config.clone();
         tokio::spawn(async move {
-            client::viewer::run(config, protocol, info, hammer, futures::future::ready(())).await
+            client::viewer::run(
+                config,
+                protocol,
+                info,
+                hammer,
+                None,
+                futures::future::ready(()),
+            )
+            .await
         })
     })
     .take(args.threads.into())

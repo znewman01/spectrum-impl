@@ -20,5 +20,5 @@ async fn test_pass() {
     let experiment = Experiment::new(protocol, 2, 6, false);
 
     let config = config::from_string("").await.unwrap();
-    run_in_process(experiment, config).await.unwrap();
+    run_in_process(experiment, config, None).await.unwrap();
 }

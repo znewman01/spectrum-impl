@@ -143,7 +143,7 @@ where
             .await
     });
 
-    wait_for_health(format!("http://{}", net.public_addr())).await?;
+    wait_for_health(format!("http://{}", net.public_addr()), None).await?;
     trace!("Publisher {:?} healthy and serving.", info);
 
     let node = Node::new(info.into(), net.public_addr());
