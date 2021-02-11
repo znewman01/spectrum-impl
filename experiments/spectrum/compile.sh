@@ -29,7 +29,8 @@ if [[ -z "$object_exists" ]]; then
     cd $HOME/spectrum/target
     tar -czf $HOME/spectrum-bin.tar.gz \
         --transform "s/${PROFILE}/spectrum/" \
-        "${PROFILE}"/{publisher,worker,leader,viewer,broadcaster,setup}
+        "${PROFILE}"/{publisher,worker,leader,viewer,broadcaster,setup} \
+        ../spectrum/data/{server,ca}.{crt,key}
 
     cd $HOME
     rm -rf spectrum/  # save 3GB, at least in debug mode

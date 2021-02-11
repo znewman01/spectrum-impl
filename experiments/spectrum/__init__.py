@@ -222,6 +222,9 @@ async def _prepare_worker(
     spectrum_config: Dict[str, Any] = {
         "SPECTRUM_WORKER_GROUP": group,
         "SPECTRUM_WORKER_START_INDEX": worker_start_idx,
+        "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
+        "SPECTRUM_TLS_KEY": "/home/ubuntu/spectrum/data/server.key",
+        "SPECTRUM_TLS_CERT": "/home/ubuntu/spectrum/data/server.crt",
         **etcd_env,
     }
     await _install_spectrum_config(machine, spectrum_config)
@@ -239,7 +242,11 @@ async def _prepare_worker(
 async def _prepare_client(
     machine: Machine, client_range: slice, etcd_env: Dict[str, Any]
 ):
-    await _install_spectrum_config(machine, etcd_env)
+    spectrum_config: Dict[str, Any] = {
+        "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
+        **etcd_env,
+    }
+    await _install_spectrum_config(machine, spectrum_config)
     await machine.ssh.run(
         f"sudo systemctl start viewer@{{{client_range.start}..{client_range.stop}}}",
         check=True,

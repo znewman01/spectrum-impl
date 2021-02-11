@@ -1,5 +1,6 @@
 use rand::{thread_rng, Rng};
 use std::iter::repeat_with;
+use tonic::transport::Certificate;
 
 use clap::{crate_authors, crate_version, Clap};
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -24,6 +25,8 @@ struct Args {
     /// Run this many threads in parallel.
     #[clap(long, env = "SPECTRUM_VIEWER_THREADS", default_value = "1")]
     threads: u16,
+    #[clap(flatten)]
+    tls: cli::TlsCaArgs,
 }
 
 #[tokio::main]
@@ -34,18 +37,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env().await?;
     let experiment = experiment::read_from_store(&config).await?;
     let hammer = experiment.hammer;
+    let tls: Option<Certificate> = args.tls.into();
 
     repeat_with(|| {
         let protocol = experiment.get_protocol().clone();
         let info = ClientInfo::new(thread_rng().gen());
         let config = config.clone();
+        let tls = tls.clone();
         tokio::spawn(async move {
             client::viewer::run(
                 config,
                 protocol,
                 info,
                 hammer,
-                None,
+                tls,
                 futures::future::ready(()),
             )
             .await

@@ -7,7 +7,7 @@ members = [
 
 [profile.release]
 lto = "thin"
-debug = false  # turn on for profiling; bigger binaries but not any slower
+debug = true  # turn on for profiling; bigger binaries but not any slower
 codegen-units = 1  # makes it take a very long time
 
 [profile.bench]

@@ -7,6 +7,7 @@ import sys
 TRIALS = 1
 
 MESSAGE_SIZES_ONE_CHANNEL = [
+    100_000,
     1_000_000,
     2_000_000,
     3_000_000,
