@@ -7,9 +7,6 @@ use spectrum_impl::{
 };
 use tokio::signal::ctrl_c;
 
-#[global_allocator]
-static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
-
 /// Run a Spectrum worker (many per trust group).
 ///
 /// Clients connect directly to workers (sharded within each group).
