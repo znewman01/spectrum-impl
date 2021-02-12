@@ -93,6 +93,7 @@ pub mod two_key {
     use serde::{Deserialize, Serialize};
     use std::iter::repeat_with;
     use std::ops;
+    use std::sync::Arc;
 
     #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
     pub struct Construction<P> {
@@ -115,6 +116,7 @@ pub mod two_key {
             + Eq
             + Debug
             + ops::BitXor<P::Output, Output = P::Output>
+            + ops::BitXor<Arc<P::Output>, Output = P::Output>
             + ops::BitXorAssign<P::Output>,
     {
         type Key = super::Key<P>;
@@ -174,16 +176,16 @@ pub mod two_key {
 
         /// evaluates the DPF on a given PRGKey and outputs the resulting data
         fn eval(&self, key: Self::Key) -> Vec<P::Output> {
+            let msg_ref = Arc::new(key.encoded_msg);
             key.seeds
                 .iter()
                 .zip(key.bits.iter())
                 .map(|(seed, bits)| {
-                    let mut data = self.prg.eval(seed);
                     if *bits == 1 {
-                        // TODO(zjn): futz with lifetimes; remove clone()
-                        data ^= key.encoded_msg.clone();
+                        self.prg.eval(seed) ^ msg_ref.clone()
+                    } else {
+                        self.prg.eval(seed)
                     }
-                    data
                 })
                 .collect()
         }

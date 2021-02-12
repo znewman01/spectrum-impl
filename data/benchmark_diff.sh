@@ -46,7 +46,8 @@ main() {
     done
 
     # 2. Plot
-    python data/plot.py \
+    cd /home/zjn/git/spectrum-paper
+    python experiments/plot.py \
         --results-dir "${RESULTS_DIR}" \
         --benchmark "${COMMIT1}:${COMMIT2}" \
         --show

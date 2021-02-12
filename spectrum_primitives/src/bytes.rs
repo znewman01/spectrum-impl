@@ -105,6 +105,14 @@ impl ops::BitXor<&Bytes> for Bytes {
     }
 }
 
+impl<A: AsRef<Bytes>> ops::BitXor<A> for Bytes {
+    type Output = Bytes;
+
+    fn bitxor(self, rhs: A) -> Bytes {
+        self ^ rhs.as_ref()
+    }
+}
+
 impl ops::BitXor<Bytes> for Bytes {
     type Output = Bytes;
 
