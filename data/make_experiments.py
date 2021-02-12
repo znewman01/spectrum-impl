@@ -29,29 +29,25 @@ PLOTS_SPECTRUM = {
     # "Our turf": one channel, many clients, measure QPS
     "onechannel": {
         "channels": [1],
-        "clients": [250],
+        "clients": [400],
         "message_size": MESSAGE_SIZES_ONE_CHANNEL,
-        "clients_per_machine": [50],
-        "workers_per_machine": [2],
     },
     "manychannel": {
         "channels": CHANNELS,
-        "clients": [100],
+        "clients": [400],
         "message_size": MESSAGE_SIZES_MANY_CHANNEL,
-        "workers_per_machine": [4],
     },
     # Horizontal scaling experiment
     "horizontal": {
-        "clients": [500],
+        "clients": [600],
         "worker_machines_per_group": [1, 2, 3, 4, 5, 6, 7, 8],
         # too many total workers appears to lead to higher tail latencies
-        "workers_per_machine": [4],
         "message_size": [100_000],
         "channels": [500],
     },
     # Test the scaling of seed homomorphic protocol
     "multi-server": {
-        "clients": [200],
+        "clients": [400],
         "clients_per_machine": [50],
         "workers_per_machine": [4],
         "channels": _MULTI_SERVER_CHANNELS,
@@ -63,7 +59,7 @@ PLOTS_SPECTRUM = {
         ],
     },
     "multi-server-control": {
-        "clients": [200],
+        "clients": [400],
         "workers_per_machine": [4],
         "channels": _MULTI_SERVER_CHANNELS,
         "message_size": _MULTI_SERVER_MESSAGE_SIZES,

@@ -259,7 +259,7 @@ class Experiment(system.Experiment):
     channels: int
     message_size: Bytes
     instance_type: InstanceType = DEFAULT_INSTANCE_TYPE
-    clients_per_machine: int = 100
+    clients_per_machine: int = 200
     workers_per_machine: int = 1  # TODO: better default
     worker_machines_per_group: int = 1
     protocol: Protocol = Symmetric()
