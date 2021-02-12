@@ -368,7 +368,7 @@ pub mod multi_key {
             }
 
             // TODO: kill this clone
-            let msg_hash: Bytes = dpf_key.encoded_msg.clone().hash_all();
+            let msg_hash: Bytes = dpf_key.encoded_msg.as_ref().clone().hash_all();
             FieldToken {
                 bit: bit_check,
                 seed: seed_check,

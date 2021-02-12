@@ -7,6 +7,7 @@ use crate::prg::PRG;
 use derivative::Derivative;
 
 use std::fmt::Debug;
+use std::sync::Arc;
 
 #[cfg(any(test, feature = "testing"))]
 use proptest::prelude::*;
@@ -41,14 +42,14 @@ pub type MultiKeyDPF<P> = multi_key::Construction<P>;
     Clone(bound = "P::Seed: Clone, P::Output: Clone")
 )]
 pub struct Key<P: PRG> {
-    pub encoded_msg: P::Output,
+    pub encoded_msg: Arc<P::Output>,
     pub bits: Vec<u8>,
     pub seeds: Vec<<P as PRG>::Seed>,
 }
 
 impl<P: PRG> Key<P> {
     // generates a new DPF key with the necessary parameters needed for evaluation
-    pub fn new(encoded_msg: P::Output, bits: Vec<u8>, seeds: Vec<P::Seed>) -> Key<P> {
+    pub fn new(encoded_msg: Arc<P::Output>, bits: Vec<u8>, seeds: Vec<P::Seed>) -> Key<P> {
         assert_eq!(bits.len(), seeds.len());
         assert!(
             bits.iter().all(|b| *b == 0 || *b == 1),
@@ -80,7 +81,7 @@ where
                     prop::collection::vec(0..1u8, num_keys),
                     prop::collection::vec(any::<P::Seed>(), num_keys),
                 )
-                    .prop_map(|(msg, bits, seeds)| Self::new(msg, bits, seeds))
+                    .prop_map(|(msg, bits, seeds)| Self::new(Arc::new(msg), bits, seeds))
             })
             .boxed()
     }
@@ -93,7 +94,6 @@ pub mod two_key {
     use serde::{Deserialize, Serialize};
     use std::iter::repeat_with;
     use std::ops;
-    use std::sync::Arc;
 
     #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
     pub struct Construction<P> {
@@ -153,12 +153,13 @@ pub mod two_key {
             let mut bits_b = bits_a.clone();
             bits_b[point_idx] = 1 - bits_b[point_idx];
 
-            let encoded_msg =
-                self.prg.eval(&seeds_a[point_idx]) ^ self.prg.eval(&seeds_b[point_idx]) ^ msg;
+            let encoded_msg = Arc::new(
+                self.prg.eval(&seeds_a[point_idx]) ^ self.prg.eval(&seeds_b[point_idx]) ^ msg,
+            );
 
             vec![
                 Self::Key::new(encoded_msg.clone(), bits_a, seeds_a),
-                Self::Key::new(encoded_msg, bits_b, seeds_b),
+                Self::Key::new(encoded_msg.clone(), bits_b, seeds_b),
             ]
         }
 
@@ -169,20 +170,19 @@ pub mod two_key {
             let bits: Vec<_> = repeat_with(|| thread_rng().gen_range(0, 2))
                 .take(self.num_points)
                 .collect();
-            let encoded_msg = self.prg.eval(&self.prg.new_seed()); // random message
+            let encoded_msg = Arc::new(self.prg.eval(&self.prg.new_seed())); // random message
 
-            vec![Self::Key::new(encoded_msg, bits, seeds); 2]
+            vec![Self::Key::new(encoded_msg.clone(), bits, seeds); 2]
         }
 
         /// evaluates the DPF on a given PRGKey and outputs the resulting data
         fn eval(&self, key: Self::Key) -> Vec<P::Output> {
-            let msg_ref = Arc::new(key.encoded_msg);
             key.seeds
                 .iter()
                 .zip(key.bits.iter())
                 .map(|(seed, bits)| {
                     if *bits == 1 {
-                        self.prg.eval(seed) ^ msg_ref.clone()
+                        self.prg.eval(seed) ^ key.encoded_msg.clone()
                     } else {
                         self.prg.eval(seed)
                     }
@@ -328,7 +328,7 @@ pub mod multi_key {
             // add message to the set of PRG outputs to "combine" together in the next step
             // encoded message G(S*) ^ msg
             let neg = self.prg.null_seed() - special_seed;
-            let encoded_msg = self.prg.combine_outputs(&[&msg, &self.prg.eval(&neg)]);
+            let encoded_msg = Arc::new(self.prg.combine_outputs(&[&msg, &self.prg.eval(&neg)]));
 
             // update the encoded message in the keys
             for key in keys.iter_mut() {
@@ -373,7 +373,7 @@ pub mod multi_key {
 
             bits.push(last_bit_vec);
 
-            let encoded_msg = self.prg.eval(&self.prg.new_seed()); // psuedo random message
+            let encoded_msg = Arc::new(self.prg.eval(&self.prg.new_seed())); // psuedo random message
 
             seeds
                 .iter()

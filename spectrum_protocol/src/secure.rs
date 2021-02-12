@@ -18,6 +18,7 @@ use spectrum_primitives::{
 
 use std::fmt;
 use std::iter::repeat;
+use std::sync::Arc;
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -31,10 +32,7 @@ use {
         prg::PRG,
         vdpf::{self, FieldProofShare, FieldToken},
     },
-    std::{
-        convert::{TryFrom, TryInto},
-        sync::Arc,
-    },
+    std::convert::{TryFrom, TryInto},
 };
 
 pub use spectrum_primitives::vdpf::{BasicVdpf, MultiKeyVdpf};
@@ -78,11 +76,12 @@ where
     FieldVDPF<D>: VDPF<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare>,
     P: PRG,
     P::Seed: Into<Vec<u8>>,
-    P::Output: Into<Vec<u8>>,
+    P::Output: Into<Vec<u8>> + Clone,
 {
     fn into(self) -> proto::WriteToken {
+        let msg: P::Output = self.0.encoded_msg.as_ref().clone();
         let dpf_key_proto = proto::secure_write_token::DpfKey {
-            encoded_msg: self.0.encoded_msg.into(),
+            encoded_msg: msg.into(),
             bits: self.0.bits,
             seeds: self
                 .0
@@ -126,7 +125,7 @@ where
         if let proto::write_token::Inner::Secure(inner) = token.inner.unwrap() {
             let key_proto = inner.key.unwrap();
             let dpf_key = <FieldVDPF<D> as DPF>::Key::new(
-                key_proto.encoded_msg.try_into().unwrap(),
+                Arc::new(key_proto.encoded_msg.try_into().unwrap()),
                 key_proto.bits,
                 key_proto.seeds.into_iter().map(Into::into).collect(),
             );
@@ -301,7 +300,7 @@ impl SecureProtocol<MultiKeyVdpf> {
 impl<V> Protocol for SecureProtocol<V>
 where
     V: VDPF,
-    <V as DPF>::Key: fmt::Debug,
+    <V as DPF>::Key: fmt::Debug + Clone,
     <V as DPF>::Message: From<Bytes> + Into<Bytes> + Accumulatable + Clone,
     V::Token: Clone,
     V::AuthKey: Clone,
@@ -361,7 +360,7 @@ where
     }
 
     fn to_accumulator(&self, token: WriteToken<V>) -> Vec<Self::Accumulator> {
-        self.vdpf.eval(token.0)
+        self.vdpf.eval(token.0.clone())
     }
 }
 
