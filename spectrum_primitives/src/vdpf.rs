@@ -125,7 +125,7 @@ impl<D: DPF> DPF for FieldVDPF<D> {
         self.dpf.gen_empty()
     }
 
-    fn eval(&self, key: &Self::Key) -> Vec<Self::Message> {
+    fn eval(&self, key: Self::Key) -> Vec<Self::Message> {
         self.dpf.eval(key)
     }
 
@@ -222,7 +222,7 @@ pub mod two_key {
 
             // TODO: switch to blake3 in parallel when input is ~1 Mbit or greater
             let mut hasher = blake3::Hasher::new();
-            let input = dpf_key.encoded_msg.as_ref();
+            let input = dpf_key.encoded_msg.as_ref().as_ref();
             if dpf_key.encoded_msg.len() >= 125000 {
                 hasher.update_with_join::<blake3::join::RayonJoin>(input);
             } else {

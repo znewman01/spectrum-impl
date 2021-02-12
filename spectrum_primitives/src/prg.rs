@@ -29,7 +29,7 @@ pub trait PRG {
 /// Seed homomorphic PRG
 pub trait SeedHomomorphicPRG: PRG {
     fn combine_seeds(&self, seeds: Vec<Self::Seed>) -> Self::Seed;
-    fn combine_outputs(&self, outputs: Vec<Self::Output>) -> Self::Output;
+    fn combine_outputs(&self, outputs: &[&Self::Output]) -> Self::Output;
     fn null_seed(&self) -> Self::Seed;
 }
 
@@ -52,19 +52,19 @@ mod tests {
         // ensure combine(null, null) = null
         assert_eq!(
             prg.null_output(),
-            prg.combine_outputs(vec![prg.null_output(), prg.null_output()])
+            prg.combine_outputs(&[&prg.null_output(), &prg.null_output()])
         );
 
         // ensure combine(null, eval) = eval
         assert_eq!(
             prg.eval(&seed),
-            prg.combine_outputs(vec![prg.eval(&seed), prg.null_output()])
+            prg.combine_outputs(&[&prg.eval(&seed), &prg.null_output()])
         );
 
         // ensure combine(eval, null) = eval
         assert_eq!(
             prg.eval(&seed),
-            prg.combine_outputs(vec![prg.null_output(), prg.eval(&seed)])
+            prg.combine_outputs(&[&prg.null_output(), &prg.eval(&seed)])
         );
     }
 
@@ -463,7 +463,7 @@ pub mod group {
             GroupPrgSeed::new(Integer::from(Integer::sum(seeds.iter())) % Group::order())
         }
 
-        fn combine_outputs(&self, outputs: Vec<ElementVector>) -> ElementVector {
+        fn combine_outputs(&self, outputs: &[&ElementVector]) -> ElementVector {
             let mut combined = self.null_output();
             for output in outputs {
                 for (acc, val) in combined.0.iter_mut().zip(output.0.iter()) {
@@ -620,10 +620,11 @@ pub mod group {
             P::Seed: Eq + Clone + Debug,
             P::Output: Eq + Clone + Debug + Hash,
         {
-            let outputs: Vec<P::Output> = seeds.iter().map(|seed| prg.eval(seed)).collect();
+            let output_src: Vec<_> = seeds.iter().map(|seed| prg.eval(seed)).collect();
+            let outputs: Vec<_> = output_src.iter().collect();
 
             assert_eq!(
-                prg.combine_outputs(outputs),
+                prg.combine_outputs(&outputs),
                 prg.eval(&prg.combine_seeds(seeds))
             );
         }
@@ -638,19 +639,21 @@ pub mod group {
             P::Seed: Eq + Clone + Debug + ops::Sub<Output = P::Seed>,
             P::Output: Eq + Clone + Debug + Hash,
         {
-            let mut outputs: Vec<P::Output> = seeds.iter().map(|seed| prg.eval(seed)).collect();
+            let output_src: Vec<_> = seeds.iter().map(|seed| prg.eval(seed)).collect();
+            let mut outputs: Vec<_> = output_src.iter().collect();
 
             // null seed doesn't change the output
-            let expected = prg.combine_outputs(outputs.clone());
-            outputs.push(prg.eval(&prg.null_seed()));
+            let expected = prg.combine_outputs(&outputs);
+            let output = prg.eval(&prg.null_seed());
+            outputs.push(&output);
 
-            prop_assert_eq!(prg.combine_outputs(outputs), expected);
+            prop_assert_eq!(prg.combine_outputs(&outputs), expected);
 
             // null seed produces null output
             let seed = seeds[0].clone();
             let neg = prg.null_seed() - seeds[0].clone();
             prop_assert_eq!(
-                prg.combine_outputs(vec![prg.eval(&seed), prg.eval(&neg)]),
+                prg.combine_outputs(&[&prg.eval(&seed), &prg.eval(&neg)]),
                 prg.null_output()
             );
 

@@ -361,7 +361,7 @@ where
     }
 
     fn to_accumulator(&self, token: WriteToken<V>) -> Vec<Self::Accumulator> {
-        self.vdpf.eval(&token.0)
+        self.vdpf.eval(token.0)
     }
 }
 

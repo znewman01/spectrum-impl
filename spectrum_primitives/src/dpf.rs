@@ -26,7 +26,7 @@ pub trait DPF {
     /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
     fn gen(&self, msg: Self::Message, idx: usize) -> Vec<Self::Key>;
     fn gen_empty(&self) -> Vec<Self::Key>;
-    fn eval(&self, key: &Self::Key) -> Vec<Self::Message>;
+    fn eval(&self, key: Self::Key) -> Vec<Self::Message>;
     fn combine(&self, parts: Vec<Vec<Self::Message>>) -> Vec<Self::Message>;
 }
 
@@ -173,7 +173,7 @@ pub mod two_key {
         }
 
         /// evaluates the DPF on a given PRGKey and outputs the resulting data
-        fn eval(&self, key: &Self::Key) -> Vec<P::Output> {
+        fn eval(&self, key: Self::Key) -> Vec<P::Output> {
             key.seeds
                 .iter()
                 .zip(key.bits.iter())
@@ -326,7 +326,7 @@ pub mod multi_key {
             // add message to the set of PRG outputs to "combine" together in the next step
             // encoded message G(S*) ^ msg
             let neg = self.prg.null_seed() - special_seed;
-            let encoded_msg = self.prg.combine_outputs(vec![msg, self.prg.eval(&neg)]);
+            let encoded_msg = self.prg.combine_outputs(&[&msg, &self.prg.eval(&neg)]);
 
             // update the encoded message in the keys
             for key in keys.iter_mut() {
@@ -383,33 +383,32 @@ pub mod multi_key {
         }
 
         /// evaluates the DPF on a given PRGKey and outputs the resulting data
-        fn eval(&self, key: &Key<P>) -> Vec<P::Output> {
-            key.seeds
-                .iter()
-                .zip(key.bits.iter())
-                .map(|(seed, bits)| {
-                    let mut data = self.prg.eval(seed);
-                    if *bits == 1 {
-                        // TODO(zjn): futz with lifetimes; remove clone()
-                        data = self
-                            .prg
-                            .combine_outputs(vec![key.encoded_msg.clone(), data]);
-                    }
-                    data
-                })
-                .collect()
+        fn eval(&self, key: Key<P>) -> Vec<P::Output> {
+            for (seed, bits) in key.seeds.iter().zip(key.bits.iter()) {
+                if *bits == 1 {
+                    self.prg
+                        .combine_outputs(&[&key.encoded_msg, &self.prg.eval(seed)]);
+                } else {
+                    self.prg.eval(seed);
+                }
+            }
+            vec![]
         }
 
         /// combines the results produced by running eval on both keys
+        ///
+        /// combine([[a, b], [c, d], [e, f]]) == [a + c + e, b + d + f]
         fn combine(&self, parts: Vec<Vec<P::Output>>) -> Vec<P::Output> {
-            let mut parts = parts.into_iter();
-            let mut res = parts.next().expect("Need at least one part to combine.");
-            for part in parts {
-                for (x, y) in res.iter_mut().zip(part.into_iter()) {
-                    *x = self.prg.combine_outputs(vec![x.clone(), y]);
-                }
-            }
-            res
+            parts
+                .into_iter()
+                .fold_first(|part1, part2| {
+                    part1
+                        .iter()
+                        .zip(part2.iter())
+                        .map(|(x, y)| self.prg.combine_outputs(&[x, y]))
+                        .collect()
+                })
+                .expect("parts should be nonempty")
         }
     }
 
@@ -483,7 +482,7 @@ pub mod prg_tests {
         D::Message: Eq + Debug + Default + Clone,
     {
         let dpf_keys = dpf.gen(data.clone(), index);
-        let dpf_shares = dpf_keys.iter().map(|k| dpf.eval(k)).collect();
+        let dpf_shares = dpf_keys.into_iter().map(|k| dpf.eval(k)).collect();
         let dpf_output = dpf.combine(dpf_shares);
 
         for (chunk_idx, chunk) in dpf_output.into_iter().enumerate() {
@@ -501,7 +500,7 @@ pub mod prg_tests {
         D::Message: Default + Eq + Debug,
     {
         let dpf_keys = dpf.gen_empty();
-        let dpf_shares = dpf_keys.iter().map(|k| dpf.eval(k)).collect();
+        let dpf_shares = dpf_keys.into_iter().map(|k| dpf.eval(k)).collect();
         let dpf_output = dpf.combine(dpf_shares);
 
         for chunk in dpf_output {

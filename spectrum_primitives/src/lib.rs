@@ -1,3 +1,4 @@
+#![feature(iterator_fold_self)]
 pub mod bytes;
 pub mod dpf;
 pub mod field;
