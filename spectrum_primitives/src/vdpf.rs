@@ -2,7 +2,7 @@
 use crate::{
     dpf::{BasicDPF, MultiKeyDPF, DPF},
     field::{Field, FieldElement},
-    lss::{SecretShare, LSS},
+    lss::{SecretShare, Shareable},
     prg::aes::AESPRG,
     prg::group::GroupPRG,
 };
@@ -75,8 +75,8 @@ impl FieldProofShare {
         len: usize,
     ) -> Vec<FieldProofShare> {
         let mut rng = RandState::new();
-        let bits = LSS::share(bit_proof, len, &mut rng);
-        let seeds = LSS::share(seed_proof, len, &mut rng);
+        let bits = bit_proof.share(len, &mut rng);
+        let seeds = seed_proof.share(len, &mut rng);
         bits.into_iter()
             .zip(seeds.into_iter())
             .map(|(bit, seed)| FieldProofShare::new(bit, seed))
@@ -377,12 +377,12 @@ pub mod multi_key {
         }
 
         fn check_audit(&self, tokens: Vec<FieldToken>) -> bool {
-            let bit_proof = LSS::recover(tokens.iter().map(|t| t.bit.clone()).collect());
+            let bit_proof = FieldElement::recover(tokens.iter().map(|t| t.bit.clone()).collect());
             if bit_proof.get_value() != 0 {
                 return false;
             }
 
-            let seed_proof = LSS::recover(tokens.iter().map(|t| t.seed.clone()).collect());
+            let seed_proof = FieldElement::recover(tokens.iter().map(|t| t.seed.clone()).collect());
             if seed_proof.get_value() != 0 {
                 return false;
             }

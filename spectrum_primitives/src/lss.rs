@@ -13,8 +13,12 @@ pub struct SecretShare {
     is_first: bool,
 }
 
-/// linear secret sharing functionality
-pub struct LSS {}
+pub trait Shareable {
+    type Shares;
+
+    fn share(self, n: usize, rng: &mut RandState) -> Vec<Self::Shares>;
+    fn recover(shares: Vec<Self::Shares>) -> Self;
+}
 
 impl SecretShare {
     /// generates new secret share in a field element
@@ -31,16 +35,18 @@ impl SecretShare {
     }
 }
 
-impl LSS {
+impl Shareable for FieldElement {
+    type Shares = SecretShare;
+
     /// shares the value such that summing all the shares recovers the value
-    pub fn share(value: FieldElement, n: usize, rng: &mut RandState) -> Vec<SecretShare> {
+    fn share(self, n: usize, rng: &mut RandState) -> Vec<SecretShare> {
         assert!(n >= 2, "cannot split secret into fewer than two shares!");
 
-        let field = value.field();
+        let field = self.field();
         let values: Vec<_> = repeat_with(|| field.rand_element(rng))
             .take(n - 1)
             .collect();
-        let sum = values.iter().fold(value, |a, b| a + b.clone());
+        let sum = values.iter().fold(self, |a, b| a + b.clone());
         let mut is_first = true;
         once(sum)
             .chain(values)
@@ -53,7 +59,7 @@ impl LSS {
     }
 
     /// recovers the shares by subtracting all shares from the first share
-    pub fn recover(shares: Vec<SecretShare>) -> FieldElement {
+    fn recover(shares: Vec<SecretShare>) -> FieldElement {
         assert!(
             shares.len() >= 2,
             "need at least two shares to recover a secret!"
@@ -138,8 +144,8 @@ mod tests {
             num_shares in 2..MAX_SPLIT
         ) {
             let mut rng = RandState::new();
-            assert_eq!(
-                LSS::recover(LSS::share(value.clone(), num_shares, &mut rng)),
+            prop_assert_eq!(
+                FieldElement::recover(value.clone().share(num_shares, &mut rng)),
                 value
             )
         }
@@ -150,9 +156,9 @@ mod tests {
             num_shares in 10..MAX_SPLIT  // Need more than 2 shares to avoid them being equal by chance
         ) {
             let mut rng = RandState::new();
-            assert_ne!(
-                LSS::share(value.clone(), num_shares, &mut rng),
-                LSS::share(value, num_shares, &mut rng),
+            prop_assert_ne!(
+                value.clone().share(num_shares, &mut rng),
+                value.share(num_shares, &mut rng)
             );
         }
 
@@ -162,8 +168,8 @@ mod tests {
             num_shares in 2..MAX_SPLIT
         ) {
             let mut rng = RandState::new();
-            assert_eq!(
-                LSS::recover(LSS::share(value.clone(), num_shares, &mut rng)) + constant.clone(),
+            prop_assert_eq!(
+                FieldElement::recover(value.clone().share(num_shares, &mut rng)) + constant.clone(),
                 value + constant
             );
         }
@@ -174,12 +180,12 @@ mod tests {
             num_shares in 2..MAX_SPLIT
         ) {
             let mut rng = RandState::new();
-            let shares = LSS::share(value1.clone(), num_shares, &mut rng)
+            let shares = value1.clone().share(num_shares, &mut rng)
                 .into_iter()
-                .zip(LSS::share(value2.clone(), num_shares, &mut rng).into_iter())
+                .zip(value2.clone().share(num_shares, &mut rng).into_iter())
                 .map(|(x, y)| x + y)
                 .collect();
-            assert_eq!(LSS::recover(shares), value1 + value2);
+            prop_assert_eq!(FieldElement::recover(shares), value1 + value2);
         }
 
         #[test]
@@ -188,12 +194,12 @@ mod tests {
             num_shares in 2..MAX_SPLIT
         ) {
             let mut rng = RandState::new();
-            let shares = LSS::share(value.clone(), num_shares, &mut rng)
+            let shares = value.clone().share(num_shares, &mut rng)
                 .into_iter()
                 .map(|x| x * constant.clone())
                 .collect();
-            assert_eq!(
-                LSS::recover(shares),
+            prop_assert_eq!(
+                FieldElement::recover(shares),
                 value * constant
             );
         }
@@ -202,7 +208,7 @@ mod tests {
         #[should_panic]
         fn test_one_share_invalid(value in any::<FieldElement>()) {
             let mut rng = RandState::new();
-            LSS::share(value, 1, &mut rng);
+            value.share(1, &mut rng);
         }
     }
 }
