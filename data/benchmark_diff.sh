@@ -20,10 +20,10 @@ parse_args() {
       display_usage
       exit 1
   fi
-  COMMIT1=$(parse_commitish $1)
-  COMMIT2=$(parse_commitish $2)
-  if [ "$COMMIT1" == "$COMMIT2" ]; then
-      echo "Error: [${1}] and [${2}] resolve to the same commit: [${COMMIT1}]" >&2
+  NEW_COMMIT=$(parse_commitish $1)
+  BASELINE_COMMIT=$(parse_commitish $2)
+  if [ "$NEW_COMMIT" == "$BASELINE_COMMIT" ]; then
+      echo "Error: [${1}] and [${2}] resolve to the same commit: [${NEW_COMMIT}]" >&2
       exit 1
   fi
 
@@ -35,7 +35,7 @@ main() {
     parse_args $@
 
     # 1. Get benchmark data for both commits!
-    for COMMIT in $COMMIT1 $COMMIT2; do
+    for COMMIT in $NEW_COMMIT $BASELINE_COMMIT; do
       COMMIT_DIR="${RESULTS_DIR}/${COMMIT}"
       echo "Processing commit $COMMIT"
       if [ -d "${COMMIT_DIR}" ]; then
@@ -46,11 +46,11 @@ main() {
     done
 
     # 2. Plot
-    cd /home/zjn/git/spectrum-paper
-    python experiments/plot.py \
-        --results-dir "${RESULTS_DIR}" \
-        --benchmark "${COMMIT1}:${COMMIT2}" \
-        --show
+    nix-shell /home/zjn/git/spectrum-paper/shell.nix --command \
+      "python /home/zjn/git/spectrum-paper/experiments/plot.py \
+          --results-dir ${RESULTS_DIR} \
+          --benchmark ${BASELINE_COMMIT}:${NEW_COMMIT} \
+          --show"
     exit 0
 }
 
