@@ -173,6 +173,21 @@ impl ops::Add<FieldElement> for FieldElement {
     }
 }
 
+impl std::iter::Sum<FieldElement> for FieldElement {
+    fn sum<I>(iter: I) -> FieldElement
+    where
+        I: Iterator<Item = FieldElement>,
+    {
+        let mut iter = iter.peekable();
+        let zero = iter
+            .peek()
+            .expect("Cannot sum empty iterator.")
+            .field()
+            .zero();
+        iter.fold(zero, |a, b| a + b)
+    }
+}
+
 /// override - operation: want result.vvalue = element1.value  + (-element2.value) mod field.order
 impl ops::Sub<FieldElement> for FieldElement {
     type Output = FieldElement;
