@@ -162,7 +162,7 @@ where
             return Err(Error::new(&format!(
                 "Invalid number of accumulator channels! {} != {}",
                 accumulator.len(),
-                self.protocol.message_len()
+                self.protocol.num_channels()
             )));
         }
         let accumulated_clients = self.accumulator.accumulate(accumulator).await;
