@@ -5,6 +5,7 @@ use rug::{integer::IsPrime, integer::Order, rand::RandState, Integer};
 use serde::{Deserialize, Serialize};
 
 use std::cmp::Ordering;
+use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::ops;
 use std::sync::Arc;
@@ -16,6 +17,232 @@ use crate::proto;
 use proptest::prelude::*;
 
 const BYTE_ORDER: Order = Order::LsfLe;
+
+trait FieldTrait: Eq + PartialEq {
+    /// Add in the field>
+    fn add(&self, rhs: &Self) -> Self;
+    /// Take the additive inverse.
+    fn neg(&self) -> Self;
+    /// The additive identity.
+    fn zero() -> Self;
+    /// Multiply in the field.
+    fn mul(&self, rhs: &Self) -> Self;
+    /// Take the multiplicative inverse.
+    ///
+    /// Panics if you pass zero().
+    fn mul_invert(&self) -> Self;
+    /// The multiplicative identity.
+    fn one() -> Self;
+}
+
+// If I were really clever, I'd give a general implementation with two
+// commutative groups, over Self and NonZero<Self> (plus distributivity).
+
+// TODO: When const generics (RFC2000) stabilize in Rust, parameterize over
+// modulus
+/// Simple example field, useful for testing/debugging.
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct IntMod5 {
+    inner: u8,
+}
+
+impl TryFrom<u8> for IntMod5 {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<IntMod5, ()> {
+        if value >= 5 {
+            return Err(());
+        }
+        Ok(IntMod5 { inner: value })
+    }
+}
+
+impl FieldTrait for IntMod5 {
+    fn add(&self, rhs: &IntMod5) -> IntMod5 {
+        IntMod5 {
+            inner: (self.inner + rhs.inner) % 5,
+        }
+    }
+    fn neg(&self) -> IntMod5 {
+        IntMod5 {
+            inner: (5 - self.inner) % 5,
+        }
+    }
+    fn zero() -> Self {
+        return IntMod5 { inner: 0 };
+    }
+    fn mul(&self, rhs: &IntMod5) -> IntMod5 {
+        IntMod5 {
+            inner: (self.inner * rhs.inner) % 5,
+        }
+    }
+    fn one() -> Self {
+        return IntMod5 { inner: 5 };
+    }
+
+    fn mul_invert(&self) -> Self {
+        // Could implement extended Euclidean algorithm, or...
+        let value = match self.inner {
+            0 => {
+                panic!("Zero has no multiplicative inverse");
+            }
+            1 => 1,
+            2 => 3,
+            3 => 2,
+            4 => 4,
+            _ => {
+                panic!("Invalid IntMod5");
+            }
+        };
+        IntMod5 { inner: value }
+    }
+}
+
+#[cfg(test)]
+mod test_helpers {
+    use super::*;
+
+    pub(super) fn run_test_add_associative<F>(a: F, b: F, c: F) -> Result<(), TestCaseError>
+    where
+        F: FieldTrait + Debug,
+    {
+        prop_assert_eq!(a.add(&b).add(&c), a.add(&b.add(&c)));
+        Ok(())
+    }
+
+    pub(super) fn run_test_add_commutative<F>(a: F, b: F) -> Result<(), TestCaseError>
+    where
+        F: FieldTrait + Debug,
+    {
+        prop_assert_eq!(a.add(&b), b.add(&a));
+        Ok(())
+    }
+
+    pub(super) fn run_test_add_identity<F>(a: F) -> Result<(), TestCaseError>
+    where
+        F: FieldTrait + Debug,
+    {
+        prop_assert_eq!(a.add(&F::zero()), a);
+        Ok(())
+    }
+
+    pub(super) fn run_test_add_inverse<F>(a: F) -> Result<(), TestCaseError>
+    where
+        F: FieldTrait + Debug,
+    {
+        prop_assert_eq!(a.add(&a.neg()), F::zero());
+        Ok(())
+    }
+
+    pub(super) fn run_test_mul_associative<F>(a: F, b: F, c: F) -> Result<(), TestCaseError>
+    where
+        F: FieldTrait + Debug,
+    {
+        prop_assert_eq!(a.mul(&b).mul(&c), a.mul(&b.mul(&c)));
+        Ok(())
+    }
+
+    pub(super) fn run_test_mul_commutative<F>(a: F, b: F) -> Result<(), TestCaseError>
+    where
+        F: FieldTrait + Debug,
+    {
+        prop_assert_eq!(a.mul(&b), b.mul(&a));
+        Ok(())
+    }
+
+    pub(super) fn run_test_mul_identity<F>(a: F) -> Result<(), TestCaseError>
+    where
+        F: FieldTrait + Debug,
+    {
+        prop_assert_eq!(a.mul(&F::one()), a);
+        Ok(())
+    }
+
+    pub(super) fn run_test_mul_inverse<F>(a: F) -> Result<(), TestCaseError>
+    where
+        F: FieldTrait + Debug,
+    {
+        prop_assume!(a != F::zero());
+        prop_assert_eq!(a.add(&a.neg()), F::zero());
+        Ok(())
+    }
+
+    pub(super) fn run_test_distributive<F>(a: F, b: F, c: F) -> Result<(), TestCaseError>
+    where
+        F: FieldTrait + Debug,
+    {
+        prop_assert_eq!(a.mul(&b.add(&c)), a.mul(&b).add(&a.mul(&c)));
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl Arbitrary for IntMod5 {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        use std::ops::Range;
+        let range: Range<u8> = 0..4;
+        range
+            .prop_map(IntMod5::try_from)
+            .prop_map(Result::unwrap)
+            .boxed()
+    }
+}
+
+#[cfg(test)]
+mod test_mod5 {
+    use super::test_helpers::*;
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn test_add_associative(a: IntMod5, b: IntMod5, c: IntMod5) {
+            run_test_add_associative(a, b, c)
+        }
+
+        #[test]
+        fn test_add_commutative(a: IntMod5, b: IntMod5) {
+            run_test_add_commutative(a, b)
+        }
+
+        #[test]
+        fn test_add_identity(a: IntMod5) {
+            run_test_add_identity(a)
+        }
+
+        #[test]
+        fn test_add_inverse(a: IntMod5) {
+            run_test_add_inverse(a)
+        }
+
+        #[test]
+        fn test_mul_associative(a: IntMod5, b: IntMod5, c: IntMod5) {
+            run_test_add_associative(a, b, c)
+        }
+
+        #[test]
+        fn test_mul_commutative(a: IntMod5, b: IntMod5) {
+            run_test_add_commutative(a, b)
+        }
+
+        #[test]
+        fn test_mul_identity(a: IntMod5) {
+            run_test_mul_identity(a)
+        }
+
+        #[test]
+        fn test_mul_inverse(a: IntMod5) {
+            run_test_mul_inverse(a)
+        }
+
+        #[test]
+        fn test_distributive(a: IntMod5, b: IntMod5, c: IntMod5) {
+            run_test_distributive(a, b, c)
+        }
+    }
+}
 
 // NOTE: can't use From/Into due to Rust orphaning rules. Define an extension trait?
 // TODO(zjn): more efficient data format?
