@@ -290,8 +290,8 @@ impl SecureProtocol<MultiKeyVdpf> {
         msg_size: usize,
     ) -> Self {
         let seed: AESSeed = AESSeed::from(vec![0u8; 16]);
-        let prg: GroupPRG = GroupPRG::from_aes_seed((msg_size - 1) / 31 + 1, seed);
-        let dpf: MultiKeyDPF<GroupPRG> = MultiKeyDPF::new(prg, channels, groups);
+        let prg: GroupPRG<_> = GroupPRG::from_aes_seed((msg_size - 1) / 31 + 1, seed);
+        let dpf: MultiKeyDPF<GroupPRG<_>> = MultiKeyDPF::new(prg, channels, groups);
         let field = field_with_security(sec_bits);
         let vdpf = FieldVDPF::new(dpf, field);
         SecureProtocol::new(vdpf)

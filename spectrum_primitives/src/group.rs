@@ -32,15 +32,28 @@ const JUBJUB_MODULUS: [u64; 4] = [
 // size of group elements in jubjbu
 const JUBJUB_MODULUS_BYTES: usize = 32;
 
-// A *commutative* group
+/// A *commutative* group
 pub trait Group: Eq {
     fn order() -> Integer;
+    fn order_size_in_bytes() -> usize {
+        Self::order().significant_digits::<u8>()
+    }
     fn identity() -> Self;
     fn op(&self, rhs: &Self) -> Self;
     fn invert(&self) -> Self;
+    fn pow(&self, pow: &Integer) -> Self;
 }
 
-#[cfg(any(test, feature = "testing"))]
+pub trait SampleableGroup: Group {
+    /// generates a new random group element
+    fn rand_element() -> Self;
+    /// Generate the given number of group generators deterministically from the given seed.
+    fn generators(num: usize, seed: &AESSeed) -> Vec<Self>
+    where
+        Self: Sized;
+}
+
+#[cfg(test)]
 pub mod tests_common {
     use super::*;
 
@@ -75,6 +88,21 @@ pub mod tests_common {
         prop_assert_eq!(a.op(&a.invert()), G::identity());
         Ok(())
     }
+
+    // TODO: there are a bunch of other good exponent things to check
+    // exp *should* be an integer but the way we're checking is a loop so don't want it too big
+    pub(super) fn run_test_exponent_definition<G>(base: G, exp: u16) -> Result<(), TestCaseError>
+    where
+        G: Group + Debug,
+    {
+        let actual = base.pow(&exp.into());
+        let mut expected = G::identity();
+        for _ in 0..exp {
+            expected = expected.op(&base)
+        }
+        prop_assert_eq!(actual, expected);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -102,6 +130,11 @@ pub mod tests_u8_group {
                 u8::MAX - self + 1
             }
         }
+
+        fn pow(&self, pow: &Integer) -> Self {
+            // where group op is addition, exponentiation is multiplication
+            Integer::from(pow * self).to_u8_wrapping()
+        }
     }
 
     proptest! {
@@ -124,6 +157,11 @@ pub mod tests_u8_group {
         #[test]
         fn test_inverse(a: u8) {
             tests_common::run_test_inverse(a)?;
+        }
+
+        #[test]
+        fn test_exponent_definition(base: u8, exp: u16) {
+            tests_common::run_test_exponent_definition(base, exp)?;
         }
     }
 }
@@ -157,11 +195,11 @@ pub struct GroupElement {
     inner: Jubjub,
 }
 
-impl GroupElement {
+impl SampleableGroup for GroupElement {
     /// identity element in the elliptic curve field
 
     /// generates a new random group element
-    pub fn rand_element() -> GroupElement {
+    fn rand_element() -> GroupElement {
         // generate enough random bytes to create a random element in the group
         let mut bytes = vec![0; JUBJUB_MODULUS_BYTES - 1];
         thread_rng().fill_bytes(&mut bytes);
@@ -172,7 +210,7 @@ impl GroupElement {
     /// generates a set of field elements in the elliptic curve field
     /// which are generators for the group (given that the group is of prime order)
     /// takes as input a random seed which deterministically generates [num] field elements
-    pub fn generators(num: usize, seed: &AESSeed) -> Vec<GroupElement> {
+    fn generators(num: usize, seed: &AESSeed) -> Vec<GroupElement> {
         let prg = AESPRG::new(16, (JUBJUB_MODULUS_BYTES - 1) * num);
         let rand_bytes: Vec<u8> = prg.eval(seed).into();
 
@@ -187,10 +225,6 @@ impl GroupElement {
                     .expect("chunk size chosen s.t. always valid element")
             })
             .collect()
-    }
-
-    pub fn order_size_in_bytes() -> usize {
-        JUBJUB_MODULUS_BYTES // size of the group elements
     }
 }
 
@@ -230,6 +264,11 @@ impl Group for GroupElement {
     fn invert(&self) -> Self {
         self.inner.neg().into()
     }
+
+    fn pow(&self, pow: &Integer) -> Self {
+        // in EC group operation is addition, so exponentiation = multiplying
+        (self.inner * GroupElement::from(pow).inner).into()
+    }
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -242,13 +281,6 @@ impl Arbitrary for GroupElement {
             .prop_map(|v| Jubjub::from_bytes_wide(v.as_slice().try_into().unwrap()))
             .prop_map(GroupElement::from)
             .boxed()
-    }
-}
-
-impl GroupElement {
-    pub fn pow(&self, pow: &Integer) -> GroupElement {
-        // in EC group operation is addition, so exponentiation = multiplying
-        (self.inner * GroupElement::from(pow).inner).into()
     }
 }
 
@@ -320,7 +352,7 @@ impl Hash for GroupElement {
 }
 
 /// Test helpers
-#[cfg(any(test, feature = "testing"))]
+#[cfg(any(test))]
 mod testing {
     use super::*;
 

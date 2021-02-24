@@ -2,6 +2,7 @@
 use crate::{
     dpf::{BasicDPF, MultiKeyDPF, DPF},
     field::{Field, FieldElement},
+    group::GroupElement,
     lss::{SecretShare, Shareable},
     prg::aes::AESPRG,
     prg::group::GroupPRG,
@@ -137,7 +138,7 @@ impl<D: DPF> DPF for FieldVDPF<D> {
 // TODO(sss) make this more abstract? Don't think that we need both MultiKeyVDPF and BasicVDPF
 // should be able to just use abstract DPF notion + properties on PRG seeds (addition)
 pub type BasicVdpf = FieldVDPF<BasicDPF<AESPRG>>;
-pub type MultiKeyVdpf = FieldVDPF<MultiKeyDPF<GroupPRG>>;
+pub type MultiKeyVdpf = FieldVDPF<MultiKeyDPF<GroupPRG<GroupElement>>>;
 
 pub mod two_key {
     use super::*;
@@ -406,7 +407,7 @@ pub mod multi_key {
         proptest! {
             #[test]
             fn test_audit_check_correct(
-                (data, vdpf) in multi_key_dpf::tests::data_with_dpf::<MultiKeyVdpf>(),
+                (data, vdpf) in multi_key_dpf::tests::data_with_dpf::<MultiKeyVdpf, GroupElement>(),
                 point_idx: prop::sample::Index,
             ) {
                 let access_keys = vdpf.new_access_keys();

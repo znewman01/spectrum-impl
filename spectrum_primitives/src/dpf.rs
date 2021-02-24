@@ -440,15 +440,17 @@ pub mod multi_key {
     pub mod tests {
         use super::*;
         use crate::dpf::prg_tests::*;
+        use crate::group::{Group, GroupElement};
         use crate::prg::{group::ElementVector, group::GroupPRG};
 
-        pub fn data_with_dpf<D>() -> impl Strategy<Value = (ElementVector, D)>
+        pub fn data_with_dpf<D, G>() -> impl Strategy<Value = (ElementVector<G>, D)>
         where
-            D: DPF<Message = ElementVector> + Arbitrary + Clone,
+            D: DPF<Message = ElementVector<G>> + Arbitrary + Clone,
+            G: Group + Debug + Arbitrary + 'static,
         {
             any::<D>().prop_flat_map(|dpf| {
                 (
-                    any_with::<ElementVector>(dpf.null_message().0.len().into()),
+                    any_with::<ElementVector<G>>(dpf.null_message().0.len().into()),
                     Just(dpf),
                 )
             })
@@ -457,7 +459,7 @@ pub mod multi_key {
         proptest! {
             #[test]
             fn test_prg_dpf(
-                (data, dpf) in data_with_dpf::<MultiKeyDPF<GroupPRG>>(),
+                (data, dpf) in data_with_dpf::<MultiKeyDPF<GroupPRG<GroupElement>>, GroupElement>(),
                 index in any::<proptest::sample::Index>(),
             ) {
                 let index = index.index(dpf.num_points());
@@ -466,7 +468,7 @@ pub mod multi_key {
 
             #[test]
             fn test_prg_dpf_empty(
-                dpf in any::<MultiKeyDPF<GroupPRG>>(),
+                dpf in any::<MultiKeyDPF<GroupPRG<GroupElement>>>(),
             ) {
                 run_test_dpf_empty(dpf);
             }
@@ -481,7 +483,7 @@ pub mod prg_tests {
     pub(super) fn run_test_dpf<D>(dpf: D, data: D::Message, index: usize)
     where
         D: DPF,
-        D::Message: Eq + Debug + Default + Clone,
+        D::Message: Eq + Debug + Clone,
     {
         let dpf_keys = dpf.gen(data.clone(), index);
         let dpf_shares = dpf_keys.into_iter().map(|k| dpf.eval(k)).collect();
@@ -499,7 +501,7 @@ pub mod prg_tests {
     pub(super) fn run_test_dpf_empty<D>(dpf: D)
     where
         D: DPF,
-        D::Message: Default + Eq + Debug,
+        D::Message: Eq + Debug,
     {
         let dpf_keys = dpf.gen_empty();
         let dpf_shares = dpf_keys.into_iter().map(|k| dpf.eval(k)).collect();

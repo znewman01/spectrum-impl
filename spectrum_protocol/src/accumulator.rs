@@ -1,23 +1,44 @@
+use std::iter::repeat_with;
 use std::ops::{Deref, DerefMut};
 use tokio::sync::RwLock;
 
-use spectrum_primitives::bytes::Bytes;
 use spectrum_primitives::prg::group::ElementVector;
+use spectrum_primitives::{bytes::Bytes, group::Group};
 
-pub trait Accumulatable: Default {
+pub trait Accumulatable {
+    /// Parameters for creating an empty Accumultable.
+    ///
+    /// There's no one-size-fits-all à la Default, because many Accumulatables
+    /// have some notion of length.
+    type Parameters: Copy;
     // TODO: other should be a reference?
     fn combine(&mut self, other: Self);
+
+    fn empty(params: Self::Parameters) -> Self;
 }
 
 impl Accumulatable for Bytes {
+    type Parameters = usize;
+
     fn combine(&mut self, other: Bytes) {
         *self ^= &other;
     }
+
+    fn empty(length: usize) -> Self {
+        Bytes::empty(length)
+    }
 }
 
-impl Accumulatable for ElementVector {
-    fn combine(&mut self, other: ElementVector) {
+impl<G> Accumulatable for ElementVector<G>
+where
+    G: Group,
+{
+    type Parameters = usize;
+    fn combine(&mut self, other: ElementVector<G>) {
         *self ^= other;
+    }
+    fn empty(length: usize) -> ElementVector<G> {
+        ElementVector(repeat_with(G::identity).take(length).collect())
     }
 }
 
@@ -25,15 +46,22 @@ impl<T> Accumulatable for Vec<T>
 where
     T: Accumulatable,
 {
+    type Parameters = (usize, T::Parameters);
+
     fn combine(&mut self, other: Vec<T>) {
         assert_eq!(self.len(), other.len());
         for (this, that) in self.iter_mut().zip(other.into_iter()) {
             this.combine(that);
         }
     }
+
+    fn empty((length, subparams): (usize, T::Parameters)) -> Self {
+        repeat_with(|| T::empty(subparams.clone()))
+            .take(length)
+            .collect()
+    }
 }
 
-#[derive(Default)]
 pub struct Accumulator<D> {
     lock: RwLock<(D, usize)>,
 }
@@ -71,34 +99,40 @@ where
 mod tests {
     use super::*;
 
-    #[derive(Default, Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     struct MyData(u8);
 
     impl Accumulatable for MyData {
+        type Parameters = ();
+
         fn combine(&mut self, other: MyData) {
             (*self).0 += other.0;
+        }
+
+        fn empty(_: ()) -> Self {
+            MyData(0)
         }
     }
 
     #[tokio::test]
     async fn test_accumulator_get_empty() {
-        let accumulator = Accumulator::<MyData>::default();
+        let accumulator = Accumulator::new(MyData::empty(()));
 
         assert_eq!(accumulator.get().await, MyData(0));
     }
 
     #[tokio::test]
     async fn test_accumulator_accumulate_identity() {
-        let accumulator = Accumulator::<MyData>::default();
+        let accumulator = Accumulator::new(MyData::empty(()));
 
-        accumulator.accumulate(MyData::default()).await;
+        accumulator.accumulate(MyData::empty(())).await;
 
         assert_eq!(accumulator.get().await, MyData(0));
     }
 
     #[tokio::test]
     async fn test_accumulator_accumulate_unit() {
-        let accumulator = Accumulator::<MyData>::default();
+        let accumulator = Accumulator::new(MyData::empty(()));
         let count = 10;
 
         for _ in 0..count {
