@@ -306,7 +306,7 @@ pub mod group {
             // because its modulus is < 2^32.
             // We use (very unnatural) 31-byte chunks so that
             // element_from_bytes() succeeds.
-            let chunk_size = Group::order_size_in_bytes() - 1;
+            let chunk_size = GroupElement::order_size_in_bytes() - 1;
             ElementVector(
                 bytes
                     .into_iter()
@@ -314,7 +314,7 @@ pub mod group {
                     .into_iter()
                     .map(|data| {
                         let mut data: Vec<u8> = data.collect();
-                        while data.len() < Group::order_size_in_bytes() {
+                        while data.len() < GroupElement::order_size_in_bytes() {
                             data.push(0);
                         }
                         let data = Bytes::from(data);
@@ -341,10 +341,10 @@ pub mod group {
         pub fn new(value: Integer) -> Self {
             let mut value = value;
             while value < 0 {
-                value += Group::order();
+                value += GroupElement::order();
             }
-            if value >= Group::order() {
-                value %= Group::order();
+            if value >= GroupElement::order() {
+                value %= GroupElement::order();
             }
             GroupPrgSeed { value }
         }
@@ -367,7 +367,7 @@ pub mod group {
         fn sub_assign(&mut self, other: Self) {
             self.value -= other.value;
             if self.value < 0 {
-                self.value += Group::order();
+                self.value += GroupElement::order();
             }
         }
     }
@@ -384,8 +384,8 @@ pub mod group {
         #[allow(clippy::suspicious_op_assign_impl)]
         fn add_assign(&mut self, other: Self) {
             self.value += other.value;
-            if self.value >= Group::order() {
-                self.value -= Group::order();
+            if self.value >= GroupElement::order() {
+                self.value -= GroupElement::order();
             }
         }
     }
@@ -414,7 +414,7 @@ pub mod group {
         }
 
         fn compute_generators(num_elements: usize, seed: &AESSeed) -> ElementVector {
-            ElementVector(Group::generators(num_elements, seed))
+            ElementVector(GroupElement::generators(num_elements, seed))
         }
     }
 
@@ -424,7 +424,7 @@ pub mod group {
 
         /// generates a new (random) seed for the given PRG
         fn new_seed(&self) -> Self::Seed {
-            let mut rand_bytes = vec![0; Group::order_size_in_bytes()];
+            let mut rand_bytes = vec![0; GroupElement::order_size_in_bytes()];
             thread_rng().fill_bytes(&mut rand_bytes);
             GroupPrgSeed::new(Integer::from_digits(&rand_bytes.as_ref(), Order::LsfLe))
         }
@@ -442,14 +442,14 @@ pub mod group {
 
         fn null_output(&self) -> Self::Output {
             ElementVector(
-                repeat(Group::identity())
+                repeat(GroupElement::identity())
                     .take(self.generators.0.len())
                     .collect(),
             )
         }
 
         fn output_size(&self) -> usize {
-            self.generators.0.len() * (Group::order_size_in_bytes() - 1)
+            self.generators.0.len() * (GroupElement::order_size_in_bytes() - 1)
         }
     }
 
@@ -460,7 +460,7 @@ pub mod group {
 
         fn combine_seeds(&self, seeds: Vec<GroupPrgSeed>) -> GroupPrgSeed {
             let seeds: Vec<Integer> = seeds.into_iter().map(|s| s.value()).collect();
-            GroupPrgSeed::new(Integer::from(Integer::sum(seeds.iter())) % Group::order())
+            GroupPrgSeed::new(Integer::from(Integer::sum(seeds.iter())) % GroupElement::order())
         }
 
         fn combine_outputs(&self, outputs: &[&ElementVector]) -> ElementVector {
@@ -477,7 +477,7 @@ pub mod group {
     // TODO: should be try_into()
     impl Into<Bytes> for ElementVector {
         fn into(self) -> Bytes {
-            let chunk_size = Group::order_size_in_bytes() - 1;
+            let chunk_size = GroupElement::order_size_in_bytes() - 1;
             // outputs all the elements in the vector concatenated as a sequence of bytes
             // assumes that every element is < 2^(8*31)
             let mut all_bytes = Vec::with_capacity(chunk_size * self.0.len());
@@ -510,7 +510,7 @@ pub mod group {
 
     impl Into<Vec<u8>> for ElementVector {
         fn into(self) -> Vec<u8> {
-            let chunk_size = Group::order_size_in_bytes();
+            let chunk_size = GroupElement::order_size_in_bytes();
             // outputs all the elements in the vector concatenated as a sequence of bytes
             // assumes that every element is < 2^(8*31)
             let mut all_bytes = Vec::with_capacity(chunk_size * self.0.len());
@@ -525,7 +525,7 @@ pub mod group {
 
     impl From<Vec<u8>> for ElementVector {
         fn from(bytes: Vec<u8>) -> Self {
-            let chunk_size = Group::order_size_in_bytes();
+            let chunk_size = GroupElement::order_size_in_bytes();
             // outputs all the elements in the vector concatenated as a sequence of bytes
             let mut elements = vec![];
             for chunk in bytes.into_iter().chunks(chunk_size).into_iter() {

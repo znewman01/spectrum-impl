@@ -2,13 +2,13 @@
 use crate::bytes::Bytes;
 use crate::prg::{aes::AESSeed, aes::AESPRG, PRG};
 
-use jubjub::Fr as ECFieldElement; // elliptic curve field
+use jubjub::Fr as Jubjub; // elliptic curve field
 use rand::prelude::*;
 use rug::{integer::Order, Integer};
 use serde::{de, ser::Serializer, Deserialize, Serialize};
 
 use std::cmp::Ordering;
-use std::convert::TryFrom;
+use std::convert::{From, TryFrom, TryInto};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -32,58 +32,133 @@ const JUBJUB_MODULUS: [u64; 4] = [
 // size of group elements in jubjbu
 const JUBJUB_MODULUS_BYTES: usize = 32;
 
-/// mathematical group object
+// A *commutative* group
+pub trait Group: Eq {
+    fn order() -> Integer;
+    fn identity() -> Self;
+    fn op(&self, rhs: &Self) -> Self;
+    fn invert(&self) -> Self;
+}
+
+#[cfg(any(test, feature = "testing"))]
+pub mod tests_common {
+    use super::*;
+
+    pub(super) fn run_test_associative<G>(a: G, b: G, c: G) -> Result<(), TestCaseError>
+    where
+        G: Group + Debug,
+    {
+        prop_assert_eq!(a.op(&b).op(&c), a.op(&b.op(&c)));
+        Ok(())
+    }
+
+    pub(super) fn run_test_commutative<G>(a: G, b: G) -> Result<(), TestCaseError>
+    where
+        G: Group + Debug,
+    {
+        prop_assert_eq!(a.op(&b), b.op(&a));
+        Ok(())
+    }
+
+    pub(super) fn run_test_identity<G>(a: G) -> Result<(), TestCaseError>
+    where
+        G: Group + Debug,
+    {
+        prop_assert_eq!(a.op(&G::identity()), a);
+        Ok(())
+    }
+
+    pub(super) fn run_test_inverse<G>(a: G) -> Result<(), TestCaseError>
+    where
+        G: Group + Debug,
+    {
+        prop_assert_eq!(a.op(&a.invert()), G::identity());
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+pub mod tests_u8_group {
+    use super::*;
+
+    /// Just for testing
+    impl Group for u8 {
+        fn order() -> Integer {
+            Integer::from(256)
+        }
+
+        fn identity() -> Self {
+            0
+        }
+
+        fn op(&self, rhs: &Self) -> Self {
+            (((*self as u16) + (*rhs as u16)) % 256).try_into().unwrap()
+        }
+
+        fn invert(&self) -> Self {
+            if *self == 0 {
+                0
+            } else {
+                u8::MAX - self + 1
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_associative(a: u8, b: u8, c: u8) {
+            tests_common::run_test_associative(a, b, c)?;
+        }
+
+        #[test]
+        fn test_commutative(a: u8, b: u8) {
+            tests_common::run_test_commutative(a, b)?;
+        }
+
+
+        #[test]
+        fn test_identity(a: u8) {
+            tests_common::run_test_identity(a)?;
+        }
+
+        #[test]
+        fn test_inverse(a: u8) {
+            tests_common::run_test_inverse(a)?;
+        }
+    }
+}
+
 // there's a lot of mess around conversion to/from bytes
 // probably insecure..look into using e.g. curve25519
-#[derive(Default, Clone, Eq, PartialEq, Debug)]
-pub struct Group(ECFieldElement); // generator for the multiplicative group
-
-fn serialize_field_element<S>(x: &ECFieldElement, s: S) -> Result<S::Ok, S::Error>
+fn serialize_field_element<S>(x: &Jubjub, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     s.serialize_bytes(&x.to_bytes())
 }
 
-fn deserialize_field_element<'de, D>(deserializer: D) -> Result<ECFieldElement, D::Error>
+fn deserialize_field_element<'de, D>(deserializer: D) -> Result<Jubjub, D::Error>
 where
     D: de::Deserializer<'de>,
 {
-    use std::convert::TryInto;
     let bytes: Vec<u8> = de::Deserialize::deserialize(deserializer)?;
     let bytes: &[u8] = bytes.as_ref();
     let bytes: &[u8; 32] = bytes.try_into().unwrap();
-    Ok(ECFieldElement::from_bytes(bytes).unwrap())
+    Ok(Jubjub::from_bytes(bytes).unwrap())
 }
 
 /// element within a group
-#[derive(Clone, Eq, Debug, Serialize, Deserialize)]
-pub struct GroupElement(
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub struct GroupElement {
     #[serde(
         serialize_with = "serialize_field_element",
         deserialize_with = "deserialize_field_element"
     )]
-    ECFieldElement,
-);
+    inner: Jubjub,
+}
 
-impl Group {
+impl GroupElement {
     /// identity element in the elliptic curve field
-    pub fn identity() -> GroupElement {
-        GroupElement(ECFieldElement::zero())
-    }
-
-    /// creates a new group element from an integer
-    pub fn new_element(value: &Integer) -> GroupElement {
-        let reduced = if value.cmp0() == Ordering::Less {
-            Group::order() - (Integer::from(-value) % Self::order())
-        } else {
-            value % Self::order()
-        };
-
-        let mut digits: [u8; JUBJUB_MODULUS_BYTES] = [0x0u8; JUBJUB_MODULUS_BYTES];
-        reduced.write_digits(&mut digits, BYTE_ORDER);
-        GroupElement(ECFieldElement::from_bytes(&digits).unwrap())
-    }
 
     /// generates a new random group element
     pub fn rand_element() -> GroupElement {
@@ -114,26 +189,72 @@ impl Group {
             .collect()
     }
 
-    pub fn order() -> Integer {
+    pub fn order_size_in_bytes() -> usize {
+        JUBJUB_MODULUS_BYTES // size of the group elements
+    }
+}
+
+impl From<Jubjub> for GroupElement {
+    fn from(inner: Jubjub) -> GroupElement {
+        GroupElement { inner }
+    }
+}
+
+impl From<&Integer> for GroupElement {
+    fn from(value: &Integer) -> GroupElement {
+        let reduced = if value.cmp0() == Ordering::Less {
+            GroupElement::order() - (Integer::from(-value) % Self::order())
+        } else {
+            value % Self::order()
+        };
+
+        let mut digits: [u8; JUBJUB_MODULUS_BYTES] = [0x0u8; JUBJUB_MODULUS_BYTES];
+        reduced.write_digits(&mut digits, BYTE_ORDER);
+        Jubjub::from_bytes(&digits).unwrap().into()
+    }
+}
+
+impl Group for GroupElement {
+    fn order() -> Integer {
         // see JubJub elliptic curve modulus
         Integer::from_digits(&JUBJUB_MODULUS, BYTE_ORDER)
     }
 
-    pub fn order_size_in_bytes() -> usize {
-        JUBJUB_MODULUS_BYTES // size of the group elements
+    fn identity() -> Self {
+        Jubjub::zero().into()
+    }
+    fn op(&self, rhs: &Self) -> Self {
+        self.inner.add(&rhs.inner).into()
+    }
+
+    fn invert(&self) -> Self {
+        self.inner.neg().into()
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl Arbitrary for GroupElement {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(any::<u8>(), 64)
+            .prop_map(|v| Jubjub::from_bytes_wide(v.as_slice().try_into().unwrap()))
+            .prop_map(GroupElement::from)
+            .boxed()
     }
 }
 
 impl GroupElement {
     pub fn pow(&self, pow: &Integer) -> GroupElement {
         // in EC group operation is addition, so exponentiation = multiplying
-        GroupElement(self.0 * Group::new_element(pow).0)
+        (self.inner * GroupElement::from(pow).inner).into()
     }
 }
 
 impl Into<Bytes> for GroupElement {
     fn into(self) -> Bytes {
-        Bytes::from(self.0.to_bytes().to_vec())
+        Bytes::from(self.inner.to_bytes().to_vec())
     }
 }
 
@@ -144,11 +265,11 @@ impl TryFrom<Bytes> for GroupElement {
         assert_eq!(bytes.len(), JUBJUB_MODULUS_BYTES, "uh oh");
         let mut bytes_arr: [u8; JUBJUB_MODULUS_BYTES] = [0; JUBJUB_MODULUS_BYTES];
         bytes_arr.copy_from_slice(bytes.as_ref());
-        let result = ECFieldElement::from_bytes(&bytes_arr);
+        let result = Jubjub::from_bytes(&bytes_arr);
         if result.is_some().into() {
-            Ok(GroupElement(result.unwrap()))
+            Ok(result.unwrap().into())
         } else {
-            Err("convering to bytes failed")
+            Err("converting from bytes failed")
         }
     }
 }
@@ -157,7 +278,7 @@ impl ops::Mul<GroupElement> for GroupElement {
     type Output = GroupElement;
 
     fn mul(self, rhs: GroupElement) -> GroupElement {
-        GroupElement(self.0.add(&rhs.0))
+        self.inner.add(&rhs.inner).into()
     }
 }
 
@@ -165,7 +286,7 @@ impl ops::Mul<&GroupElement> for GroupElement {
     type Output = GroupElement;
 
     fn mul(self, rhs: &GroupElement) -> GroupElement {
-        GroupElement(self.0.add(&rhs.0))
+        self.inner.add(&rhs.inner).into()
     }
 }
 
@@ -173,19 +294,19 @@ impl<'a, 'b> ops::Mul<&'b GroupElement> for &'a GroupElement {
     type Output = GroupElement;
 
     fn mul(self, rhs: &'b GroupElement) -> GroupElement {
-        GroupElement(self.0.add(&rhs.0))
+        self.inner.add(&rhs.inner).into()
     }
 }
 
 impl ops::MulAssign<&GroupElement> for GroupElement {
     fn mul_assign(&mut self, rhs: &GroupElement) {
-        self.0 = self.0.add(&rhs.0);
+        self.inner = self.inner.add(&rhs.inner);
     }
 }
 
 impl ops::MulAssign<GroupElement> for GroupElement {
     fn mul_assign(&mut self, rhs: GroupElement) {
-        self.0 = self.0.add(&rhs.0);
+        self.inner = self.inner.add(&rhs.inner);
     }
 }
 
@@ -194,14 +315,7 @@ impl Hash for GroupElement {
     where
         H: Hasher,
     {
-        self.0.to_bytes().hash(state);
-    }
-}
-
-// need to implement PartialEq when implementing Hash...
-impl PartialEq for GroupElement {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+        self.inner.to_bytes().hash(state);
     }
 }
 
@@ -215,19 +329,6 @@ mod testing {
     pub(super) fn integer_512_bits() -> impl Strategy<Value = Integer> {
         any_with::<Bytes>(JUBJUB_MODULUS_BYTES.into())
             .prop_map(|bytes| Integer::from_digits(&bytes.as_ref(), BYTE_ORDER))
-    }
-}
-
-#[cfg(any(test, feature = "testing"))]
-impl Arbitrary for GroupElement {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        use testing::*;
-        integer_512_bits()
-            .prop_map(move |value| Group::new_element(&value))
-            .boxed()
     }
 }
 
@@ -245,7 +346,7 @@ mod tests {
 
     #[test]
     fn group_is_of_prime_order() {
-        assert_ne!(Group::order().is_probably_prime(15), IsPrime::No)
+        assert_ne!(GroupElement::order().is_probably_prime(15), IsPrime::No)
     }
 
     fn valid_group_bytes() -> impl Strategy<Value = Bytes> {
@@ -257,37 +358,44 @@ mod tests {
     }
 
     proptest! {
+         #[test]
+         fn test_associative(a: GroupElement, b: GroupElement, c: GroupElement) {
+             tests_common::run_test_associative(a, b, c)?;
+         }
 
-        #[test]
-        fn test_associative(x: GroupElement, y: GroupElement, z: GroupElement) {
-            assert_eq!((x.clone() * y.clone()) * z.clone(), x * (y * z));
-        }
+         #[test]
+         fn test_commutative(a: GroupElement, b: GroupElement) {
+             tests_common::run_test_commutative(a, b)?;
+         }
 
-        #[test]
-        fn test_add_identity(element: GroupElement) {
-            assert_eq!(element.clone() * Group::identity(), Group::identity() * element.clone());
-            assert_eq!(element.clone() * Group::identity(), element);
-            assert_eq!(element, Group::identity() * element.clone());
 
-        }
+         #[test]
+         fn test_identity(a: GroupElement) {
+             tests_common::run_test_identity(a)?;
+         }
+
+         #[test]
+         fn test_inverse(a: GroupElement) {
+             tests_common::run_test_inverse(a)?;
+         }
 
         #[test]
         fn test_pow_prod(element: GroupElement, a in integer_512_bits(), b in integer_512_bits()) {
             let prod = a.clone() * b.clone();
-            let expected = prod % Group::order();
+            let expected = prod % GroupElement::order();
             assert_eq!(element.pow(&a).pow(&b), element.pow(&expected))
         }
 
         #[test]
         fn test_pow_negative(element: GroupElement, a in integer_512_bits()) {
-            let negative = -(a.clone() % Group::order());
-            let expected = Group::order() - (a % Group::order());
+            let negative = -(a.clone() % GroupElement::order());
+            let expected = GroupElement::order() - (a % GroupElement::order());
             assert_eq!(element.pow(&negative), element.pow(&expected))
         }
 
         #[test]
         fn test_sums_in_exponent(element: GroupElement, a in integer_512_bits(), b in integer_512_bits()) {
-            let expected = a.clone() + b.clone() % Group::order();
+            let expected = a.clone() + b.clone() % GroupElement::order();
             assert_eq!(element.pow(&a) * element.pow(&b), element.pow(&expected))
         }
 
@@ -295,7 +403,7 @@ mod tests {
         fn test_generators_deterministic(
             num in NUM_GROUP_GENERATORS,
             seed: AESSeed) {
-            assert_eq!(Group::generators(num, &seed), Group::generators(num, &seed));
+            assert_eq!(GroupElement::generators(num, &seed), GroupElement::generators(num, &seed));
         }
 
         #[test]
@@ -305,7 +413,7 @@ mod tests {
             seed2: AESSeed
         ) {
             prop_assume!(seed1 != seed2, "Different generators only for different seeds");
-            assert_ne!(Group::generators(num, &seed1), Group::generators(num, &seed2));
+            assert_ne!(GroupElement::generators(num, &seed1), GroupElement::generators(num, &seed2));
         }
 
         #[test]
