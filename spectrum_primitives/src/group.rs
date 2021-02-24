@@ -272,15 +272,18 @@ impl Group for GroupElement {
 }
 
 #[cfg(any(test, feature = "testing"))]
+pub(crate) fn jubjubs() -> impl Strategy<Value = Jubjub> {
+    proptest::collection::vec(any::<u8>(), 64)
+        .prop_map(|v| Jubjub::from_bytes_wide(v.as_slice().try_into().unwrap()))
+}
+
+#[cfg(any(test, feature = "testing"))]
 impl Arbitrary for GroupElement {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        proptest::collection::vec(any::<u8>(), 64)
-            .prop_map(|v| Jubjub::from_bytes_wide(v.as_slice().try_into().unwrap()))
-            .prop_map(GroupElement::from)
-            .boxed()
+        jubjubs().prop_map(GroupElement::from).boxed()
     }
 }
 

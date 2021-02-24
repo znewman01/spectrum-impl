@@ -1,6 +1,7 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
 
+use jubjub::Fr as Jubjub;
 use rug::{integer::IsPrime, integer::Order, rand::RandState, Integer};
 use serde::{Deserialize, Serialize};
 
@@ -46,14 +47,9 @@ struct IntMod5 {
     inner: u8,
 }
 
-impl TryFrom<u8> for IntMod5 {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<IntMod5, ()> {
-        if value >= 5 {
-            return Err(());
-        }
-        Ok(IntMod5 { inner: value })
+impl IntMod5 {
+    const fn order() -> u8 {
+        5
     }
 }
 
@@ -77,7 +73,7 @@ impl FieldTrait for IntMod5 {
         }
     }
     fn one() -> Self {
-        return IntMod5 { inner: 5 };
+        return IntMod5 { inner: 1 };
     }
 
     fn mul_invert(&self) -> Self {
@@ -95,6 +91,17 @@ impl FieldTrait for IntMod5 {
             }
         };
         IntMod5 { inner: value }
+    }
+}
+
+impl TryFrom<u8> for IntMod5 {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, ()> {
+        if value >= Self::order() {
+            return Err(());
+        }
+        Ok(Self { inner: value })
     }
 }
 
@@ -163,7 +170,7 @@ mod test_helpers {
         F: FieldTrait + Debug,
     {
         prop_assume!(a != F::zero());
-        prop_assert_eq!(a.add(&a.neg()), F::zero());
+        prop_assert_eq!(a.mul(&a.mul_invert()), F::one());
         Ok(())
     }
 
@@ -185,7 +192,7 @@ impl Arbitrary for IntMod5 {
         use std::ops::Range;
         let range: Range<u8> = 0..4;
         range
-            .prop_map(IntMod5::try_from)
+            .prop_map(Self::try_from)
             .prop_map(Result::unwrap)
             .boxed()
     }
@@ -199,47 +206,387 @@ mod test_mod5 {
     proptest! {
         #[test]
         fn test_add_associative(a: IntMod5, b: IntMod5, c: IntMod5) {
-            run_test_add_associative(a, b, c)
+            run_test_add_associative(a, b, c)?;
         }
 
         #[test]
         fn test_add_commutative(a: IntMod5, b: IntMod5) {
-            run_test_add_commutative(a, b)
+            run_test_add_commutative(a, b)?;
         }
 
         #[test]
         fn test_add_identity(a: IntMod5) {
-            run_test_add_identity(a)
+            run_test_add_identity(a)?;
         }
 
         #[test]
         fn test_add_inverse(a: IntMod5) {
-            run_test_add_inverse(a)
+            run_test_add_inverse(a)?;
         }
 
         #[test]
         fn test_mul_associative(a: IntMod5, b: IntMod5, c: IntMod5) {
-            run_test_add_associative(a, b, c)
+            run_test_mul_associative(a, b, c)?;
         }
 
         #[test]
         fn test_mul_commutative(a: IntMod5, b: IntMod5) {
-            run_test_add_commutative(a, b)
+            run_test_mul_commutative(a, b)?;
         }
 
         #[test]
         fn test_mul_identity(a: IntMod5) {
-            run_test_mul_identity(a)
+            run_test_mul_identity(a)?;
         }
 
         #[test]
         fn test_mul_inverse(a: IntMod5) {
-            run_test_mul_inverse(a)
+            run_test_mul_inverse(a)?;
         }
 
         #[test]
         fn test_distributive(a: IntMod5, b: IntMod5, c: IntMod5) {
-            run_test_distributive(a, b, c)
+            run_test_distributive(a, b, c)?;
+        }
+    }
+}
+
+/// Ints mod 2^128 - 159
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct IntMod128BitPrime {
+    inner: u128,
+}
+
+impl IntMod128BitPrime {
+    const fn order() -> u128 {
+        u128::MAX - 158
+    }
+}
+
+impl TryFrom<u128> for IntMod128BitPrime {
+    type Error = ();
+
+    fn try_from(value: u128) -> Result<Self, ()> {
+        if value >= Self::order() {
+            return Err(());
+        }
+        Ok(Self { inner: value })
+    }
+}
+
+impl FieldTrait for IntMod128BitPrime {
+    fn add(&self, rhs: &Self) -> Self {
+        let mut value = self.inner.wrapping_add(rhs.inner);
+        if value < self.inner || value < rhs.inner || value >= Self::order() {
+            // We passed 2^128-159, so add 159 back to get the proper
+            // representation as a u128.
+            value = value.wrapping_add(159);
+        }
+        assert!(value < Self::order());
+        Self { inner: value }
+    }
+    fn neg(&self) -> Self {
+        let value = if self.inner == 0 {
+            0
+        } else {
+            Self::order() - self.inner
+        };
+        Self { inner: value }
+    }
+    fn zero() -> Self {
+        return Self { inner: 0 };
+    }
+    fn mul(&self, _rhs: &Self) -> Self {
+        todo!("This is a bit of work");
+    }
+    fn one() -> Self {
+        return Self { inner: 1 };
+    }
+
+    fn mul_invert(&self) -> Self {
+        todo!("This is a moderate amount of work");
+    }
+}
+
+#[cfg(test)]
+impl Arbitrary for IntMod128BitPrime {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        use std::ops::Range;
+        let range: Range<u128> = 0..(Self::order() - 1);
+        range
+            .prop_map(Self::try_from)
+            .prop_map(Result::unwrap)
+            .boxed()
+    }
+}
+
+#[cfg(test)]
+mod test_mod128bitprimeu128 {
+    use super::test_helpers::*;
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn test_add_associative(a: IntMod128BitPrime, b: IntMod128BitPrime, c: IntMod128BitPrime) {
+            run_test_add_associative(a, b, c)?;
+        }
+
+        #[test]
+        fn test_add_commutative(a: IntMod128BitPrime, b: IntMod128BitPrime) {
+            run_test_add_commutative(a, b)?;
+        }
+
+        #[test]
+        fn test_add_identity(a: IntMod128BitPrime) {
+            run_test_add_identity(a)?;
+        }
+
+        #[test]
+        fn test_add_inverse(a: IntMod128BitPrime) {
+            run_test_add_inverse(a)?;
+        }
+
+        // Uncomment after implementing mul etc.
+        /*
+        #[test]
+        fn test_mul_associative(a: IntMod128BitPrime, b: IntMod128BitPrime, c: IntMod128BitPrime) {
+            run_test_mul_associative(a, b, c)?;
+        }
+
+        #[test]
+        fn test_mul_commutative(a: IntMod128BitPrime, b: IntMod128BitPrime) {
+            run_test_mul_commutative(a, b)?;
+        }
+
+        #[test]
+        fn test_mul_identity(a: IntMod128BitPrime) {
+            run_test_mul_identity(a)?;
+        }
+
+        #[test]
+        fn test_mul_inverse(a: IntMod128BitPrime) {
+            run_test_mul_inverse(a)?;
+        }
+
+        #[test]
+        fn test_distributive(a: IntMod128BitPrime, b: IntMod128BitPrime, c: IntMod128BitPrime) {
+            run_test_distributive(a, b, c)?;
+        }
+        */
+    }
+}
+
+/// RUG Integers mod 2^128 - 159
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct IntegerMod128BitPrime {
+    inner: Integer,
+}
+
+impl IntegerMod128BitPrime {
+    const fn order() -> u128 {
+        u128::MAX - 158
+    }
+}
+
+impl TryFrom<u128> for IntegerMod128BitPrime {
+    type Error = ();
+
+    fn try_from(value: u128) -> Result<Self, ()> {
+        if value >= Self::order() {
+            return Err(());
+        }
+        Ok(Self {
+            inner: Integer::from(value),
+        })
+    }
+}
+
+impl FieldTrait for IntegerMod128BitPrime {
+    fn add(&self, rhs: &Self) -> Self {
+        let value = (self.inner.clone() + rhs.inner.clone()) % Self::order();
+        Self {
+            inner: value.into(),
+        }
+    }
+    fn neg(&self) -> Self {
+        let value = if self.inner == 0 {
+            Integer::from(0)
+        } else {
+            Integer::from(Self::order() - self.inner.clone())
+        };
+        Self { inner: value }
+    }
+    fn zero() -> Self {
+        Self { inner: 0.into() }
+    }
+    fn mul(&self, rhs: &Self) -> Self {
+        let value = (self.inner.clone() * rhs.inner.clone()) % Self::order();
+        Self {
+            inner: value.into(),
+        }
+    }
+    fn one() -> Self {
+        Self { inner: 1.into() }
+    }
+
+    fn mul_invert(&self) -> Self {
+        Self {
+            inner: self
+                .inner
+                .clone()
+                .invert(&Self::order().into())
+                .expect("Expected inverse if self nonzero (prime order field)."),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Arbitrary for IntegerMod128BitPrime {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        use std::ops::Range;
+        let range: Range<u128> = 0..(Self::order() - 1);
+        range
+            .prop_map(Self::try_from)
+            .prop_map(Result::unwrap)
+            .boxed()
+    }
+}
+
+#[cfg(test)]
+mod test_mod128bitprime_integer {
+    use super::test_helpers::*;
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn test_add_associative(a: IntegerMod128BitPrime, b: IntegerMod128BitPrime, c: IntegerMod128BitPrime) {
+            run_test_add_associative(a, b, c)?;
+        }
+
+        #[test]
+        fn test_add_commutative(a: IntegerMod128BitPrime, b: IntegerMod128BitPrime) {
+            run_test_add_commutative(a, b)?;
+        }
+
+        #[test]
+        fn test_add_identity(a: IntegerMod128BitPrime) {
+            run_test_add_identity(a)?;
+        }
+
+        #[test]
+        fn test_add_inverse(a: IntegerMod128BitPrime) {
+            run_test_add_inverse(a)?;
+        }
+
+        #[test]
+        fn test_mul_associative(a: IntegerMod128BitPrime, b: IntegerMod128BitPrime, c: IntegerMod128BitPrime) {
+            run_test_mul_associative(a, b, c)?;
+        }
+
+        #[test]
+        fn test_mul_commutative(a: IntegerMod128BitPrime, b: IntegerMod128BitPrime) {
+            run_test_mul_commutative(a, b)?;
+        }
+
+        #[test]
+        fn test_mul_identity(a: IntegerMod128BitPrime) {
+            run_test_mul_identity(a)?;
+        }
+
+        #[test]
+        fn test_mul_inverse(a: IntegerMod128BitPrime) {
+            run_test_mul_inverse(a)?;
+        }
+
+        #[test]
+        fn test_distributive(a: IntegerMod128BitPrime, b: IntegerMod128BitPrime, c: IntegerMod128BitPrime) {
+            run_test_distributive(a, b, c)?;
+        }
+    }
+}
+
+impl FieldTrait for Jubjub {
+    fn add(&self, rhs: &Self) -> Self {
+        self.add(rhs)
+    }
+
+    fn neg(&self) -> Self {
+        self.neg()
+    }
+
+    fn zero() -> Self {
+        Jubjub::zero()
+    }
+
+    fn mul(&self, rhs: &Self) -> Self {
+        self.mul(rhs)
+    }
+
+    fn mul_invert(&self) -> Self {
+        self.invert().unwrap()
+    }
+
+    fn one() -> Self {
+        Jubjub::one()
+    }
+}
+
+#[cfg(test)]
+mod test_jubjub {
+    use super::test_helpers::*;
+    use super::*;
+    use crate::group::jubjubs;
+
+    proptest! {
+        #[test]
+        fn test_add_associative(a in jubjubs(), b in jubjubs(), c in jubjubs()) {
+            run_test_add_associative(a, b, c)?;
+        }
+
+        #[test]
+        fn test_add_commutative(a in jubjubs(), b in jubjubs()) {
+            run_test_add_commutative(a, b)?;
+        }
+
+        #[test]
+        fn test_add_identity(a in jubjubs()) {
+            run_test_add_identity(a)?;
+        }
+
+        #[test]
+        fn test_add_inverse(a in jubjubs()) {
+            run_test_add_inverse(a)?;
+        }
+
+        #[test]
+        fn test_mul_associative(a in jubjubs(), b in jubjubs(), c in jubjubs()) {
+            run_test_mul_associative(a, b, c)?;
+        }
+
+        #[test]
+        fn test_mul_commutative(a in jubjubs(), b in jubjubs()) {
+            run_test_mul_commutative(a, b)?;
+        }
+
+        #[test]
+        fn test_mul_identity(a in jubjubs()) {
+            run_test_mul_identity(a)?;
+        }
+
+        #[test]
+        fn test_mul_inverse(a in jubjubs()) {
+            run_test_mul_inverse(a)?;
+        }
+
+        #[test]
+        fn test_distributive(a in jubjubs(), b in jubjubs(), c in jubjubs()) {
+            run_test_distributive(a, b, c)?;
         }
     }
 }
