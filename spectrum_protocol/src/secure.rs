@@ -3,12 +3,10 @@
 use crate::{accumulator::Accumulatable, Protocol};
 
 use derivative::Derivative;
-use rug::Integer;
 use serde::{Deserialize, Serialize};
-use spectrum_primitives::bytes::Bytes;
+use spectrum_primitives::{bytes::Bytes, field::FieldTrait, group::Sampleable, lss::Shareable};
 use spectrum_primitives::{
     dpf::{BasicDPF, MultiKeyDPF, DPF},
-    field::Field,
     prg::{
         aes::{AESSeed, AESPRG},
         group::GroupPRG,
@@ -31,10 +29,7 @@ use {
         prg::PRG,
         vdpf::{self, FieldProofShare, FieldToken},
     },
-    std::{
-        convert::{TryFrom, TryInto},
-        sync::Arc,
-    },
+    std::convert::{TryFrom, TryInto},
 };
 
 pub use spectrum_primitives::vdpf::{BasicVdpf, MultiKeyVdpf};
@@ -73,12 +68,13 @@ impl<V: VDPF> WriteToken<V> {
 }
 
 #[cfg(feature = "proto")]
-impl<D, P> Into<proto::WriteToken> for WriteToken<FieldVDPF<D>>
+impl<D, P, F> Into<proto::WriteToken> for WriteToken<FieldVDPF<D, F>>
 where
-    FieldVDPF<D>: VDPF<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare>,
+    FieldVDPF<D, F>: VDPF<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare<F>>,
     P: PRG,
     P::Seed: Into<Vec<u8>>,
     P::Output: Into<Vec<u8>>,
+    F: FieldTrait + Sampleable + Shareable,
 {
     fn into(self) -> proto::WriteToken {
         let dpf_key_proto = proto::secure_write_token::DpfKey {
@@ -91,19 +87,22 @@ where
                 .map(Into::<Vec<u8>>::into)
                 .collect(),
         };
+        /*
         let is_first = self.1.bit.is_first();
         assert_eq!(is_first, self.1.seed.is_first());
         let bit = self.1.bit.value();
-        let modulus: proto::Integer = bit.field().into();
         let proof = proto::secure_write_token::ProofShare {
             bit: Some(bit.into()),
             seed: Some(self.1.seed.value().into()),
             is_first,
         };
+        */
+        // let proof: proto::secure_write_token::ProofShare = self.1.into();
+        let proof: Option<proto::secure_write_token::ProofShare> = None;
         let inner = proto::SecureWriteToken {
             key: Some(dpf_key_proto),
-            proof: Some(proof),
-            modulus: Some(modulus),
+            proof,
+            modulus: None,
         };
         proto::WriteToken {
             inner: Some(proto::write_token::Inner::Secure(inner)),
@@ -112,12 +111,14 @@ where
 }
 
 #[cfg(feature = "proto")]
-impl<D, P> TryFrom<proto::WriteToken> for WriteToken<FieldVDPF<D>>
+impl<D, P, F> TryFrom<proto::WriteToken> for WriteToken<FieldVDPF<D, F>>
 where
-    FieldVDPF<D>: VDPF<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare>,
+    FieldVDPF<D, F>: VDPF<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare<F>>,
     P: PRG,
     P::Seed: From<Vec<u8>>,
     P::Output: TryFrom<Vec<u8>>,
+    F: From<proto::Integer> + FieldTrait + Shareable + Clone,
+    F::Shares: From<F>,
     <P::Output as TryFrom<Vec<u8>>>::Error: std::fmt::Debug,
 {
     type Error = &'static str;
@@ -125,25 +126,17 @@ where
     fn try_from(token: proto::WriteToken) -> Result<Self, Self::Error> {
         if let proto::write_token::Inner::Secure(inner) = token.inner.unwrap() {
             let key_proto = inner.key.unwrap();
-            let dpf_key = <FieldVDPF<D> as DPF>::Key::new(
+            let dpf_key = <FieldVDPF<D, F> as DPF>::Key::new(
                 key_proto.encoded_msg.try_into().unwrap(),
                 key_proto.bits,
                 key_proto.seeds.into_iter().map(Into::into).collect(),
             );
-            let modulus: proto::Integer = inner.modulus.unwrap();
-            let field = Arc::new(Field::from(modulus));
             let proof_proto = inner.proof.unwrap();
             let proof_share = FieldProofShare::new(
-                SecretShare::new(
-                    field.from_proto(proof_proto.bit.unwrap()),
-                    proof_proto.is_first,
-                ),
-                SecretShare::new(
-                    field.from_proto(proof_proto.seed.unwrap()),
-                    proof_proto.is_first,
-                ),
+                F::Shares::from(F::from(proof_proto.bit.unwrap())),
+                F::Shares::from(F::from(proof_proto.seed.unwrap())),
             );
-            Ok(WriteToken::<FieldVDPF<D>>(dpf_key, proof_share))
+            Ok(WriteToken::<FieldVDPF<D, F>>(dpf_key, proof_share))
         } else {
             Err("Invalid proto::WriteToken.")
         }
@@ -185,42 +178,39 @@ impl<V: VDPF> AuditShare<V> {
 }
 
 #[cfg(feature = "proto")]
-impl<V> Into<proto::AuditShare> for AuditShare<V>
+impl<V, F> Into<proto::AuditShare> for AuditShare<V>
 where
-    V: VDPF<Token = vdpf::FieldToken>,
+    V: VDPF<Token = vdpf::FieldToken<F>>,
+    F: Shareable,
 {
     fn into(self) -> proto::AuditShare {
-        let bit = self.token.bit.value();
-        let field = bit.field();
-        let modulus: proto::Integer = field.into();
-        let is_first = self.token.bit.is_first();
-        assert_eq!(is_first, self.token.seed.is_first());
+        //let bit = self.token.bit.value();
+        // let is_first = self.token.bit.is_first();
+        // assert_eq!(is_first, self.token.seed.is_first());
 
         let inner = proto::audit_share::Inner::Secure(proto::SecureAuditShare {
-            bit: Some(bit.into()),
-            seed: Some(self.token.seed.value().into()),
-            is_first,
+            bit: None,
+            seed: None,
+            is_first: false,
             data: self.token.data.into(),
-            modulus: Some(modulus),
+            modulus: None,
         });
         proto::AuditShare { inner: Some(inner) }
     }
 }
 
 #[cfg(feature = "proto")]
-impl<V> TryFrom<proto::AuditShare> for AuditShare<V>
+impl<V, F> TryFrom<proto::AuditShare> for AuditShare<V>
 where
-    V: VDPF<Token = vdpf::FieldToken>,
+    F: Clone + From<proto::Integer> + Sampleable + FieldTrait,
+    V: VDPF<Token = vdpf::FieldToken<F>>,
 {
     type Error = &'static str;
 
     fn try_from(share: proto::AuditShare) -> Result<Self, Self::Error> {
         if let proto::audit_share::Inner::Secure(inner) = share.inner.unwrap() {
-            let modulus: proto::Integer = inner.modulus.unwrap();
-            let field = Arc::new(Field::from(modulus));
-
-            let bit = field.from_proto(inner.bit.unwrap());
-            let seed = field.from_proto(inner.seed.unwrap());
+            let bit = F::from(inner.bit.unwrap());
+            let seed = F::from(inner.seed.unwrap());
 
             Ok(Self::new(FieldToken::new(
                 SecretShare::new(bit, inner.is_first),
@@ -268,32 +258,19 @@ impl<V: VDPF> SecureProtocol<V> {
     }
 }
 
-fn field_with_security(sec_bits: u32) -> Field {
-    Field::from(Integer::from(
-        (Integer::from(2) << sec_bits).next_prime_ref(),
-    ))
-}
-
 impl SecureProtocol<BasicVdpf> {
-    pub fn with_aes_prg_dpf(sec_bits: u32, channels: usize, msg_size: usize) -> Self {
-        let field = field_with_security(sec_bits);
-        let vdpf = FieldVDPF::new(BasicDPF::new(AESPRG::new(16, msg_size), channels), field);
+    pub fn with_aes_prg_dpf(channels: usize, msg_size: usize) -> Self {
+        let vdpf = FieldVDPF::new(BasicDPF::new(AESPRG::new(16, msg_size), channels));
         SecureProtocol::new(vdpf)
     }
 }
 
 impl SecureProtocol<MultiKeyVdpf> {
-    pub fn with_group_prg_dpf(
-        sec_bits: u32,
-        channels: usize,
-        groups: usize,
-        msg_size: usize,
-    ) -> Self {
+    pub fn with_group_prg_dpf(channels: usize, groups: usize, msg_size: usize) -> Self {
         let seed: AESSeed = AESSeed::from(vec![0u8; 16]);
         let prg: GroupPRG<_> = GroupPRG::from_aes_seed((msg_size - 1) / 31 + 1, seed);
         let dpf: MultiKeyDPF<GroupPRG<_>> = MultiKeyDPF::new(prg, channels, groups);
-        let field = field_with_security(sec_bits);
-        let vdpf = FieldVDPF::new(dpf, field);
+        let vdpf = FieldVDPF::new(dpf);
         SecureProtocol::new(vdpf)
     }
 }
@@ -383,7 +360,7 @@ pub mod tests {
     use super::*;
 
     use crate::tests::*;
-    use spectrum_primitives::field::FieldElement;
+    use spectrum_primitives::group::GroupElement;
 
     impl Arbitrary for ChannelKey<BasicVdpf> {
         type Parameters = ();
@@ -393,7 +370,7 @@ pub mod tests {
             (
                 any::<BasicVdpf>(),
                 any::<prop::sample::Index>(),
-                any::<FieldElement>(),
+                any::<GroupElement>(),
             )
                 .prop_map(|(vdpf, idx, value)| Self::new(idx.index(vdpf.num_points()), value))
                 .boxed()

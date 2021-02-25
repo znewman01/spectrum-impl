@@ -5,7 +5,7 @@ use crate::{
 };
 
 use serde::{Deserialize, Serialize};
-use spectrum_primitives::{field::FieldElement, vdpf::VDPF};
+use spectrum_primitives::{group::GroupElement, vdpf::VDPF};
 
 use std::convert::TryFrom;
 use std::fmt::Debug;
@@ -13,12 +13,12 @@ use std::fmt::Debug;
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum ChannelKeyWrapper {
     Insecure(usize, String),
-    Secure(usize, FieldElement),
+    Secure(usize, GroupElement),
 }
 
 impl<V> TryFrom<ChannelKeyWrapper> for secure::ChannelKey<V>
 where
-    V: VDPF<AuthKey = FieldElement>,
+    V: VDPF<AuthKey = GroupElement>,
 {
     type Error = &'static str;
 
@@ -33,7 +33,7 @@ where
 
 impl<V> Into<ChannelKeyWrapper> for secure::ChannelKey<V>
 where
-    V: VDPF<AuthKey = FieldElement>,
+    V: VDPF<AuthKey = GroupElement>,
 {
     fn into(self) -> ChannelKeyWrapper {
         ChannelKeyWrapper::Secure(self.idx, self.secret)
@@ -85,29 +85,22 @@ impl From<secure::SecureProtocol<MultiKeyVdpf>> for ProtocolWrapper {
 
 impl ProtocolWrapper {
     pub fn new(
-        security_bytes: Option<u32>,
+        security_bytes: bool,
         multi_key: bool,
         groups: usize,
         channels: usize,
         msg_size: usize,
     ) -> Self {
         match security_bytes {
-            Some(security_bytes) => {
+            true => {
                 if multi_key {
-                    secure::SecureProtocol::with_group_prg_dpf(
-                        security_bytes,
-                        channels,
-                        groups,
-                        msg_size,
-                    )
-                    .into()
+                    secure::SecureProtocol::with_group_prg_dpf(channels, groups, msg_size).into()
                 } else {
                     assert_eq!(groups, 2);
-                    secure::SecureProtocol::with_aes_prg_dpf(security_bytes, channels, msg_size)
-                        .into()
+                    secure::SecureProtocol::with_aes_prg_dpf(channels, msg_size).into()
                 }
             }
-            None => insecure::InsecureProtocol::new(groups, channels, msg_size).into(),
+            false => insecure::InsecureProtocol::new(groups, channels, msg_size).into(),
         }
     }
 
