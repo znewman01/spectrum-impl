@@ -30,7 +30,7 @@ const JUBJUB_MODULUS: [u64; 4] = [
 ];
 
 // size of group elements in jubjbu
-const JUBJUB_MODULUS_BYTES: usize = 32;
+pub const JUBJUB_MODULUS_BYTES: usize = 32;
 
 /// A *commutative* group
 pub trait Group: Eq {
@@ -44,7 +44,7 @@ pub trait Group: Eq {
     fn pow(&self, pow: &Integer) -> Self;
 }
 
-pub trait SampleableGroup: Group {
+pub trait Sampleable {
     /// generates a new random group element
     fn rand_element() -> Self;
     /// Generate the given number of group generators deterministically from the given seed.
@@ -192,10 +192,10 @@ pub struct GroupElement {
         serialize_with = "serialize_field_element",
         deserialize_with = "deserialize_field_element"
     )]
-    inner: Jubjub,
+    pub(in crate) inner: Jubjub,
 }
 
-impl SampleableGroup for GroupElement {
+impl Sampleable for GroupElement {
     /// identity element in the elliptic curve field
 
     /// generates a new random group element
@@ -245,6 +245,12 @@ impl From<&Integer> for GroupElement {
         let mut digits: [u8; JUBJUB_MODULUS_BYTES] = [0x0u8; JUBJUB_MODULUS_BYTES];
         reduced.write_digits(&mut digits, BYTE_ORDER);
         Jubjub::from_bytes(&digits).unwrap().into()
+    }
+}
+
+impl From<Integer> for GroupElement {
+    fn from(value: Integer) -> Self {
+        Self::from(&value)
     }
 }
 

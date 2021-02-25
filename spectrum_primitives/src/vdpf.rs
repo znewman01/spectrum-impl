@@ -1,19 +1,20 @@
 //! Spectrum implementation.
 use crate::{
     dpf::{BasicDPF, MultiKeyDPF, DPF},
-    field::{Field, FieldElement},
-    group::GroupElement,
-    lss::{SecretShare, Shareable},
+    field::FieldTrait,
+    group::{GroupElement, Sampleable},
+    lss::Shareable,
     prg::aes::AESPRG,
     prg::group::GroupPRG,
 };
 
 use crate::bytes::Bytes;
-use rug::rand::RandState;
+use rug::Integer;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::iter::repeat_with;
+use std::{collections::HashSet, marker::PhantomData};
 
 #[cfg(any(test, feature = "testing"))]
 use proptest::prelude::*;
@@ -47,37 +48,44 @@ pub trait VDPF: DPF {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct FieldToken {
-    pub bit: SecretShare,
-    pub seed: SecretShare,
+pub struct FieldToken<F>
+where
+    F: Shareable,
+{
+    pub bit: F::Shares,
+    pub seed: F::Shares,
     pub data: Bytes,
 }
 
-impl FieldToken {
-    pub fn new(bit: SecretShare, seed: SecretShare, data: Bytes) -> Self {
+impl<F> FieldToken<F>
+where
+    F: Shareable,
+{
+    pub fn new(bit: F::Shares, seed: F::Shares, data: Bytes) -> Self {
         Self { bit, seed, data }
     }
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct FieldProofShare {
-    pub bit: SecretShare,
-    pub seed: SecretShare,
+pub struct FieldProofShare<F>
+where
+    F: Shareable,
+{
+    pub bit: F::Shares,
+    pub seed: F::Shares,
 }
 
-impl FieldProofShare {
-    pub fn new(bit: SecretShare, seed: SecretShare) -> Self {
+impl<F> FieldProofShare<F>
+where
+    F: Shareable,
+{
+    pub fn new(bit: F::Shares, seed: F::Shares) -> Self {
         Self { bit, seed }
     }
 
-    fn share(
-        bit_proof: FieldElement,
-        seed_proof: FieldElement,
-        len: usize,
-    ) -> Vec<FieldProofShare> {
-        let mut rng = RandState::new();
-        let bits = bit_proof.share(len, &mut rng);
-        let seeds = seed_proof.share(len, &mut rng);
+    fn share(bit_proof: F, seed_proof: F, len: usize) -> Vec<FieldProofShare<F>> {
+        let bits = bit_proof.share(len);
+        let seeds = seed_proof.share(len);
         bits.into_iter()
             .zip(seeds.into_iter())
             .map(|(bit, seed)| FieldProofShare::new(bit, seed))
@@ -86,19 +94,22 @@ impl FieldProofShare {
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
-pub struct FieldVDPF<D> {
+pub struct FieldVDPF<D, F> {
     dpf: D,
-    pub field: Field,
+    phantom: PhantomData<F>,
 }
 
-impl<D> FieldVDPF<D> {
-    pub fn new(dpf: D, field: Field) -> Self {
-        FieldVDPF { dpf, field }
+impl<D, F> FieldVDPF<D, F> {
+    pub fn new(dpf: D) -> Self {
+        FieldVDPF {
+            dpf,
+            phantom: Default::default(),
+        }
     }
 }
 
 // Pass through DPF methods
-impl<D: DPF> DPF for FieldVDPF<D> {
+impl<D: DPF, F> DPF for FieldVDPF<D, F> {
     type Key = D::Key;
     type Message = D::Message;
 
@@ -137,35 +148,40 @@ impl<D: DPF> DPF for FieldVDPF<D> {
 
 // TODO(sss) make this more abstract? Don't think that we need both MultiKeyVDPF and BasicVDPF
 // should be able to just use abstract DPF notion + properties on PRG seeds (addition)
-pub type BasicVdpf = FieldVDPF<BasicDPF<AESPRG>>;
-pub type MultiKeyVdpf = FieldVDPF<MultiKeyDPF<GroupPRG<GroupElement>>>;
+pub type BasicVdpf = FieldVDPF<BasicDPF<AESPRG>, GroupElement>;
+pub type MultiKeyVdpf = FieldVDPF<MultiKeyDPF<GroupPRG<GroupElement>>, GroupElement>;
 
 pub mod two_key {
+    use crate::prg::aes::AESSeed;
+
     use super::*;
 
-    impl VDPF for BasicVdpf {
-        type AuthKey = FieldElement;
-        type ProofShare = FieldProofShare;
-        type Token = FieldToken;
+    impl<F> VDPF for FieldVDPF<BasicDPF<AESPRG>, F>
+    where
+        F: FieldTrait + Sampleable + Clone + TryFrom<Bytes> + Shareable,
+        <F as TryFrom<Bytes>>::Error: Debug,
+        F::Shares: From<F> + Clone + FieldTrait,
+    {
+        type AuthKey = F;
+        type ProofShare = FieldProofShare<F>;
+        type Token = FieldToken<F>;
 
-        fn new_access_key(&self) -> FieldElement {
-            let mut rng = RandState::new();
-            self.field.rand_element(&mut rng)
+        fn new_access_key(&self) -> F {
+            F::rand_element()
         }
 
-        fn new_access_keys(&self) -> Vec<FieldElement> {
-            let mut rng = RandState::new();
-            repeat_with(|| self.field.rand_element(&mut rng))
+        fn new_access_keys(&self) -> Vec<F> {
+            repeat_with(F::rand_element)
                 .take(self.num_points())
                 .collect()
         }
 
         fn gen_proofs(
             &self,
-            auth_key: &FieldElement,
+            auth_key: &F,
             point_idx: usize,
             dpf_keys: &[<Self as DPF>::Key],
-        ) -> Vec<FieldProofShare> {
+        ) -> Vec<FieldProofShare<F>> {
             assert_eq!(dpf_keys.len(), 2, "not implemented");
 
             let dpf_key_a = dpf_keys[0].clone();
@@ -175,20 +191,27 @@ pub mod two_key {
             let res_seed = dpf_key_a
                 .seeds
                 .iter()
-                .map(|s| s.to_field_element(self.field.clone()))
-                .fold(self.field.zero(), |x, y| x + y);
+                .cloned()
+                .map(AESSeed::bytes)
+                .map(F::try_from)
+                .map(Result::unwrap)
+                .fold_first(|x, y| x.add(&y))
+                .expect("Seed vector should be nonempty");
             let res_seed = dpf_key_b
                 .seeds
                 .iter()
-                .map(|s| s.to_field_element(self.field.clone()))
-                .fold(res_seed, |x, y| x - y);
+                .cloned()
+                .map(AESSeed::bytes)
+                .map(F::try_from)
+                .map(Result::unwrap)
+                .fold(res_seed, |x, y| x.add(&y));
 
-            let seed_proof = auth_key.clone() * res_seed;
+            let seed_proof = auth_key.mul(&res_seed);
 
             // If the bit is `1` for server A, then we need to negate the share
             // to ensure that (bit_A - bit_B = 1)*key = -key and not key
             let bit_proof = if dpf_key_a.bits[point_idx] == 1 {
-                -auth_key.clone()
+                auth_key.neg()
             } else {
                 auth_key.clone()
             };
@@ -197,15 +220,15 @@ pub mod two_key {
         }
 
         fn gen_proofs_noop(&self, dpf_keys: &[<Self as DPF>::Key]) -> Vec<Self::ProofShare> {
-            self.gen_proofs(&self.field.zero(), self.num_points() - 1, dpf_keys)
+            self.gen_proofs(&F::zero(), self.num_points() - 1, dpf_keys)
         }
 
         fn gen_audit(
             &self,
-            auth_keys: &[FieldElement],
+            auth_keys: &[F],
             dpf_key: &<Self as DPF>::Key,
-            proof_share: &FieldProofShare,
-        ) -> FieldToken {
+            proof_share: &FieldProofShare<F>,
+        ) -> FieldToken<F> {
             let mut bit_check = proof_share.bit.clone();
             let mut seed_check = proof_share.seed.clone();
             for ((key, seed), bit) in auth_keys
@@ -213,10 +236,11 @@ pub mod two_key {
                 .zip(dpf_key.seeds.iter())
                 .zip(dpf_key.bits.iter())
             {
-                seed_check -= key.clone() * seed.to_field_element(self.field.clone());
-                match *bit {
+                let seed_in_field = F::try_from(seed.clone().bytes()).unwrap();
+                seed_check = seed_check.add(&key.clone().mul(&seed_in_field).neg().into());
+                match bit {
                     0 => {}
-                    1 => bit_check += key.clone(),
+                    1 => bit_check = bit_check.add(&F::Shares::from(key.clone())),
                     _ => panic!("Bit must be 0 or 1"),
                 }
             }
@@ -238,7 +262,7 @@ pub mod two_key {
             }
         }
 
-        fn check_audit(&self, tokens: Vec<FieldToken>) -> bool {
+        fn check_audit(&self, tokens: Vec<FieldToken<F>>) -> bool {
             assert_eq!(tokens.len(), 2, "not implemented");
             tokens[0] == tokens[1]
         }
@@ -273,48 +297,57 @@ pub mod two_key {
 }
 
 pub mod multi_key {
+    use crate::group::Group;
+
     use super::*;
 
-    impl VDPF for MultiKeyVdpf {
-        type AuthKey = FieldElement;
-        type ProofShare = FieldProofShare;
-        type Token = FieldToken;
+    impl<F> VDPF for FieldVDPF<MultiKeyDPF<GroupPRG<F>>, F>
+    where
+        F: FieldTrait
+            + Shareable
+            + Clone
+            + Group
+            + Debug
+            + Into<Bytes>
+            + Sampleable
+            + From<Integer>,
+        F::Shares: Clone + FieldTrait + From<F>,
+    {
+        type AuthKey = F;
+        type ProofShare = FieldProofShare<F>;
+        type Token = FieldToken<F>;
 
         /// samples a new access key for an index
-        fn new_access_key(&self) -> FieldElement {
-            let mut rng = RandState::new();
-            self.field.rand_element(&mut rng)
+        fn new_access_key(&self) -> F {
+            F::rand_element()
         }
 
         /// samples a new set of access keys for range of indices
-        fn new_access_keys(&self) -> Vec<FieldElement> {
-            let mut rng = RandState::new();
-            repeat_with(|| self.field.rand_element(&mut rng))
+        fn new_access_keys(&self) -> Vec<F> {
+            repeat_with(F::rand_element)
                 .take(self.num_points())
                 .collect()
         }
 
         fn gen_proofs(
             &self,
-            access_key: &FieldElement,
+            access_key: &F,
             point_idx: usize,
             dpf_keys: &[<Self as DPF>::Key],
-        ) -> Vec<FieldProofShare> {
+        ) -> Vec<FieldProofShare<F>> {
             // sum together the seeds at [point_idx]
             // which *should be* the only non-zero coordinate in the DPF eval
-            let field = access_key.field();
-
-            let mut seed_proof = field.zero();
+            let mut seed_proof = F::zero();
             for key in dpf_keys.iter() {
-                seed_proof +=
-                    access_key.clone() * field.new_element(key.seeds[point_idx].clone().value());
+                seed_proof =
+                    seed_proof.add(&access_key.mul(&F::from(key.seeds[point_idx].clone().value())));
             }
 
-            let mut bit_proof = access_key.field().zero();
+            let mut bit_proof = F::zero();
             for key in dpf_keys.iter() {
                 match key.bits[point_idx] {
                     0 => {}
-                    1 => bit_proof += access_key.clone(),
+                    1 => bit_proof = bit_proof.add(access_key),
                     _ => panic!("Bit must be 0 or 1"),
                 }
             }
@@ -325,20 +358,19 @@ pub mod multi_key {
         fn gen_proofs_noop(&self, dpf_keys: &[<Self as DPF>::Key]) -> Vec<Self::ProofShare> {
             // setting the desired index to self.nulpoints() - 1 results in a noop
             // here access key = 0
-            self.gen_proofs(&self.field.zero(), self.num_points() - 1, dpf_keys)
+            self.gen_proofs(&F::zero(), self.num_points() - 1, dpf_keys)
         }
 
         fn gen_audit(
             &self,
-            access_keys: &[FieldElement],
+            access_keys: &[F],
             dpf_key: &<Self as DPF>::Key,
-            proof_share: &FieldProofShare,
-        ) -> FieldToken {
-            let field = access_keys[0].field();
+            proof_share: &FieldProofShare<F>,
+        ) -> FieldToken<F> {
             let mut bit_check = proof_share.bit.clone();
             let mut seed_check = proof_share.seed.clone();
 
-            let is_first = seed_check.is_first();
+            let is_first = false;
 
             for ((access_key, seed), bit) in access_keys
                 .iter()
@@ -346,24 +378,30 @@ pub mod multi_key {
                 .zip(dpf_key.bits.iter())
             {
                 if is_first {
-                    seed_check -=
-                        access_key.clone() * FieldElement::new(seed.clone().value(), field.clone());
+                    seed_check = seed_check.add(&F::Shares::from(
+                        access_key.mul(&F::from(seed.clone().value().clone()).neg()),
+                    ));
                 } else {
-                    seed_check +=
-                        access_key.clone() * FieldElement::new(seed.clone().value(), field.clone());
+                    seed_check = seed_check.add(&F::Shares::from(
+                        access_key.mul(&F::from(seed.clone().value().clone())),
+                    ));
                 }
 
                 if is_first {
                     match *bit {
                         0 => {}
-                        1 => bit_check -= access_key.clone(),
-                        _ => panic!("Bit must be 0 or 1"),
+                        1 => bit_check = bit_check.add(&F::Shares::from(access_key.clone())),
+                        _ => {
+                            panic!("Bit must be 0 or 1");
+                        }
                     }
                 } else {
                     match *bit {
                         0 => {}
-                        1 => bit_check += access_key.clone(),
-                        _ => panic!("Bit must be 0 or 1"),
+                        1 => bit_check = bit_check.add(&F::Shares::from(access_key.clone()).neg()),
+                        _ => {
+                            panic!("Bit must be 0 or 1");
+                        }
                     }
                 }
             }
@@ -377,14 +415,14 @@ pub mod multi_key {
             }
         }
 
-        fn check_audit(&self, tokens: Vec<FieldToken>) -> bool {
-            let bit_proof = FieldElement::recover(tokens.iter().map(|t| t.bit.clone()).collect());
-            if bit_proof.get_value() != 0 {
+        fn check_audit(&self, tokens: Vec<FieldToken<F>>) -> bool {
+            let bit_proof = F::recover(tokens.iter().map(|t| t.bit.clone()).collect());
+            if bit_proof != F::zero() {
                 return false;
             }
 
-            let seed_proof = FieldElement::recover(tokens.iter().map(|t| t.seed.clone()).collect());
-            if seed_proof.get_value() != 0 {
+            let seed_proof = F::recover(tokens.iter().map(|t| t.seed.clone()).collect());
+            if seed_proof != F::zero() {
                 return false;
             }
 
@@ -427,29 +465,37 @@ pub mod multi_key {
 }
 
 #[cfg(any(test, feature = "testing"))]
-impl<D: Arbitrary + 'static> Arbitrary for FieldVDPF<D> {
+impl<D, F> Arbitrary for FieldVDPF<D, F>
+where
+    F: Debug,
+    D: Arbitrary + 'static,
+{
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (any::<D>(), any::<Field>())
-            .prop_map(|(dpf, field)| FieldVDPF::new(dpf, field))
+        any::<D>()
+            .prop_map(|dpf| FieldVDPF::<D, F>::new(dpf))
             .boxed()
     }
 }
 
 #[cfg(any(test, feature = "testing"))]
-impl Arbitrary for FieldProofShare {
+impl<F> Arbitrary for FieldProofShare<F>
+where
+    F: Debug + Clone + From<Integer> + Shareable,
+    F::Shares: Debug + From<F>,
+{
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         use crate::field::testing::integers;
 
-        (any::<Field>(), integers(), 0..1u8)
-            .prop_map(|(field, seed_value, bit)| FieldProofShare {
-                bit: SecretShare::new(field.new_element(bit.into()), false),
-                seed: SecretShare::new(field.new_element(seed_value), false),
+        (integers(), 0..1u8)
+            .prop_map(|(seed_value, bit)| FieldProofShare {
+                bit: F::Shares::from(F::from(bit.into())),
+                seed: F::Shares::from(F::from(seed_value)),
             })
             .boxed()
     }
@@ -465,24 +511,22 @@ mod testing {
 }
 
 #[cfg(any(test, feature = "testing"))]
-impl Arbitrary for FieldToken {
+impl<F> Arbitrary for FieldToken<F>
+where
+    F: Debug + Arbitrary + Shareable + 'static,
+    F::Shares: From<F> + Debug + 'static,
+{
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         use testing::hashes;
 
-        (any::<Field>(), hashes())
-            .prop_flat_map(|(field, data)| {
-                (
-                    any_with::<FieldElement>(Some(field.clone())),
-                    any_with::<FieldElement>(Some(field)),
-                )
-                    .prop_map(move |(bit, seed)| FieldToken {
-                        bit: SecretShare::new(bit, false),
-                        seed: SecretShare::new(seed, false),
-                        data: data.clone().into(),
-                    })
+        (hashes(), any::<F>(), any::<F>())
+            .prop_map(|(data, bit, seed)| FieldToken {
+                bit: F::Shares::from(bit),
+                seed: F::Shares::from(seed),
+                data: data.clone().into(),
             })
             .boxed()
     }

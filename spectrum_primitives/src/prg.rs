@@ -1,7 +1,6 @@
 //! Spectrum implementation.
 use crate::bytes::Bytes;
-use crate::field::{Field, FieldElement};
-use crate::group::{Group, SampleableGroup};
+use crate::group::{Group, Sampleable};
 
 use openssl::symm::{encrypt, Cipher};
 use rand::prelude::*;
@@ -129,14 +128,14 @@ pub mod aes {
 
     /// evaluation type for AES-based PRG
     impl AESSeed {
-        pub fn to_field_element(&self, field: Field) -> FieldElement {
-            field.element_from_bytes(&self.bytes)
-        }
-
         pub fn random(size: usize) -> Self {
             let mut rand_seed_bytes = vec![0; size];
             thread_rng().fill_bytes(&mut rand_seed_bytes);
             AESSeed::from(rand_seed_bytes)
+        }
+
+        pub fn bytes(self) -> Bytes {
+            self.bytes
         }
     }
 
@@ -445,7 +444,7 @@ pub mod group {
 
     impl<G> GroupPRG<G>
     where
-        G: Group + SampleableGroup,
+        G: Group + Sampleable,
     {
         pub fn new(generators: ElementVector<G>) -> Self {
             GroupPRG { generators }
@@ -617,7 +616,7 @@ pub mod group {
     #[cfg(any(test, feature = "testing"))]
     impl<G> Arbitrary for GroupPRG<G>
     where
-        G: Group + Debug + Clone + SampleableGroup + 'static,
+        G: Group + Debug + Clone + Sampleable + 'static,
     {
         type Parameters = Option<(usize, aes::AESSeed)>;
         type Strategy = BoxedStrategy<Self>;
