@@ -439,8 +439,9 @@ pub mod multi_key {
     #[cfg(test)]
     pub mod tests {
         use super::*;
+        use crate::algebra::Group;
         use crate::dpf::prg_tests::*;
-        use crate::group::{Group, GroupElement};
+        use crate::group::GroupElement;
         use crate::prg::{group::ElementVector, group::GroupPRG};
 
         pub fn data_with_dpf<D, G>() -> impl Strategy<Value = (ElementVector<G>, D)>

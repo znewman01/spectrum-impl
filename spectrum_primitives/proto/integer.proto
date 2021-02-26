@@ -6,3 +6,6 @@ package spectrum_primitives;
 message Integer {
   string data = 1;
 }
+
+message {
+}

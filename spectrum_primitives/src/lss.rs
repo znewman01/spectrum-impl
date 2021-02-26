@@ -1,221 +1,159 @@
-//! Spectrum implementation.
-use crate::field::FieldTrait;
-use crate::group::Sampleable;
-use std::fmt::Debug;
-use std::iter::{once, repeat_with};
-
-/// message contains a vector of bytes representing data in spectrum
-/// and is used for easily performing binary operations over bytes
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SecretShare<F> {
-    value: F,
-    is_first: bool,
-}
+//! Linear secret sharing.
+use crate::algebra::Field;
+use crate::util::Sampleable;
+use std::iter::{once, repeat_with, Sum};
 
 pub trait Shareable {
-    type Shares;
+    type Share;
 
-    fn share(self, n: usize) -> Vec<Self::Shares>;
-    fn recover(shares: Vec<Self::Shares>) -> Self;
+    fn share(self, n: usize) -> Vec<Self::Share>;
+    fn recover(shares: Vec<Self::Share>) -> Self;
 }
 
-impl<F> SecretShare<F>
-where
-    F: Clone,
-{
-    /// generates new secret share in a field element
-    pub fn new(value: F, is_first: bool) -> Self {
-        Self { value, is_first }
-    }
-
-    pub fn value(&self) -> F {
-        self.value.clone()
-    }
-
-    pub fn is_first(&self) -> bool {
-        self.is_first
-    }
-}
-
-impl<F> From<F> for SecretShare<F>
-where
-    F: FieldTrait,
-{
-    fn from(value: F) -> Self {
-        Self {
-            value,
-            is_first: false,
-        }
-    }
-}
-
-impl<F> FieldTrait for SecretShare<F>
-where
-    F: FieldTrait,
-{
-    fn add(&self, rhs: &Self) -> Self {
-        // is_first makes this not commutative!
-        SecretShare {
-            value: self.value.add(&rhs.value),
-            is_first: self.is_first,
-        }
-    }
-
-    fn neg(&self) -> Self {
-        SecretShare {
-            value: self.value.neg(),
-            is_first: self.is_first,
-        }
-    }
-
-    fn zero() -> Self {
-        SecretShare {
-            value: F::zero(),
-            is_first: false,
-        }
-    }
-
-    fn mul(&self, rhs: &Self) -> Self {
-        SecretShare {
-            value: self.value.mul(&rhs.value),
-            is_first: self.is_first,
-        }
-    }
-
-    fn mul_invert(&self) -> Self {
-        SecretShare {
-            value: self.value.mul_invert(),
-            is_first: self.is_first,
-        }
-    }
-
-    fn one() -> Self {
-        SecretShare {
-            value: F::one(),
-            is_first: false,
-        }
-    }
-}
+pub trait LinearlyShareable<T>: Shareable<Share = T> {}
 
 impl<F> Shareable for F
 where
-    F: FieldTrait + Sampleable + Clone,
+    F: Field + Sampleable + Clone + Sum,
 {
-    type Shares = SecretShare<F>;
+    type Share = F;
 
     /// shares the value such that summing all the shares recovers the value
-    fn share(self, n: usize) -> Vec<Self::Shares> {
+    fn share(self, n: usize) -> Vec<Self::Share> {
         assert!(n >= 2, "cannot split secret into fewer than two shares!");
-
-        let values: Vec<_> = repeat_with(|| F::rand_element()).take(n - 1).collect();
-        let sum = values.iter().fold(self, |a, b| a.add(b));
-        let mut is_first = true;
-        once(sum)
-            .chain(values)
-            .map(|value| {
-                let share = SecretShare::new(value, is_first);
-                is_first = false;
-                share
-            })
-            .collect()
+        let values: Vec<_> = repeat_with(F::sample).take(n - 1).collect();
+        let sum = values.iter().cloned().sum();
+        once(self - sum).chain(values).collect()
     }
 
     /// recovers the shares by subtracting all shares from the first share
-    fn recover(shares: Vec<Self::Shares>) -> F {
+    fn recover(shares: Vec<Self::Share>) -> F {
         assert!(
             shares.len() >= 2,
             "need at least two shares to recover a secret!"
         );
-
-        // recover the secret by subtracting the random shares (mask)
-        shares
-            .into_iter()
-            .fold_first(|a, b| a.add(&b.neg()))
-            .unwrap()
-            .value
+        shares.into_iter().sum()
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::field::IntegerMod128BitPrime as IntModP;
-    use proptest::prelude::*;
+impl<S, T> LinearlyShareable<T> for S
+where
+    T: Field,
+    S: Shareable<Share = T>,
+{
+}
 
-    const MAX_SPLIT: usize = 100;
+#[cfg(any(test, feature = "testing"))]
+macro_rules! check_shareable {
+    ($type:ty,$mod_name:ident) => {
+        mod $mod_name {
+            #![allow(unused_imports)]
+            use super::*;
+            use proptest::prelude::*;
+            const MAX_SHARES: usize = 100;
+            proptest! {
+                #[test]
+                fn test_share_recover_identity(value: $type, num_shares in 2..MAX_SHARES) {
+                    let shares = value.clone().share(num_shares);
+                    prop_assert_eq!(<$type as Shareable>::recover(shares), value);
+                }
 
-    proptest! {
-        #[test]
-        fn test_share_recover_identity(
-            value: IntModP,
-            num_shares in 2..MAX_SPLIT
-        ) {
-            prop_assert_eq!(
-                IntModP::recover(value.clone().share(num_shares)),
-                value
-            )
+                #[test]
+                fn test_share_randomized(
+                    value: $type,
+                    num_shares in 10..MAX_SHARES  // Need >>2 shares to avoid them being equal by chance
+                ) {
+                    prop_assert_ne!(
+                        value.clone().share(num_shares),
+                        value.share(num_shares)
+                    );
+                }
+
+                #[test]
+                #[should_panic]
+                fn test_one_share_invalid(value: $type) {
+                    value.share(1);
+                }
+            }
         }
+    };
+    ($type:ty) => {
+        check_shareable!($type, shareable);
+    };
+}
 
-        #[test]
-        fn test_share_randomized(
-            value: IntModP,
-            num_shares in 10..MAX_SPLIT  // Need more than 2 shares to avoid them being equal by chance
-        ) {
-            prop_assert_ne!(
-                value.clone().share(num_shares),
-                value.share(num_shares)
-            );
-        }
+#[cfg(any(test, feature = "testing"))]
+macro_rules! check_linearly_shareable {
+    ($type:ty,$mod_name:ident) => {
+        mod $mod_name {
+            #![allow(unused_imports)]
+            use super::*;
+            use proptest::prelude::*;
+            const MAX_SHARES: usize = 100;
 
-        #[test]
-        fn test_homomorphic_constant_add(
-            value: IntModP,
-            constant: IntModP,
-            num_shares in 2..MAX_SPLIT
-        ) {
-            let mut shares = value.clone().share(num_shares);
-            // TODO: this doesn't work except for the first share!
-            shares[0] = shares[0].add(&SecretShare::from(constant.clone()));
-            prop_assert_eq!(
-                IntModP::recover(shares),
-                value.add(&constant)
-            );
-        }
+            fn is_bounded<S: Field, T: LinearlyShareable<S>>() {}
+            #[test]
+            fn test_bounds() {
+                is_bounded::<<$type as Shareable>::Share, $type>()
+            }
 
-        #[test]
-        fn test_homomorphic_share_add(
-            value1: IntModP,
-            value2: IntModP,
-            num_shares in 2..MAX_SPLIT
-        ) {
-            let shares = value1.clone().share(num_shares)
-                .into_iter()
-                .zip(value2.clone().share(num_shares).into_iter())
-                .map(|(x, y)| x.add(&y))
-                .collect();
-            prop_assert_eq!(IntModP::recover(shares), value1.add(&value2));
-        }
+            proptest! {
+                /// Adding a constant to *any* share should give the
+                /// original shared value plus constant on recovery.
+                #[test]
+                fn test_constant_add(
+                    value: $type,
+                    constant: $type,
+                    num_shares in 2..MAX_SHARES,
+                    index: prop::sample::Index,
+                ) {
+                    let idx = index.index(num_shares);
+                    let mut shares = value.clone().share(num_shares);
+                    shares[idx] += constant.clone();
+                    prop_assert_eq!(
+                        <$type as Shareable>::recover(shares),
+                        value + constant
+                    );
+                }
 
-        #[test]
-        fn test_homomorphic_constant_mul(
-            value: IntModP,
-            constant: IntModP,
-            num_shares in 2..MAX_SPLIT
-        ) {
-            let shares = value.clone().share(num_shares)
-                .into_iter()
-                .map(|x| x.mul(&SecretShare::from(constant.clone())))
-                .collect();
-            prop_assert_eq!(
-                IntModP::recover(shares),
-                value.mul(&constant)
-            );
-        }
+                /// Adding shares of two values together element wise should
+                /// give the sum of the two values on recovery.
+                #[test]
+                fn test_share_add(
+                    value1: $type,
+                    value2: $type,
+                    num_shares in 2..MAX_SHARES
+                ) {
+                    let shares = value1.clone().share(num_shares)
+                        .into_iter()
+                        .zip(value2.clone().share(num_shares).into_iter())
+                        .map(|(x, y)| x + y)
+                        .collect();
+                    prop_assert_eq!(<$type as Shareable>::recover(shares), value1 + value2);
+                }
 
-        #[test]
-        #[should_panic]
-        fn test_one_share_invalid(value: IntModP) {
-            value.share(1);
+                /// Multiplying all shares by a constant should give the
+                /// original shared value times on recovery.
+                #[test]
+                fn test_constant_mul(
+                    value: $type,
+                    constant: $type,
+                    num_shares in 2..MAX_SHARES
+                ) {
+                    let shares = value.clone().share(num_shares)
+                        .into_iter()
+                        .map(|x| x * constant.clone())
+                        .collect();
+                    prop_assert_eq!(
+                        <$type as Shareable>::recover(shares),
+                        value * constant
+                    );
+                }
+
+            }
         }
-    }
+    };
+    ($type:ty) => {
+        check_linearly_shareable!($type, linearly_shareable);
+    };
 }

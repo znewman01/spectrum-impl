@@ -1,11 +1,12 @@
 //! Spectrum implementation.
 use crate::{
     dpf::{BasicDPF, MultiKeyDPF, DPF},
-    field::FieldTrait,
-    group::{GroupElement, Sampleable},
+    field::Field,
+    group::GroupElement,
     lss::Shareable,
     prg::aes::AESPRG,
     prg::group::GroupPRG,
+    util::Sampleable,
 };
 
 use crate::bytes::Bytes;
@@ -158,9 +159,9 @@ pub mod two_key {
 
     impl<F> VDPF for FieldVDPF<BasicDPF<AESPRG>, F>
     where
-        F: FieldTrait + Sampleable + Clone + TryFrom<Bytes> + Shareable,
+        F: Field + Sampleable + Clone + TryFrom<Bytes> + Shareable,
         <F as TryFrom<Bytes>>::Error: Debug,
-        F::Shares: From<F> + Clone + FieldTrait,
+        F::Shares: From<F> + Clone + Field,
     {
         type AuthKey = F;
         type ProofShare = FieldProofShare<F>;
@@ -297,21 +298,14 @@ pub mod two_key {
 }
 
 pub mod multi_key {
-    use crate::group::Group;
+    use crate::algebra::Group;
 
     use super::*;
 
     impl<F> VDPF for FieldVDPF<MultiKeyDPF<GroupPRG<F>>, F>
     where
-        F: FieldTrait
-            + Shareable
-            + Clone
-            + Group
-            + Debug
-            + Into<Bytes>
-            + Sampleable
-            + From<Integer>,
-        F::Shares: Clone + FieldTrait + From<F>,
+        F: Field + Shareable + Clone + Group + Debug + Into<Bytes> + Sampleable + From<Integer>,
+        F::Shares: Clone + Field + From<F>,
     {
         type AuthKey = F;
         type ProofShare = FieldProofShare<F>;
