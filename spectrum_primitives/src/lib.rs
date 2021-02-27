@@ -1,4 +1,4 @@
-#![feature(iterator_fold_self, min_const_generics)]
+#![allow(dead_code)] // for now
 #[macro_use]
 pub mod algebra;
 #[macro_use]
@@ -10,11 +10,13 @@ mod prg;
 
 #[macro_use]
 pub mod bytes;
-mod constructions;
-// pub mod dpf;
+#[macro_use]
+pub mod dpf;
 // pub mod field;
 // pub mod group;
 // pub mod vdpf;
+
+mod constructions;
 
 #[cfg(feature = "proto")]
 pub mod proto {

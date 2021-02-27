@@ -2,30 +2,16 @@ use std::ops;
 
 use rug::Integer;
 
-/// A *commutative* group
+/// A monoid (over the `+` operator).
 ///
-/// Group operation must be [`Add`].
-///
-/// [`Add`]: std::ops::Add;
-pub trait Group:
-    Eq
-    + ops::Sub<Output = Self>
-    + ops::Add<Output = Self>
-    + ops::Neg<Output = Self>
-    + ops::Mul<Integer, Output = Self>
-    + Sized
-{
-    fn order() -> Integer;
-    fn order_size_in_bytes() -> usize {
-        Self::order().significant_digits::<u8>()
-    }
+/// Must be associative and have an identity.
+pub trait Monoid: Eq + ops::Add<Output = Self> + Sized {
     fn zero() -> Self;
 }
 
 #[cfg(any(test, feature = "testing"))]
-macro_rules! check_group_laws {
+macro_rules! check_monoid_laws {
     ($type:ty,$mod_name:ident) => {
-        // wish I could use concat_idents!(group_laws, $type) here
         mod $mod_name {
             #![allow(unused_imports)]
             use super::*;
@@ -41,6 +27,114 @@ macro_rules! check_group_laws {
               }
 
               #[test]
+              fn test_zero(a: $type) {
+                  let a2 = a.clone();
+                  let a3 = a.clone();
+                  let a4 = a.clone();
+                  // no commutativity so have to check both
+                  prop_assert_eq!(a, a2 + <$type as Monoid>::zero());
+                  prop_assert_eq!(a4, <$type as Monoid>::zero() + a3);
+              }
+            }
+        }
+    };
+    ($type:ty) => {
+        check_monoid_laws!($type, monoid_laws);
+    };
+}
+
+/// A monoid with custom exponentiation for a particular exponent type.
+pub trait SpecialExponentMonoid: Monoid {
+    type Exponent: Monoid;
+
+    /// Raise `self` to the `exp`th power.
+    fn pow(&self, exp: Self::Exponent) -> Self;
+}
+
+#[cfg(any(test, feature = "testing"))]
+macro_rules! check_monoid_custom_exponent {
+    ($type:ty,$mod_name:ident) => {
+        mod mod_name {
+            #![allow(unused_imports)]
+            check_monoid_laws!($type);
+            use super::*;
+            use proptest::prelude::*;
+            use rug::Integer;
+            proptest! {
+                /// Check x^(a+b) == x^a * x^b.
+                ///
+                /// We're using `+` and `.pow` for the monoid operation and
+                /// exponentiation, respectively.
+                #[test]
+                fn test_exponent_sum(
+                    base: $type,
+                    exp1: <$type as SpecialExponentMonoid>::Exponent,
+                    exp2: <$type as SpecialExponentMonoid>::Exponent
+                ) {
+                    prop_assert_eq!(
+                      base.clone().pow(exp1.clone()) + base.clone().pow(exp2.clone()),
+                      base.pow(exp1 + exp2)
+                    );
+                }
+
+                /// Check x^(a*b) == (x^a)^b.
+                #[test]
+                fn test_exponent_product(
+                    base: $type,
+                    exp1: <$type as SpecialExponentMonoid>::Exponent,
+                    exp2: <$type as SpecialExponentMonoid>::Exponent
+                ) {
+                    prop_assert_eq!(
+                      base.clone().pow(exp1.clone()).pow(exp2.clone()),
+                      base.pow(exp1 * exp2)
+                    );
+                }
+
+                /// Check (x*y)^a == x^a * y^a
+                #[test]
+                fn test_exponent_distributive(
+                    base1: $type,
+                    base2: $type,
+                    exp: <$type as SpecialExponentMonoid>::Exponent,
+                ) {
+                    prop_assert_eq!(
+                      (base1.clone() + base2.clone()).pow(exp.clone()),
+                      base1.pow(exp.clone()) + base2.pow(exp)
+                    );
+                }
+            }
+        }
+    };
+    ($type:ty) => {
+        check_monoid_custom_exponent!($type, monoid_custom_exponent);
+    };
+}
+
+/// A *commutative* group
+///
+/// Group operation must be [`Add`].
+///
+/// [`Add`]: std::ops::Add;
+pub trait Group: Monoid + ops::Sub<Output = Self> + ops::Neg<Output = Self> + Sized {
+    fn order() -> Integer;
+    fn order_size_in_bytes() -> usize {
+        Self::order().significant_digits::<u8>()
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+macro_rules! check_group_laws {
+    ($type:ty,$mod_name:ident) => {
+        // wish I could use concat_idents!(group_laws, $type) here
+        mod $mod_name {
+            #![allow(unused_imports)]
+            check_monoid_laws!($type);
+            use super::*;
+            use proptest::prelude::*;
+            use rug::Integer;
+            proptest! {
+              #[test]
+              #[test]
               fn test_commutative(a: $type, b: $type) {
                   let a2 = a.clone();
                   let b2 = b.clone();
@@ -48,26 +142,9 @@ macro_rules! check_group_laws {
               }
 
               #[test]
-              fn test_zero(a: $type) {
-                  let a2 = a.clone();
-                  prop_assert_eq!(a + <$type as Group>::zero(), a2);
-              }
-
-              #[test]
               fn test_inverse(a: $type) {
                   let a2 = a.clone();
-                  prop_assert_eq!(a + (-a2), <$type as Group>::zero());
-              }
-
-              // exp *should* be an integer but the way we're checking is a loop so don't want it too big
-              #[test]
-              fn test_exponent_definition(base: $type, exp: u16) {
-                  let actual = base.clone() * Integer::from(exp);
-                  let mut expected = <$type as Group>::zero();
-                  for _ in 0..exp {
-                      expected = expected + base.clone();
-                  }
-                  prop_assert_eq!(actual, expected);
+                  prop_assert_eq!(a + (-a2), <$type as Monoid>::zero());
               }
             }
         }
@@ -87,7 +164,7 @@ pub trait Field: Eq + PartialEq + ops::Mul<Output = Self> + Sized + Group {
 
     /// Additive identity
     fn zero() -> Self {
-        <Self as Group>::zero()
+        <Self as Monoid>::zero()
     }
 
     /// The multiplicative identity.

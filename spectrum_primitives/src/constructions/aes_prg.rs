@@ -148,4 +148,5 @@ impl Arbitrary for AESSeed {
 mod tests {
     use super::*;
     check_prg!(AESPRG);
+    check_dpf!(crate::dpf::TwoKeyDpf<AESPRG>);
 }

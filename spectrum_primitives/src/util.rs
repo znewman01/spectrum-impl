@@ -48,7 +48,7 @@ macro_rules! check_sampleable {
                 }
 
                 #[test]
-                fn test_many_from_seed_deterministic(seed: <$type as Sampleable>::Seed, n in 0..100usize) {
+                fn test_many_from_seed_deterministic(seed: <$type as Sampleable>::Seed, n in 0..20usize) {
                     prop_assert_eq!(
                         <$type as Sampleable>::sample_many_from_seed(&seed, n),
                         <$type as Sampleable>::sample_many_from_seed(&seed, n)
@@ -56,7 +56,7 @@ macro_rules! check_sampleable {
                 }
 
                 #[test]
-                fn test_many_from_seed_correct_count(seed: <$type as Sampleable>::Seed, n in 0..100usize) {
+                fn test_many_from_seed_correct_count(seed: <$type as Sampleable>::Seed, n in 0..20usize) {
                     prop_assert_eq!(
                         <$type as Sampleable>::sample_many_from_seed(&seed, n).len(),
                         n

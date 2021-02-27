@@ -15,6 +15,8 @@ macro_rules! check_prg {
             #![allow(unused_imports)]
             use super::*;
             use proptest::prelude::*;
+            use std::collections::HashSet;
+            use std::iter::repeat_with;
 
             #[test]
             fn check_bounds() {
@@ -27,9 +29,10 @@ macro_rules! check_prg {
                 #[test]
                 fn test_seed_random(prg: $type) {
                     prop_assume!(prg.output_size() > 0);
-                    use std::collections::HashSet;
-                    use std::iter::repeat_with;
-                    let results: HashSet<_> = repeat_with(|| prg.new_seed()).take(10).map(|s| prg.eval(&s)).collect();
+                    let results: HashSet<_> = repeat_with(|| prg.new_seed())
+                        .take(5)
+                        .map(|s| prg.eval(&s))
+                        .collect();
                     prop_assert!(results.len() > 1);
                 }
 
@@ -41,7 +44,7 @@ macro_rules! check_prg {
 
                 /// Evaluation with different seeds should give different results.
                 #[test]
-                fn test_eval_pseudorandom(prg: $type, seeds in proptest::collection::hash_set(any::<<$type as PRG>::Seed>(), 0..100)) {
+                fn test_eval_pseudorandom(prg: $type, seeds in proptest::collection::hash_set(any::<<$type as PRG>::Seed>(), 0..5)) {
                     prop_assume!(prg.output_size() > 0);
                     use std::collections::HashSet;
                     let results: HashSet<_> = seeds.iter().map(|s| prg.eval(s)).collect();

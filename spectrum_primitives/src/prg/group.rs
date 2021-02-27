@@ -1,10 +1,8 @@
 //! Spectrum implementation.
-use crate::algebra::Group;
+use crate::algebra::{Group, Monoid, SpecialExponentMonoid};
 use crate::bytes::Bytes;
 use crate::util::Sampleable;
 
-use rand::prelude::*;
-use rug::{integer::Order, Integer};
 use serde::{Deserialize, Serialize};
 
 use std::cmp::max;
@@ -12,7 +10,6 @@ use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::iter::repeat;
-use std::marker::PhantomData;
 
 #[cfg(any(test, feature = "testing"))]
 use proptest::prelude::*;
@@ -23,10 +20,10 @@ use super::*;
 
 use itertools::Itertools;
 
-use std::ops::{self, BitXor, BitXorAssign};
+use std::ops::{BitXor, BitXorAssign};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-pub struct ElementVector<G: Group>(pub Vec<G>);
+pub struct ElementVector<G: Monoid>(pub Vec<G>);
 
 impl<G: Group> ElementVector<G> {
     fn new(inner: Vec<G>) -> Self {
@@ -43,12 +40,15 @@ where
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        prop::collection::vec(
-            any::<G>().prop_filter("nonzero", |g| g != &G::zero()),
-            1..1000,
-        )
-        .prop_map(ElementVector::new)
-        .boxed()
+        prop::collection::vec(any::<G>(), 1..10)
+            .prop_map(|v| {
+                v.into_iter()
+                    .filter(|g| g != &G::zero())
+                    .collect::<Vec<_>>()
+            })
+            .prop_filter("element vector must be nonempty", |v| v.len() >= 1)
+            .prop_map(ElementVector::new)
+            .boxed()
     }
 }
 
@@ -110,146 +110,6 @@ impl<G: Group> GroupPRG<G> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct GroupPrgSeed<G> {
-    value: Integer,
-    phantom: PhantomData<G>,
-}
-
-impl<G> From<Integer> for GroupPrgSeed<G>
-where
-    G: Group,
-{
-    fn from(value: Integer) -> Self {
-        let mut value: Integer = value;
-        while value < 0 {
-            value += G::order();
-        }
-        if value >= G::order() {
-            value %= G::order();
-        }
-        Self {
-            value,
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<G> GroupPrgSeed<G> {
-    pub fn value(self) -> Integer {
-        self.value
-    }
-}
-
-impl<G> ops::Sub for GroupPrgSeed<G>
-where
-    G: Group,
-{
-    type Output = Self;
-
-    fn sub(self, other: Self) -> Self {
-        let mut value = self.value - other.value;
-        if value < 0 {
-            value += G::order();
-        }
-        GroupPrgSeed::from(value)
-    }
-}
-
-impl<G: Group> ops::Neg for GroupPrgSeed<G> {
-    type Output = Self;
-
-    fn neg(self) -> Self {
-        let value = G::order() - self.value;
-        GroupPrgSeed::from(value)
-    }
-}
-
-impl<G> ops::SubAssign for GroupPrgSeed<G>
-where
-    G: Group,
-{
-    #[allow(clippy::suspicious_op_assign_impl)]
-    fn sub_assign(&mut self, other: Self) {
-        self.value -= other.value;
-        if self.value < 0 {
-            self.value += G::order();
-        }
-    }
-}
-
-impl<G> ops::Add for GroupPrgSeed<G>
-where
-    G: Group,
-{
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        let mut value = self.value + other.value;
-        if value >= G::order() {
-            value -= G::order();
-        }
-        GroupPrgSeed::from(value)
-    }
-}
-
-impl<G> ops::AddAssign for GroupPrgSeed<G>
-where
-    G: Group,
-{
-    #[allow(clippy::suspicious_op_assign_impl)]
-    fn add_assign(&mut self, other: Self) {
-        self.value += other.value;
-        if self.value >= G::order() {
-            self.value -= G::order();
-        }
-    }
-}
-
-impl<G> ops::Mul<Integer> for GroupPrgSeed<G>
-where
-    G: Group,
-{
-    type Output = Self;
-
-    fn mul(self, other: Integer) -> Self {
-        Self::from((self.value * other) % &G::order())
-    }
-}
-
-impl<G> Into<Vec<u8>> for GroupPrgSeed<G> {
-    fn into(self) -> Vec<u8> {
-        self.value.to_string_radix(10).into_bytes()
-    }
-}
-
-impl<G> From<Vec<u8>> for GroupPrgSeed<G>
-where
-    G: Group,
-{
-    fn from(data: Vec<u8>) -> Self {
-        let data = String::from_utf8(data).unwrap();
-        let value: Integer = Integer::parse_radix(&data, 10).unwrap().into();
-        GroupPrgSeed::from(value)
-    }
-}
-
-impl<G> Group for GroupPrgSeed<G>
-where
-    G: Group,
-{
-    fn order() -> Integer {
-        G::order()
-    }
-
-    fn zero() -> Self {
-        Self {
-            value: Integer::from(0),
-            phantom: PhantomData,
-        }
-    }
-}
-
 impl<G> GroupPRG<G>
 where
     G: Group + Sampleable,
@@ -266,16 +126,15 @@ where
 
 impl<G> PRG for GroupPRG<G>
 where
-    G: Group + Clone,
+    G: Group + SpecialExponentMonoid + Clone,
+    G::Exponent: Sampleable + Clone,
 {
-    type Seed = GroupPrgSeed<G>;
+    type Seed = G::Exponent;
     type Output = ElementVector<G>;
 
     /// generates a new (random) seed for the given PRG
     fn new_seed(&self) -> Self::Seed {
-        let mut rand_bytes = vec![0; G::order_size_in_bytes()];
-        thread_rng().fill_bytes(&mut rand_bytes);
-        GroupPrgSeed::from(Integer::from_digits(&rand_bytes.as_ref(), Order::LsfLe))
+        Self::Seed::sample()
     }
 
     /// evaluates the PRG on the given seed
@@ -285,7 +144,7 @@ where
                 .0
                 .iter()
                 .cloned()
-                .map(|g| g * seed.clone().value())
+                .map(|g| g.pow(seed.clone()))
                 .collect(),
         )
     }
@@ -301,15 +160,15 @@ where
 
 impl<G> SeedHomomorphicPRG for GroupPRG<G>
 where
-    G: Group + Clone,
+    G: Group + SpecialExponentMonoid + Clone,
+    G::Exponent: Sampleable + Monoid + Clone,
 {
     fn null_seed(&self) -> Self::Seed {
-        GroupPrgSeed::from(Integer::from(0))
+        <G as SpecialExponentMonoid>::Exponent::zero()
     }
 
-    fn combine_seeds(&self, seeds: Vec<GroupPrgSeed<G>>) -> GroupPrgSeed<G> {
-        let seeds: Vec<Integer> = seeds.into_iter().map(|s| s.value()).collect();
-        GroupPrgSeed::from(Integer::from(Integer::sum(seeds.iter())) % G::order())
+    fn combine_seeds(&self, seeds: Vec<Self::Seed>) -> Self::Seed {
+        seeds.into_iter().fold(self.null_seed(), std::ops::Add::add)
     }
 
     fn combine_outputs(&self, outputs: &[&ElementVector<G>]) -> ElementVector<G> {
@@ -408,25 +267,6 @@ where
             .iter_mut()
             .zip(rhs.0.into_iter())
             .for_each(|(element1, element2)| *element1 = element1.clone() + element2);
-    }
-}
-
-#[cfg(any(test, feature = "testing"))]
-impl<G> Arbitrary for GroupPrgSeed<G>
-where
-    G: Group + Debug + 'static,
-{
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        // TODO: use the full range 2..order
-        let order: u128 = G::order().to_u128().unwrap_or(u128::MAX);
-        // Can't do 0:  wk
-        (2..order)
-            .prop_map(Integer::from)
-            .prop_map(GroupPrgSeed::from)
-            .boxed()
     }
 }
 

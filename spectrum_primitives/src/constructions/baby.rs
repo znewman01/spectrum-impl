@@ -5,8 +5,7 @@ use std::ops;
 
 use rug::Integer;
 
-use crate::algebra::Field;
-use crate::algebra::Group;
+use crate::algebra::{Field, Group, Monoid, SpecialExponentMonoid};
 use crate::util::Sampleable;
 
 /// A `u8` wrapper that implements a Group (and maybe field).
@@ -36,14 +35,26 @@ impl<const N: u8> Field for IntMod<N> {
     }
 }
 
-//
+impl<const N: u8> Monoid for IntMod<N> {
+    fn zero() -> Self {
+        Self { inner: 0 }
+    }
+}
+
 impl<const N: u8> Group for IntMod<N> {
     fn order() -> rug::Integer {
         Integer::from(N)
     }
+}
 
-    fn zero() -> Self {
-        Self { inner: 0 }
+impl<const N: u8> SpecialExponentMonoid for IntMod<N> {
+    type Exponent = IntMod<N>;
+
+    fn pow(&self, rhs: IntMod<N>) -> Self {
+        let inner = (Integer::from(self.inner) * Integer::from(rhs.inner)) % Self::order();
+        Self {
+            inner: inner.try_into().unwrap(),
+        }
     }
 }
 
@@ -69,7 +80,7 @@ impl<const N: u8> ops::Sub for IntMod<N> {
 
 impl<const N: u8> Sum for IntMod<N> {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        let mut total = <Self as Group>::zero();
+        let mut total = <Self as Monoid>::zero();
         iter.for_each(|value| total += value);
         total
     }
@@ -102,17 +113,6 @@ impl<const N: u8> ops::Mul for IntMod<N> {
     }
 }
 
-impl<const N: u8> ops::Mul<Integer> for IntMod<N> {
-    type Output = Self;
-
-    fn mul(self, rhs: Integer) -> Self {
-        let inner = (Integer::from(self.inner) * rhs) % Self::order();
-        Self {
-            inner: inner.try_into().unwrap(),
-        }
-    }
-}
-
 impl<const N: u8> TryFrom<u8> for IntMod<N> {
     type Error = ();
 
@@ -123,6 +123,12 @@ impl<const N: u8> TryFrom<u8> for IntMod<N> {
         Ok(Self { inner: value })
     }
 }
+
+// impl<const N: u8> Into<Integer> for IntMod<N> {
+//     fn into(self) -> Integer {
+//         self.inner.into()
+//     }
+// }
 
 use rand::prelude::*;
 
@@ -163,5 +169,15 @@ impl<const N: u8> Arbitrary for IntMod<N> {
 #[cfg(test)]
 mod test_int_mod {
     use super::*;
-    check_construction!(IntMod<7>);
+    use crate::lss::{LinearlyShareable, Shareable};
+    use crate::prg::{GroupPRG, SeedHomomorphicPRG, PRG};
+
+    type IntModP = IntMod<11>;
+    check_field_laws!(IntModP);
+    check_monoid_custom_exponent!(IntModP);
+    check_sampleable!(IntModP);
+    check_shareable!(IntModP);
+    check_linearly_shareable!(IntModP);
+    check_prg!(GroupPRG<IntModP>);
+    check_seed_homomorphic_prg!(GroupPRG<IntModP>);
 }
