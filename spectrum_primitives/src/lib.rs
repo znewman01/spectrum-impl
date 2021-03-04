@@ -12,9 +12,7 @@ mod prg;
 pub mod bytes;
 #[macro_use]
 pub mod dpf;
-// pub mod field;
-// pub mod group;
-// pub mod vdpf;
+pub mod vdpf;
 
 mod constructions;
 

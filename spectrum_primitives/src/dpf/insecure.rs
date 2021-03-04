@@ -3,7 +3,7 @@ use super::DPF;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
-struct Construction<M> {
+pub struct Construction<M> {
     num_points: usize,
     num_keys: usize,
     phantom: PhantomData<M>,
@@ -90,20 +90,22 @@ impl<M: std::fmt::Debug> Arbitrary for Construction<M> {
 }
 
 #[cfg(test)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Message {}
+
+#[cfg(test)]
+impl Arbitrary for Message {
+    type Parameters = usize;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: usize) -> Self::Strategy {
+        Just(Message::default()).boxed()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-
-    #[derive(Debug, Clone, Default, PartialEq, Eq)]
-    struct Message {}
-
-    impl Arbitrary for Message {
-        type Parameters = usize;
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_: usize) -> Self::Strategy {
-            Just(Message::default()).boxed()
-        }
-    }
 
     check_dpf!(Construction<Message>);
 }
