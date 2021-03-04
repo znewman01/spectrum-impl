@@ -12,7 +12,7 @@ use std::hash::Hash;
 use std::iter::repeat;
 
 #[cfg(any(test, feature = "testing"))]
-use proptest::prelude::*;
+use proptest::{collection::SizeRange, prelude::*};
 #[cfg(any(test, feature = "testing"))]
 use proptest_derive::Arbitrary;
 
@@ -36,11 +36,12 @@ impl<G> Arbitrary for ElementVector<G>
 where
     G: Debug + Arbitrary + Group + 'static,
 {
-    type Parameters = ();
+    type Parameters = Option<usize>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        prop::collection::vec(any::<G>(), 1..10)
+    fn arbitrary_with(size: Self::Parameters) -> Self::Strategy {
+        let range = size.map(SizeRange::from).unwrap_or(SizeRange::from(1..5));
+        prop::collection::vec(any::<G>(), range)
             .prop_map(|v| {
                 v.into_iter()
                     .filter(|g| g != &G::zero())

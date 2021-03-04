@@ -46,14 +46,8 @@ impl<M, S> Key<M, S> {
 impl<P> DPF for Construction<P>
 where
     P: PRG + Clone + SeedHomomorphicPRG,
-    P::Seed: Clone
-        + PartialEq
-        + Eq
-        + Debug
-        + ops::Sub<Output = P::Seed>
-        + ops::Add
-        + ops::SubAssign
-        + ops::AddAssign,
+    P::Seed:
+        Clone + PartialEq + Eq + Debug + ops::Sub<Output = P::Seed> + ops::Add + ops::AddAssign,
     P::Output: Clone + PartialEq + Eq + Debug,
 {
     type Key = Key<P::Output, P::Seed>;
@@ -112,7 +106,7 @@ where
         let mut last_seed_vec = vec![self.prg.null_seed(); self.num_points];
         for seed_vec in seeds.iter() {
             for (a, b) in last_seed_vec.iter_mut().zip(seed_vec.iter()) {
-                *a -= b.clone()
+                *a = a.clone() - b.clone();
             }
         }
         seeds.push(last_seed_vec);
@@ -177,8 +171,8 @@ where
 /// Test helpers
 #[cfg(any(test, feature = "testing"))]
 mod testing {
-    pub const MAX_NUM_POINTS: usize = 10;
-    pub const MAX_NUM_KEYS: usize = 10;
+    pub const MAX_NUM_POINTS: usize = 5;
+    pub const MAX_NUM_KEYS: usize = 3;
 }
 
 #[cfg(any(test, feature = "testing"))]

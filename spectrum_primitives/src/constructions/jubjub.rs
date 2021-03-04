@@ -345,6 +345,7 @@ impl SpecialExponentMonoid for CurvePoint {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dpf::MultiKeyDpf;
     use crate::lss::{LinearlyShareable, Shareable};
     use crate::prg::{GroupPRG, SeedHomomorphicPRG, PRG};
 
@@ -363,4 +364,5 @@ mod tests {
     );
     check_prg!(GroupPRG<CurvePoint>);
     check_seed_homomorphic_prg!(GroupPRG<CurvePoint>);
+    check_dpf!(MultiKeyDpf<GroupPRG<CurvePoint>>);
 }
