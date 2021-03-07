@@ -4,16 +4,16 @@ use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
 pub struct Construction<M> {
-    num_points: usize,
-    num_keys: usize,
+    points: usize,
+    keys: usize,
     phantom: PhantomData<M>,
 }
 
 impl<M> Construction<M> {
-    fn new(num_points: usize, num_keys: usize) -> Self {
+    fn new(points: usize, keys: usize) -> Self {
         Construction::<M> {
-            num_points,
-            num_keys,
+            points,
+            keys,
             phantom: PhantomData::default(),
         }
     }
@@ -26,12 +26,12 @@ where
     type Key = Option<(M, usize)>;
     type Message = M;
 
-    fn num_points(&self) -> usize {
-        self.num_points
+    fn points(&self) -> usize {
+        self.points
     }
 
-    fn num_keys(&self) -> usize {
-        self.num_keys
+    fn keys(&self) -> usize {
+        self.keys
     }
 
     fn null_message(&self) -> Self::Message {
@@ -43,18 +43,18 @@ where
     }
 
     fn gen(&self, msg: Self::Message, idx: usize) -> Vec<Self::Key> {
-        assert!(idx <= self.num_points);
-        let mut keys = vec![None; self.num_keys() - 1];
+        assert!(idx <= self.points);
+        let mut keys = vec![None; self.keys() - 1];
         keys.push(Some((msg, idx)));
         keys
     }
 
     fn gen_empty(&self) -> Vec<Self::Key> {
-        vec![None; self.num_keys()]
+        vec![None; self.keys()]
     }
 
     fn eval(&self, key: Self::Key) -> Vec<Self::Message> {
-        let mut acc = vec![Self::Message::default(); self.num_points()];
+        let mut acc = vec![Self::Message::default(); self.points()];
         if let Some((msg, idx)) = key {
             acc[idx] = msg;
         }
@@ -106,6 +106,12 @@ impl Arbitrary for Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    impl Message {
+        pub fn len(&self) -> usize {
+            1
+        }
+    }
 
     check_dpf!(Construction<Message>);
 }

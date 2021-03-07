@@ -2,7 +2,7 @@ pub trait PRG {
     type Seed;
     type Output;
 
-    fn new_seed(&self) -> Self::Seed;
+    fn new_seed() -> Self::Seed;
     fn output_size(&self) -> usize;
     fn eval(&self, seed: &Self::Seed) -> Self::Output;
     fn null_output(&self) -> Self::Output;
@@ -29,7 +29,7 @@ macro_rules! check_prg {
                 #[test]
                 fn test_seed_random(prg: $type) {
                     prop_assume!(prg.output_size() > 0);
-                    let results: HashSet<_> = repeat_with(|| prg.new_seed())
+                    let results: HashSet<_> = repeat_with(<$type as PRG>::new_seed)
                         .take(5)
                         .map(|s| prg.eval(&s))
                         .collect();

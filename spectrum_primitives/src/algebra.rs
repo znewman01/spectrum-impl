@@ -162,11 +162,6 @@ pub trait Field: Eq + PartialEq + ops::Mul<Output = Self> + Sized + Group {
     /// Panics if you pass zero().
     fn mul_invert(&self) -> Self;
 
-    /// Additive identity
-    fn zero() -> Self {
-        <Self as Monoid>::zero()
-    }
-
     /// The multiplicative identity.
     fn one() -> Self;
 }
@@ -202,7 +197,7 @@ macro_rules! check_field_laws {
 
                 #[test]
                 fn test_mul_inverse(a: $type) {
-                    prop_assume!(a != <$type as Field>::zero());
+                    prop_assume!(a != <$type as Monoid>::zero());
                     let a2 = a.clone();
                     prop_assert_eq!(a * a2.mul_invert(), <$type as Field>::one());
                 }

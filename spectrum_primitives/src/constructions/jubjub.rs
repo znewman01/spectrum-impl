@@ -35,6 +35,27 @@ pub struct CurvePoint {
     inner: SubgroupPoint,
 }
 
+impl Into<Bytes> for CurvePoint {
+    fn into(self) -> Bytes {
+        Bytes::from(Vec::from((&self.inner).to_bytes()))
+    }
+}
+
+impl Sampleable for CurvePoint {
+    type Seed = AESSeed;
+
+    fn sample() -> Self {
+        use rand::thread_rng;
+        <SubgroupPoint as ::group::Group>::random(&mut thread_rng()).into()
+    }
+
+    fn sample_many_from_seed(seed: &Self::Seed, n: usize) -> Vec<Self> {
+        let _ = seed;
+        let _ = n;
+        todo!()
+    }
+}
+
 impl Monoid for CurvePoint {
     fn zero() -> Self {
         use ::group::Group;
@@ -240,30 +261,22 @@ impl Into<Bytes> for Scalar {
 }
 
 impl TryFrom<Bytes> for Scalar {
-    type Error = &'static str;
+    type Error = String;
 
     fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
-        match bytes.len() {
-            MODULUS_BYTES => {
-                let mut bytes_arr: [u8; MODULUS_BYTES] = [0; MODULUS_BYTES];
-                bytes_arr.copy_from_slice(bytes.as_ref());
-                Option::<Fr>::from(Fr::from_bytes(&bytes_arr))
-                    .map(Scalar::from)
-                    .ok_or("Converting from bytes failed.")
-            }
-            // 31 => {
-            //     let mut bytes_arr: [u8; MODULUS_BYTES - 1] = [0; MODULUS_BYTES - 1];
-            //     bytes_arr.copy_from_slice(bytes.as_ref());
-            //     Fr::from_bytes(&bytes_arr)
-            // }
-            64 => {
-                let mut bytes_arr: [u8; 64] = [0; 64];
-                bytes_arr.copy_from_slice(bytes.as_ref());
-                Ok(Scalar::from(Fr::from_bytes_wide(&bytes_arr)))
-            }
-            _ => {
-                panic!("uh oh");
-            }
+        let len = bytes.len();
+        if len <= MODULUS_BYTES {
+            let mut bytes_arr: [u8; MODULUS_BYTES] = [0; MODULUS_BYTES];
+            bytes_arr[..len].copy_from_slice(bytes.as_ref());
+            Option::<Fr>::from(Fr::from_bytes(&bytes_arr))
+                .map(Scalar::from)
+                .ok_or("Converting from bytes failed.".to_string())
+        } else if len == 64 {
+            let mut bytes_arr: [u8; 64] = [0; 64];
+            bytes_arr.copy_from_slice(bytes.as_ref());
+            Ok(Scalar::from(Fr::from_bytes_wide(&bytes_arr)))
+        } else {
+            Err(format!("invalid byte length {}", bytes.len()))
         }
     }
 }
@@ -298,13 +311,7 @@ impl Sampleable for Scalar {
     /// generates a new random group element
     fn sample() -> Self {
         use rand::thread_rng;
-        // proptest::prelude includes this, annoyingly...
-        #[cfg(not(any(test, feature = "testing")))]
-        use rand::RngCore;
-        // generate enough random bytes to create a random element in the group
-        let mut bytes = vec![0; MODULUS_BYTES * 2];
-        thread_rng().fill_bytes(&mut bytes);
-        Scalar::try_from(Bytes::from(bytes)).expect("chunk size chosen s.t. always valid element")
+        <Fr as ::ff::Field>::random(&mut thread_rng()).into()
     }
 
     fn sample_many_from_seed(seed: &Self::Seed, n: usize) -> Vec<Self> {
@@ -346,7 +353,6 @@ impl SpecialExponentMonoid for CurvePoint {
 mod tests {
     use super::*;
     use crate::dpf::MultiKeyDpf;
-    use crate::lss::{LinearlyShareable, Shareable};
     use crate::prg::{GroupPRG, SeedHomomorphicPRG, PRG};
 
     check_group_laws!(CurvePoint);

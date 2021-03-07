@@ -5,7 +5,7 @@ use crate::prg::PRG;
 pub trait SeedHomomorphicPRG: PRG {
     fn combine_seeds(&self, seeds: Vec<Self::Seed>) -> Self::Seed;
     fn combine_outputs(&self, outputs: &[&Self::Output]) -> Self::Output;
-    fn null_seed(&self) -> Self::Seed;
+    fn null_seed() -> Self::Seed;
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -23,9 +23,24 @@ macro_rules! check_seed_homomorphic_prg {
             }
 
             proptest! {
-                /// Verify that the "null seed" is the identity after expansion.
+                /// The null seed should be the identity for seed group operations.
                 #[test]
                 fn test_null_seed_identity(prg: $type, seed: <$type as PRG>::Seed) {
+                    assert_eq!(
+                        seed.clone() + <$type as SeedHomomorphicPRG>::null_seed(),
+                        seed
+                    );
+                }
+
+                /// Verify that the "null seed" is the identity after expansion.
+                #[test]
+                fn test_null_seed_maps_to_null_output(prg: $type) {
+                    assert_eq!(prg.eval(&<$type as SeedHomomorphicPRG>::null_seed()), prg.null_output());
+                }
+
+                /// The null output should be the identity for combining outputs.
+                #[test]
+                fn test_null_output_identity(prg: $type, seed: <$type as PRG>::Seed) {
                     // ensure combine(null, null) = null
                     assert_eq!(
                         prg.null_output(),

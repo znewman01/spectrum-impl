@@ -5,12 +5,12 @@ pub trait DPF {
     type Key;
     type Message;
 
-    fn num_points(&self) -> usize;
-    fn num_keys(&self) -> usize;
+    fn points(&self) -> usize;
+    fn keys(&self) -> usize;
     fn null_message(&self) -> Self::Message;
     fn msg_size(&self) -> usize;
 
-    /// Generate `num_keys` DPF keys, the results of which differ only at the given index.
+    /// Generate `keys` DPF keys, the results of which differ only at the given index.
     fn gen(&self, msg: Self::Message, idx: usize) -> Vec<Self::Key>;
     fn gen_empty(&self) -> Vec<Self::Key>;
     fn eval(&self, key: Self::Key) -> Vec<Self::Message>;
@@ -46,16 +46,17 @@ macro_rules! check_dpf {
             proptest! {
                 #[test]
                 fn test_correct((dpf, data) in dpf_with_data(), index: prop::sample::Index) {
-                    let index = index.index(dpf.num_points());
+                    assert_eq!(data.len(), dpf.msg_size());
+                    let index = index.index(dpf.points());
                     let dpf_keys = dpf.gen(data.clone(), index);
                     let dpf_shares = dpf_keys.into_iter().map(|k| dpf.eval(k)).collect();
                     let dpf_output = dpf.combine(dpf_shares);
 
                     for (chunk_idx, chunk) in dpf_output.into_iter().enumerate() {
                         if chunk_idx == index {
-                            assert_eq!(chunk, data);
+                            prop_assert_eq!(chunk, data.clone());
                         } else {
-                            assert_eq!(chunk, dpf.null_message());
+                            prop_assert_eq!(chunk, dpf.null_message());
                         }
                     }
                 }
@@ -67,7 +68,7 @@ macro_rules! check_dpf {
                     let dpf_output = dpf.combine(dpf_shares);
 
                     for chunk in dpf_output {
-                        assert_eq!(chunk, dpf.null_message());
+                        prop_assert_eq!(chunk, dpf.null_message());
                     }
                 }
             }

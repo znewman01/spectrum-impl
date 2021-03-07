@@ -5,6 +5,10 @@ pub use definition::VDPF;
 
 mod field;
 mod insecure;
+mod multi_key;
+mod two_key;
+
+pub use field::FieldVDPF;
 
 /*
 use crate::prg::aes::AESPRG;

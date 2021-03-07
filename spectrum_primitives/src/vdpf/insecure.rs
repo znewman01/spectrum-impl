@@ -18,7 +18,7 @@ where
     }
 
     fn new_access_keys(&self) -> Vec<Self::AuthKey> {
-        repeat(true).take(self.num_points()).collect()
+        repeat(true).take(self.points()).collect()
     }
 
     fn gen_proofs(
@@ -30,17 +30,17 @@ where
         dpf_keys.iter().map(|_| *auth_key).collect()
     }
 
-    fn gen_proofs_noop(&self, dpf_keys: &[<Self as DPF>::Key]) -> Vec<Self::ProofShare> {
-        dpf_keys.iter().map(|_| false).collect()
+    fn gen_proofs_noop(&self) -> Vec<Self::ProofShare> {
+        repeat(false).take(self.keys()).collect()
     }
 
     fn gen_audit(
         &self,
         _auth_keys: &[Self::AuthKey],
         dpf_key: &<Self as DPF>::Key,
-        proof_share: &Self::ProofShare,
+        proof_share: Self::ProofShare,
     ) -> Self::Token {
-        *proof_share || dpf_key.is_none()
+        proof_share || dpf_key.is_none()
     }
 
     fn check_audit(&self, tokens: Vec<Self::Token>) -> bool {

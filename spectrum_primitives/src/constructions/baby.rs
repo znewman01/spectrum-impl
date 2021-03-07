@@ -170,7 +170,6 @@ impl<const N: u8> Arbitrary for IntMod<N> {
 mod test_int_mod {
     use super::*;
     use crate::dpf::MultiKeyDpf;
-    use crate::lss::{LinearlyShareable, Shareable};
     use crate::prg::{GroupPRG, SeedHomomorphicPRG, PRG};
 
     type IntModP = IntMod<11>;
@@ -178,6 +177,7 @@ mod test_int_mod {
     check_monoid_custom_exponent!(IntModP);
     check_sampleable!(IntModP);
     check_shareable!(IntModP);
+
     check_linearly_shareable!(IntModP);
     check_prg!(GroupPRG<IntModP>);
     check_seed_homomorphic_prg!(GroupPRG<IntModP>);

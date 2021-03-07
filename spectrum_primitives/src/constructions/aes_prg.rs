@@ -33,8 +33,10 @@ impl AESSeed {
         thread_rng().fill_bytes(&mut rand_seed_bytes);
         AESSeed::try_from(rand_seed_bytes).expect("Correct seed size")
     }
+}
 
-    pub fn bytes(self) -> Bytes {
+impl Into<Bytes> for AESSeed {
+    fn into(self) -> Bytes {
         self.bytes
     }
 }
@@ -78,7 +80,7 @@ impl PRG for AESPRG {
     type Output = Bytes;
 
     /// generates a new (random) seed for the given PRG
-    fn new_seed(&self) -> AESSeed {
+    fn new_seed() -> AESSeed {
         AESSeed::random()
     }
 

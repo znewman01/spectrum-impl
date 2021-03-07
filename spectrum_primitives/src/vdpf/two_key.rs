@@ -1,142 +1,167 @@
-use crate::prg::aes::AESSeed;
+use crate::algebra::Field;
+use crate::bytes::Bytes;
+use crate::dpf::TwoKeyDpf;
+use crate::dpf::DPF;
+use crate::lss::Shareable;
+use crate::prg::PRG;
+use crate::util::Sampleable;
+use crate::vdpf::VDPF;
 
-use super::*;
+use std::fmt::Debug;
+use std::iter::repeat_with;
+use std::ops::{BitXor, BitXorAssign};
+use std::sync::Arc;
+use std::{convert::TryInto, ops::Add};
 
-impl<F> VDPF for FieldVDPF<BasicDPF<AESPRG>, F>
+use super::field::FieldVDPF;
+
+#[derive(Clone)]
+pub struct ProofShare<S> {
+    seed: S,
+    bit: S,
+}
+
+impl<S> ProofShare<S> {
+    fn new(seed: S, bit: S) -> Self {
+        ProofShare { seed, bit }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Token<S> {
+    seed: S,
+    bit: S,
+    data: Bytes,
+}
+
+impl<S> From<Token<S>> for ProofShare<S> {
+    fn from(token: Token<S>) -> Self {
+        ProofShare {
+            seed: token.seed,
+            bit: token.bit,
+        }
+    }
+}
+
+impl<F, P> VDPF for FieldVDPF<TwoKeyDpf<P>, F>
 where
-    F: Field + Sampleable + Clone + TryFrom<Bytes> + Shareable,
-    <F as TryFrom<Bytes>>::Error: Debug,
-    F::Shares: From<F> + Clone + Field,
+    F: Field + Sampleable + Clone + Shareable<Share = F>,
+    P: PRG + Clone,
+    P::Seed: Clone + Debug + Eq + TryInto<F>,
+    <P::Seed as TryInto<F>>::Error: Debug,
+    P::Output: Debug
+        + Eq
+        + Clone
+        + AsRef<[u8]>
+        + BitXor<P::Output, Output = P::Output>
+        + BitXor<Arc<P::Output>, Output = P::Output>
+        + BitXorAssign<P::Output>,
 {
     type AuthKey = F;
-    type ProofShare = FieldProofShare<F>;
-    type Token = FieldToken<F>;
+    type ProofShare = ProofShare<F>;
+    type Token = Token<F>;
 
-    fn new_access_key(&self) -> F {
-        F::rand_element()
+    fn new_access_key(&self) -> Self::AuthKey {
+        F::sample()
     }
 
-    fn new_access_keys(&self) -> Vec<F> {
-        repeat_with(F::rand_element)
-            .take(self.num_points())
-            .collect()
+    fn new_access_keys(&self) -> Vec<Self::AuthKey> {
+        repeat_with(F::sample).take(self.points()).collect()
     }
 
     fn gen_proofs(
         &self,
         auth_key: &F,
-        point_idx: usize,
+        idx: usize,
         dpf_keys: &[<Self as DPF>::Key],
-    ) -> Vec<FieldProofShare<F>> {
+    ) -> Vec<Self::ProofShare> {
         assert_eq!(dpf_keys.len(), 2, "not implemented");
-
-        let dpf_key_a = dpf_keys[0].clone();
-        let dpf_key_b = dpf_keys[1].clone();
-
-        // 1) generate the proof using the DPF keys and the channel key
-        let res_seed = dpf_key_a
-            .seeds
-            .iter()
-            .cloned()
-            .map(AESSeed::bytes)
-            .map(F::try_from)
-            .map(Result::unwrap)
-            .fold_first(|x, y| x.add(&y))
-            .expect("Seed vector should be nonempty");
-        let res_seed = dpf_key_b
-            .seeds
-            .iter()
-            .cloned()
-            .map(AESSeed::bytes)
-            .map(F::try_from)
-            .map(Result::unwrap)
-            .fold(res_seed, |x, y| x.add(&y));
-
-        let seed_proof = auth_key.mul(&res_seed);
-
-        // If the bit is `1` for server A, then we need to negate the share
-        // to ensure that (bit_A - bit_B = 1)*key = -key and not key
-        let bit_proof = if dpf_key_a.bits[point_idx] == 1 {
-            auth_key.neg()
+        // Server i computes: <auth_keys> . <bits[i]> + bit_proofs[i]
+        // Then servers 1 and 2 check results equal.
+        //
+        // We know bits[i] are the same, except at bits[i][idx].
+        // So we really just need:
+        // bits[1][idx] * auth_key + proofs[1] == bits[0][idx] * auth_key + proofs[0] <=>
+        // proofs[1] == proofs[0] + (bits[0][idx] - bits[1][idx]) * auth_key
+        let bit_a = F::sample();
+        // Because bits[0][idx] is boolean, we just need to know whether to add/subtract auth_key.
+        let mut bit_b = bit_a.clone();
+        if dpf_keys[0].bits[idx] {
+            bit_b = bit_b + auth_key.clone();
         } else {
-            auth_key.clone()
-        };
+            bit_b = bit_b - auth_key.clone();
+        }
 
-        FieldProofShare::share(bit_proof, seed_proof, dpf_keys.len())
+        // Similar here for seeds instead of bits, but we don't have seeds in {0, 1}. Want:
+        // proofs[1] == proofs[0] + (seeds[0][idx] seeds[1][idx]) * auth_key
+        let mut seed_a = F::sample();
+        let mut seed_b = seed_a.clone();
+        seed_a = seed_a + dpf_keys[1].seeds[idx].clone().try_into().unwrap() * auth_key.clone();
+        seed_b = seed_b + dpf_keys[0].seeds[idx].clone().try_into().unwrap() * auth_key.clone();
+
+        vec![
+            ProofShare::new(seed_a, bit_a),
+            ProofShare::new(seed_b, bit_b),
+        ]
     }
 
-    fn gen_proofs_noop(&self, dpf_keys: &[<Self as DPF>::Key]) -> Vec<Self::ProofShare> {
-        self.gen_proofs(&F::zero(), self.num_points() - 1, dpf_keys)
+    fn gen_proofs_noop(&self) -> Vec<Self::ProofShare> {
+        use std::iter::repeat;
+        // Same random values
+        repeat(ProofShare {
+            seed: F::sample(),
+            bit: F::sample(),
+        })
+        .take(2)
+        .collect()
     }
 
     fn gen_audit(
         &self,
         auth_keys: &[F],
         dpf_key: &<Self as DPF>::Key,
-        proof_share: &FieldProofShare<F>,
-    ) -> FieldToken<F> {
-        let mut bit_check = proof_share.bit.clone();
-        let mut seed_check = proof_share.seed.clone();
-        for ((key, seed), bit) in auth_keys
+        proof_share: Self::ProofShare,
+    ) -> Self::Token {
+        assert_eq!(auth_keys.len(), dpf_key.bits.len());
+        assert_eq!(auth_keys.len(), dpf_key.seeds.len());
+        // Inner product + proof share
+        let bit_check = dpf_key
+            .bits
             .iter()
-            .zip(dpf_key.seeds.iter())
-            .zip(dpf_key.bits.iter())
-        {
-            let seed_in_field = F::try_from(seed.clone().bytes()).unwrap();
-            seed_check = seed_check.add(&key.clone().mul(&seed_in_field).neg().into());
-            match bit {
-                0 => {}
-                1 => bit_check = bit_check.add(&F::Shares::from(key.clone())),
-                _ => panic!("Bit must be 0 or 1"),
-            }
-        }
+            .zip(auth_keys)
+            .map(|(bit, key)| if *bit { key.clone() } else { F::zero() })
+            .fold(F::zero(), Add::add)
+            + proof_share.bit;
 
-        // TODO: switch to blake3 in parallel when input is ~1 Mbit or greater
+        // Inner product + proof share
+        let seed_check = dpf_key
+            .seeds
+            .iter()
+            .map(|seed| seed.clone().try_into().unwrap())
+            .zip(auth_keys)
+            .map(|(seed, key)| seed * key.clone())
+            .fold(F::zero(), Add::add)
+            + proof_share.seed;
+
+        // Hash of message
         let mut hasher = blake3::Hasher::new();
-        let input = dpf_key.encoded_msg.as_ref().as_ref();
-        if dpf_key.encoded_msg.len() >= 125000 {
+        let input: &[u8] = dpf_key.encoded_msg.as_ref();
+        if input.len() >= 125000 {
             hasher.update_with_join::<blake3::join::RayonJoin>(input);
         } else {
             hasher.update(input);
         }
         let data: [u8; 32] = hasher.finalize().into();
 
-        FieldToken {
+        Token {
             bit: bit_check,
             seed: seed_check,
             data: Bytes::from(data.to_vec()),
         }
     }
 
-    fn check_audit(&self, tokens: Vec<FieldToken<F>>) -> bool {
+    fn check_audit(&self, tokens: Vec<Self::Token>) -> bool {
         assert_eq!(tokens.len(), 2, "not implemented");
         tokens[0] == tokens[1]
-    }
-}
-
-#[cfg(test)]
-pub mod tests {
-    use super::super::tests as vdpf_tests;
-    use super::*;
-    use crate::dpf::two_key as two_key_dpf;
-
-    proptest! {
-        #[test]
-        fn test_audit_check_correct(
-            (data, vdpf) in two_key_dpf::tests::data_with_dpf::<BasicVdpf>(),
-            point_idx: prop::sample::Index,
-        ) {
-            let access_keys = vdpf.new_access_keys();
-            let point_idx = point_idx.index(access_keys.len());
-
-            vdpf_tests::run_test_audit_check_correct(vdpf, &access_keys, data, point_idx)?;
-        }
-
-        #[test]
-        fn test_audit_check_correct_for_noop(vdpf: BasicVdpf) {
-            let access_keys = vdpf.new_access_keys();
-            vdpf_tests::run_test_audit_check_correct_for_noop(vdpf, &access_keys)?;
-        }
-
     }
 }

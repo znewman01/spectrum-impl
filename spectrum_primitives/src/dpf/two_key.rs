@@ -1,4 +1,4 @@
-//! 2-DPF (i.e. num_keys = 2) based on any PRG G(.).
+//! 2-DPF (i.e. keys = 2) based on any PRG G(.).
 use std::fmt::Debug;
 use std::iter::repeat_with;
 use std::ops;
@@ -13,24 +13,24 @@ use crate::prg::PRG;
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Construction<P> {
     prg: P,
-    num_points: usize,
+    points: usize,
 }
 
 impl<P> Construction<P> {
-    pub fn new(prg: P, num_points: usize) -> Construction<P> {
-        Construction { prg, num_points }
+    pub fn new(prg: P, points: usize) -> Construction<P> {
+        Construction { prg, points }
     }
 }
 
 #[derive(Clone)]
 pub struct Key<M, S> {
     pub encoded_msg: M, //P::Output,
-    pub bits: Vec<u8>,
+    pub bits: Vec<bool>,
     pub seeds: Vec<S>, // Vec<<P as PRG>::Seed>,
 }
 
 impl<M, S> Key<M, S> {
-    fn new(encoded_msg: M, bits: Vec<u8>, seeds: Vec<S>) -> Self {
+    fn new(encoded_msg: M, bits: Vec<bool>, seeds: Vec<S>) -> Self {
         Key {
             encoded_msg,
             bits,
@@ -54,11 +54,11 @@ where
     type Key = Key<P::Output, P::Seed>;
     type Message = P::Output;
 
-    fn num_points(&self) -> usize {
-        self.num_points
+    fn points(&self) -> usize {
+        self.points
     }
 
-    fn num_keys(&self) -> usize {
+    fn keys(&self) -> usize {
         2 // this construction only works for s = 2
     }
 
@@ -71,22 +71,18 @@ where
     }
 
     /// generate new instance of PRG based DPF with two DPF keys
-    fn gen(&self, msg: Self::Message, point_idx: usize) -> Vec<Self::Key> {
-        let seeds_a: Vec<_> = repeat_with(|| self.prg.new_seed())
-            .take(self.num_points)
-            .collect();
-        let bits_a: Vec<_> = repeat_with(|| thread_rng().gen_range(0..2))
-            .take(self.num_points)
-            .collect();
-
+    fn gen(&self, msg: Self::Message, idx: usize) -> Vec<Self::Key> {
+        let seeds_a: Vec<_> = repeat_with(P::new_seed).take(self.points).collect();
         let mut seeds_b = seeds_a.clone();
-        seeds_b[point_idx] = self.prg.new_seed();
+        seeds_b[idx] = P::new_seed();
 
+        let bits_a: Vec<bool> = repeat_with(|| thread_rng().gen())
+            .take(self.points)
+            .collect();
         let mut bits_b = bits_a.clone();
-        bits_b[point_idx] = 1 - bits_b[point_idx];
+        bits_b[idx] = !bits_b[idx];
 
-        let encoded_msg =
-            self.prg.eval(&seeds_a[point_idx]) ^ self.prg.eval(&seeds_b[point_idx]) ^ msg;
+        let encoded_msg = self.prg.eval(&seeds_a[idx]) ^ self.prg.eval(&seeds_b[idx]) ^ msg;
 
         vec![
             Self::Key::new(encoded_msg.clone(), bits_a, seeds_a),
@@ -95,13 +91,11 @@ where
     }
 
     fn gen_empty(&self) -> Vec<Self::Key> {
-        let seeds: Vec<_> = repeat_with(|| self.prg.new_seed())
-            .take(self.num_points)
+        let seeds: Vec<_> = repeat_with(P::new_seed).take(self.points).collect();
+        let bits: Vec<bool> = repeat_with(|| thread_rng().gen())
+            .take(self.points)
             .collect();
-        let bits: Vec<_> = repeat_with(|| thread_rng().gen_range(0..2))
-            .take(self.num_points)
-            .collect();
-        let encoded_msg = self.prg.eval(&self.prg.new_seed()); // random message
+        let encoded_msg = self.prg.eval(&P::new_seed()); // random message
 
         vec![Self::Key::new(encoded_msg, bits, seeds); 2]
     }
@@ -113,7 +107,7 @@ where
             .iter()
             .zip(key.bits.iter())
             .map(|(seed, bits)| {
-                if *bits == 1 {
+                if *bits {
                     self.prg.eval(seed) ^ msg_ref.clone()
                 } else {
                     self.prg.eval(seed)
@@ -144,9 +138,9 @@ impl<P: Arbitrary + 'static> Arbitrary for Construction<P> {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        const MAX_NUM_POINTS: usize = 10;
-        (any::<P>(), 1..=MAX_NUM_POINTS)
-            .prop_map(move |(prg, num_points)| Construction::new(prg, num_points))
+        const MAX_POINTS: usize = 10;
+        (any::<P>(), 1..=MAX_POINTS)
+            .prop_map(move |(prg, points)| Construction::new(prg, points))
             .boxed()
     }
 }

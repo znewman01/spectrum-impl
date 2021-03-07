@@ -1,33 +1,65 @@
 //! Spectrum implementation.
+use super::*;
 use crate::algebra::{Group, Monoid, SpecialExponentMonoid};
 use crate::bytes::Bytes;
 use crate::util::Sampleable;
 
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use std::cmp::max;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::iter::repeat;
+use std::ops::{Add, BitXor, BitXorAssign};
 
 #[cfg(any(test, feature = "testing"))]
 use proptest::{collection::SizeRange, prelude::*};
 #[cfg(any(test, feature = "testing"))]
 use proptest_derive::Arbitrary;
 
-use super::*;
-
-use itertools::Itertools;
-
-use std::ops::{BitXor, BitXorAssign};
-
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-pub struct ElementVector<G: Monoid>(pub Vec<G>);
+pub struct ElementVector<G>(pub Vec<G>);
 
 impl<G: Group> ElementVector<G> {
-    fn new(inner: Vec<G>) -> Self {
+    pub fn new(inner: Vec<G>) -> Self {
         ElementVector(inner)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<G> Add for ElementVector<G>
+where
+    G: Add<Output = G>,
+{
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let inner = Iterator::zip(self.0.into_iter(), rhs.0.into_iter())
+            .map(|(x, y)| x + y)
+            .collect();
+        Self(inner)
+    }
+}
+
+impl<G: Monoid> Monoid for ElementVector<G> {
+    fn zero() -> Self {
+        panic!("not enough information (don't know the right length)");
+    }
+}
+
+impl<G> SpecialExponentMonoid for ElementVector<G>
+where
+    G: SpecialExponentMonoid,
+    G::Exponent: Clone,
+{
+    type Exponent = G::Exponent;
+
+    fn pow(&self, exp: Self::Exponent) -> Self {
+        Self(self.0.iter().map(|x| x.pow(exp.clone())).collect())
     }
 }
 
@@ -41,15 +73,12 @@ where
 
     fn arbitrary_with(size: Self::Parameters) -> Self::Strategy {
         let range = size.map(SizeRange::from).unwrap_or(SizeRange::from(1..5));
-        prop::collection::vec(any::<G>(), range)
-            .prop_map(|v| {
-                v.into_iter()
-                    .filter(|g| g != &G::zero())
-                    .collect::<Vec<_>>()
-            })
-            .prop_filter("element vector must be nonempty", |v| v.len() >= 1)
-            .prop_map(ElementVector::new)
-            .boxed()
+        prop::collection::vec(
+            any::<G>().prop_filter("nonzero", |g| g != &G::zero()),
+            range,
+        )
+        .prop_map(ElementVector::new)
+        .boxed()
     }
 }
 
@@ -134,7 +163,7 @@ where
     type Output = ElementVector<G>;
 
     /// generates a new (random) seed for the given PRG
-    fn new_seed(&self) -> Self::Seed {
+    fn new_seed() -> Self::Seed {
         Self::Seed::sample()
     }
 
@@ -155,7 +184,7 @@ where
     }
 
     fn output_size(&self) -> usize {
-        self.generators.0.len() * max(G::order_size_in_bytes() - 1, 1)
+        self.generators.len()
     }
 }
 
@@ -164,12 +193,14 @@ where
     G: Group + SpecialExponentMonoid + Clone,
     G::Exponent: Sampleable + Monoid + Clone,
 {
-    fn null_seed(&self) -> Self::Seed {
+    fn null_seed() -> Self::Seed {
         <G as SpecialExponentMonoid>::Exponent::zero()
     }
 
     fn combine_seeds(&self, seeds: Vec<Self::Seed>) -> Self::Seed {
-        seeds.into_iter().fold(self.null_seed(), std::ops::Add::add)
+        seeds
+            .into_iter()
+            .fold(Self::null_seed(), std::ops::Add::add)
     }
 
     fn combine_outputs(&self, outputs: &[&ElementVector<G>]) -> ElementVector<G> {
@@ -270,41 +301,3 @@ where
             .for_each(|(element1, element2)| *element1 = element1.clone() + element2);
     }
 }
-
-/*
-#[cfg(test)]
-mod tests {
-    extern crate rand;
-    use super::super::tests as prg_tests;
-    use super::*;
-    use crate::constructions::IntModP;
-    use std::collections::HashSet;
-    use std::fmt::Debug;
-    use std::ops;
-
-    type Group = IntModP;
-
-    pub fn seeds<G>() -> impl Strategy<Value = Vec<Group>>
-    where
-        G: Group + Arbitrary + 'static,
-    {
-        prop::collection::vec(any::<GroupPrgSeed<G>>(), 1..100)
-    }
-
-    proptest! {
-        #[test]
-        fn test_bytes_element_vec_roundtrip(data: Bytes) {
-            let mut data:Vec<u8> = data.into();
-            while data.len() % 31 != 0 {
-                data.push(0);
-            }
-            let data = Bytes::from(data);
-            prop_assert_eq!(
-                data.clone(),
-                ElementVector::<GroupElement>::from(data).into()
-            );
-        }
-    }
-}
-
-*/

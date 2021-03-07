@@ -1,3 +1,4 @@
+#![feature(type_ascription)]
 #![allow(dead_code)] // for now
 #[macro_use]
 pub mod algebra;
@@ -12,6 +13,7 @@ mod prg;
 pub mod bytes;
 #[macro_use]
 pub mod dpf;
+#[macro_use]
 pub mod vdpf;
 
 mod constructions;
