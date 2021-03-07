@@ -10,7 +10,7 @@ proto = ["tonic", "prost"]
 
 [dependencies]
 spectrum_primitives = { path = "../spectrum_primitives" }
-derivative = "2.0.2"  # https://github.com/rust-lang/rust/issues/26925
+derivative = "2.2.0"  # https://github.com/rust-lang/rust/issues/26925
 serde = { version = "1.0", features = ["derive", "rc"] }
 tokio = { version = "1.1", features = [ "sync" ] }
 tonic = { version = "0.4", optional = true }

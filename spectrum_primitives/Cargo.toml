@@ -10,7 +10,7 @@ testing = ["proptest"]
 [dependencies]
 blake3 = { version = "0.3.7", features = [ "rayon", "std"] }
 jubjub = "0.6"
-derivative = "2.0.2"  # https://github.com/rust-lang/rust/issues/26925
+derivative = "2.2.0"  # https://github.com/rust-lang/rust/issues/26925
 itertools = "0.9.0"
 group = "0.9"  # need this for jubjub compatibility
 ff = "0.9"  # need this for jubjub compatibility

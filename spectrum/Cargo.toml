@@ -24,7 +24,7 @@ rug = { version = "1.11", features = [ "serde" ] }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 port_check = "0.1.5"
-derivative = "2.0.2"  # https://github.com/rust-lang/rust/issues/26925
+derivative = "2.2.0"  # https://github.com/rust-lang/rust/issues/26925
 itertools = "0.10"
 clap = { git = "http://github.com/clap-rs/clap/", rev = "37889c661134e8286102f7d2ab3267965d010403" }
 csv = "1.1"

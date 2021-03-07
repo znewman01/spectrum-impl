@@ -47,6 +47,7 @@ where
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Token<S> {
     seed: S,
     bit: S,

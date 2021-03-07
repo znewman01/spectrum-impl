@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-#[cfg(any(test))]
+#[cfg(any(test, feature = "testing"))]
 use proptest_derive::Arbitrary;
 
-#[cfg_attr(test, derive(Arbitrary))]
+#[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct FieldVdpf<D, F> {
     dpf: D,

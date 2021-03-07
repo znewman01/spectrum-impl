@@ -1,12 +1,10 @@
 use crate::Accumulatable;
 
-use spectrum_primitives::Bytes;
-
 pub trait Protocol {
     type ChannelKey;
     type WriteToken;
     type AuditShare;
-    type Accumulator: Accumulatable + Into<Bytes>;
+    type Accumulator: Accumulatable;
 
     // General protocol properties
     fn num_parties(&self) -> usize;
@@ -14,14 +12,19 @@ pub trait Protocol {
     fn message_len(&self) -> usize;
 
     // Client algorithms
-    fn broadcast(&self, message: Bytes, key: Self::ChannelKey) -> Vec<Self::WriteToken>;
+    fn broadcast(
+        &self,
+        message: Self::Accumulator,
+        idx: usize,
+        key: Self::ChannelKey,
+    ) -> Vec<Self::WriteToken>;
     fn cover(&self) -> Vec<Self::WriteToken>;
 
     // Server algorithms
     fn gen_audit(
         &self,
         keys: &[Self::ChannelKey],
-        token: &Self::WriteToken,
+        token: Self::WriteToken,
     ) -> Vec<Self::AuditShare>;
     fn check_audit(&self, tokens: Vec<Self::AuditShare>) -> bool;
 
@@ -86,7 +89,7 @@ macro_rules! check_protocol {
             {
                 let mut server_shares = vec![Vec::new(); protocol.num_parties()];
                 for token in tokens {
-                    for (idx, share) in protocol.gen_audit(&keys, &token).into_iter().enumerate() {
+                    for (idx, share) in protocol.gen_audit(&keys, token).into_iter().enumerate() {
                         server_shares[idx].push(share);
                     }
                 }
@@ -98,24 +101,25 @@ macro_rules! check_protocol {
                 any::<$type>().prop_flat_map(|protocol| {
                     (
                         Just(protocol.clone()),
-                        (0..protocol.num_channels()).map(|idx| any_with::<<$type as Protocol>::ChannelKey>((idx, Some(protocol)))).collect::<Vec<_>>(),
+                        vec(any::<<$type as Protocol>::ChannelKey>(), protocol.num_channels()),
                     )
                 })
             }
 
-            fn protocol_with_keys_msg() -> impl Strategy<Value=($type, Vec<<$type as Protocol>::ChannelKey>, Bytes)> {
+            fn protocol_with_keys_msg() -> impl Strategy<Value=($type, Vec<<$type as Protocol>::ChannelKey>, <$type as Protocol>::Accumulator)> {
                 use proptest::collection::vec;
                 protocol_with_keys().prop_flat_map(|(protocol, keys)| {
-                    (Just(protocol), Just(keys), any_with::<Bytes>(protocol.message_len().into()))
+                    let length = protocol.message_len();
+                    (Just(protocol), Just(keys), any_with::<<$type as Protocol>::Accumulator>(length.into()))
                 })
             }
 
-            fn protocol_with_keys_msg_bad_key() -> impl Strategy<Value=($type, Vec<<$type as Protocol>::ChannelKey>, Bytes, <$type as Protocol>::ChannelKey)> {
+            fn protocol_with_keys_msg_bad_key() -> impl Strategy<Value=($type, Vec<<$type as Protocol>::ChannelKey>, <$type as Protocol>::Accumulator, <$type as Protocol>::ChannelKey)> {
                 use prop::sample::Index;
                 (protocol_with_keys_msg(), any::<Index>()).prop_flat_map(|((protocol, good_keys, msg), idx)| {
                     let idx = idx.index(protocol.num_channels());
                     let good_key = good_keys[idx].clone();
-                    let bad_key = any_with::<<$type as Protocol>::ChannelKey>((idx, Some(protocol)))
+                    let bad_key = any::<<$type as Protocol>::ChannelKey>()
                         .prop_filter("must be different", move |key| key != &good_key);
                     (Just(protocol), Just(good_keys), Just(msg), bad_key)
                 })
@@ -124,9 +128,10 @@ macro_rules! check_protocol {
             fn protocol_with_accumulator() -> impl Strategy<Value=($type, Vec<<$type as Protocol>::Accumulator>)>{
                 use prop::collection::vec;
                 any::<$type>().prop_flat_map(move |protocol| {
+                    let channels = protocol.num_channels();
                     let empty = protocol.new_accumulator();
                     let params = empty[0].params();
-                    (Just(protocol), vec(any_with::<<$type as Protocol>::Accumulator>(params.into()), protocol.num_channels()))
+                    (Just(protocol), vec(any_with::<<$type as Protocol>::Accumulator>(params.into()), channels))
                 })
             }
 
@@ -149,7 +154,7 @@ macro_rules! check_protocol {
                 {
                     let idx = idx.index(keys.len());
                     let good_key = keys[idx].clone();
-                    let tokens = protocol.broadcast(msg, good_key);
+                    let tokens = protocol.broadcast(msg, idx, good_key);
                     prop_assert_eq!(tokens.len(), protocol.num_parties(), "broadcast should give one message per party");
 
                     for shares in get_server_shares(&protocol, tokens, keys) {
@@ -160,10 +165,12 @@ macro_rules! check_protocol {
                 #[test]
                 fn test_broadcast_soundness(
                     (protocol, good_keys, msg, bad_key) in protocol_with_keys_msg_bad_key(),
+                    idx: prop::sample::Index,
                 )
                 {
+                    let idx = idx.index(good_keys.len());
                     prop_assume!(!good_keys.contains(&bad_key));
-                    let tokens = protocol.broadcast(msg, bad_key);
+                    let tokens = protocol.broadcast(msg, idx, bad_key);
                     prop_assert_eq!(tokens.len(), protocol.num_parties());
 
                     for shares in get_server_shares(&protocol, tokens, good_keys) {
@@ -192,7 +199,7 @@ macro_rules! check_protocol {
                     let good_key = keys[key_idx].clone();
 
                     let mut accumulator = protocol.new_accumulator();
-                    for write_token in protocol.broadcast(msg.clone(), good_key) {
+                    for write_token in protocol.broadcast(msg.clone(), key_idx, good_key) {
                         accumulator.combine(protocol.to_accumulator(write_token));
                     }
 
@@ -200,11 +207,15 @@ macro_rules! check_protocol {
                     prop_assert_eq!(recovered_msgs.len(), protocol.num_channels(), "wrong accumulator size");
                     for (msg_idx, actual_msg) in recovered_msgs.into_iter().enumerate() {
                         if msg_idx == key_idx {
-                            prop_assert_eq!(actual_msg.into(): Bytes, msg.clone(), "Channel was incorrect");
+                            prop_assert_eq!(
+                                actual_msg.into(): <$type as Protocol>::Accumulator,
+                                msg.clone(),
+                                "Channel was incorrect"
+                            );
                         } else {
                             prop_assert_eq!(
-                                actual_msg.into(): Bytes,
-                                Bytes::empty(protocol.message_len()),
+                                actual_msg.into(): <$type as Protocol>::Accumulator,
+                                <$type as Protocol>::Accumulator::empty(protocol.message_len().into()),
                                 "Channel was non-null"
                             )
                         }

@@ -27,7 +27,7 @@ impl<S> ProofShare<S> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Token<S> {
     seed: S,
     bit: S,

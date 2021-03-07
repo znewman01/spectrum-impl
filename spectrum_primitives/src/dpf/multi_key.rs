@@ -25,6 +25,7 @@ impl<P> Construction<P> {
     }
 }
 
+#[derive(Debug)]
 pub struct Key<M, S> {
     pub(in crate) encoded_msg: M, //P::Output,
     pub(in crate) bits: Vec<S>,

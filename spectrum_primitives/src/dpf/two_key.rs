@@ -22,7 +22,7 @@ impl<P> Construction<P> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Key<M, S> {
     pub encoded_msg: M, //P::Output,
     pub bits: Vec<bool>,

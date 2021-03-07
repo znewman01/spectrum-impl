@@ -4,13 +4,15 @@ mod accumulator;
 #[macro_use]
 mod definition;
 
-pub mod insecure;
+mod insecure;
+mod secure;
 // pub mod multi_key;
-// pub mod secure;
 // pub mod wrapper;
 
 pub use accumulator::Accumulatable;
 pub use definition::Protocol;
+
+pub use insecure::InsecureProtocol;
 
 #[cfg(feature = "proto")]
 pub mod proto {
@@ -18,3 +20,6 @@ pub mod proto {
 
     pub use spectrum_primitives::proto::Integer;
 }
+
+#[cfg(test)]
+mod tests;
