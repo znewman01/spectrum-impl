@@ -1,4 +1,5 @@
 //! Spectrum implementation.
+#![allow(clippy::unit_arg)] // proptest-derive bug?
 use crate::dpf::Dpf;
 
 use serde::{Deserialize, Serialize};

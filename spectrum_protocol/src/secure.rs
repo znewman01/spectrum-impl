@@ -52,7 +52,7 @@ where
         idx: usize,
         key: Self::ChannelKey,
     ) -> Vec<Self::WriteToken> {
-        let dpf_keys = self.gen(message.into(), idx);
+        let dpf_keys = self.gen(message, idx);
         let proof_shares = self.gen_proofs(&key, idx, &dpf_keys);
         Iterator::zip(dpf_keys.into_iter(), proof_shares.into_iter()).collect()
     }

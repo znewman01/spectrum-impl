@@ -14,12 +14,5 @@ pub use definition::Protocol;
 
 pub use insecure::InsecureProtocol;
 
-#[cfg(feature = "proto")]
-pub mod proto {
-    tonic::include_proto!("spectrum");
-
-    pub use spectrum_primitives::proto::Integer;
-}
-
 #[cfg(test)]
 mod tests;

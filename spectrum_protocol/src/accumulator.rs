@@ -98,7 +98,7 @@ impl Accumulatable for Bytes {
     }
 
     fn empty(length: usize) -> Self {
-        Bytes::empty(length.into())
+        Bytes::empty(length)
     }
 
     fn params(&self) -> usize {
@@ -151,9 +151,7 @@ where
     }
 
     fn empty((length, subparams): (usize, T::Parameters)) -> Self {
-        repeat_with(|| T::empty(subparams.clone()))
-            .take(length)
-            .collect()
+        repeat_with(|| T::empty(subparams)).take(length).collect()
     }
 
     fn params(&self) -> Self::Parameters {
