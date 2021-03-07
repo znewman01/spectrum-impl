@@ -18,7 +18,7 @@ pub struct IntMod<const N: u8> {
 // Rust's type system can do it but I'm not quite that masochistic...
 impl<const N: u8> Field for IntMod<N> {
     fn one() -> Self {
-        return Self { inner: 1 };
+        Self { inner: 1 }
     }
 
     fn mul_invert(&self) -> Self {
@@ -140,7 +140,7 @@ impl<const N: u8> Sampleable for IntMod<N> {
     }
 
     fn sample_many_from_seed(seed: &Self::Seed, n: usize) -> Vec<Self> {
-        let mut rng = <StdRng as SeedableRng>::from_seed(seed.clone());
+        let mut rng = <StdRng as SeedableRng>::from_seed(*seed);
         repeat_with(|| rng.gen_range(0..N))
             .take(n)
             .map(Self::try_from)
@@ -170,7 +170,7 @@ impl<const N: u8> Arbitrary for IntMod<N> {
 mod test_int_mod {
     use super::*;
     use crate::dpf::MultiKeyDpf;
-    use crate::prg::{GroupPRG, SeedHomomorphicPRG, PRG};
+    use crate::prg::GroupPrg;
 
     type IntModP = IntMod<11>;
     check_field_laws!(IntModP);
@@ -179,7 +179,7 @@ mod test_int_mod {
     check_shareable!(IntModP);
 
     check_linearly_shareable!(IntModP);
-    check_prg!(GroupPRG<IntModP>);
-    check_seed_homomorphic_prg!(GroupPRG<IntModP>);
-    check_dpf!(MultiKeyDpf<GroupPRG<IntModP>>);
+    check_prg!(GroupPrg<IntModP>);
+    check_seed_homomorphic_prg!(GroupPrg<IntModP>);
+    check_dpf!(MultiKeyDpf<GroupPrg<IntModP>>);
 }

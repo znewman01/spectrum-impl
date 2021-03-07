@@ -5,14 +5,14 @@ use openssl::symm::{encrypt, Cipher};
 use serde::{Deserialize, Serialize};
 
 use crate::bytes::Bytes;
-use crate::prg::PRG;
+use crate::prg::Prg;
 
 pub const SEED_SIZE: usize = 16; // in bytes
 
 /// PRG uses AES to expand a seed to desired length
 #[derive(Clone, PartialEq, Copy, Serialize, Deserialize, Derivative)]
 #[derivative(Debug)]
-pub struct AESPRG {
+pub struct AesPrg {
     eval_size: usize,
     #[serde(skip, default = "Cipher::aes_128_ctr")]
     #[derivative(Debug = "ignore")]
@@ -21,33 +21,33 @@ pub struct AESPRG {
 
 /// seed for AES-based PRG
 #[derive(Default, Clone, PartialEq, Eq, Debug, Hash)]
-pub struct AESSeed {
+pub struct AesSeed {
     bytes: Bytes,
 }
 
 /// evaluation type for AES-based PRG
-impl AESSeed {
+impl AesSeed {
     pub fn random() -> Self {
         use rand::prelude::*;
         let mut rand_seed_bytes = vec![0; SEED_SIZE];
         thread_rng().fill_bytes(&mut rand_seed_bytes);
-        AESSeed::try_from(rand_seed_bytes).expect("Correct seed size")
+        AesSeed::try_from(rand_seed_bytes).expect("Correct seed size")
     }
 }
 
-impl Into<Bytes> for AESSeed {
-    fn into(self) -> Bytes {
-        self.bytes
+impl From<AesSeed> for Bytes {
+    fn from(value: AesSeed) -> Bytes {
+        value.bytes
     }
 }
 
-impl Into<Vec<u8>> for AESSeed {
-    fn into(self) -> Vec<u8> {
-        self.bytes.into()
+impl From<AesSeed> for Vec<u8> {
+    fn from(value: AesSeed) -> Vec<u8> {
+        value.bytes.into()
     }
 }
 
-impl TryFrom<Vec<u8>> for AESSeed {
+impl TryFrom<Vec<u8>> for AesSeed {
     type Error = ();
 
     fn try_from(other: Vec<u8>) -> Result<Self, ()> {
@@ -60,14 +60,14 @@ impl TryFrom<Vec<u8>> for AESSeed {
     }
 }
 
-impl AESPRG {
+impl AesPrg {
     pub fn new(eval_size: usize) -> Self {
         assert!(
             SEED_SIZE <= eval_size,
             "eval size must be at least the seed size"
         );
 
-        AESPRG {
+        AesPrg {
             eval_size,
             cipher: Cipher::aes_128_ctr(),
         }
@@ -75,13 +75,13 @@ impl AESPRG {
 }
 
 // Implementation of an AES-based PRG
-impl PRG for AESPRG {
-    type Seed = AESSeed;
+impl Prg for AesPrg {
+    type Seed = AesSeed;
     type Output = Bytes;
 
     /// generates a new (random) seed for the given PRG
-    fn new_seed() -> AESSeed {
-        AESSeed::random()
+    fn new_seed() -> AesSeed {
+        AesSeed::random()
     }
 
     fn output_size(&self) -> usize {
@@ -89,7 +89,7 @@ impl PRG for AESPRG {
     }
 
     /// evaluates the PRG on the given seed
-    fn eval(&self, seed: &AESSeed) -> Self::Output {
+    fn eval(&self, seed: &AesSeed) -> Self::Output {
         // nonce set to zero: PRG eval should be deterministic
         let iv: [u8; 16] = [0; 16];
 
@@ -120,27 +120,25 @@ impl PRG for AESPRG {
 use proptest::prelude::*;
 
 #[cfg(any(test, feature = "testing"))]
-impl Arbitrary for AESPRG {
+impl Arbitrary for AesPrg {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         use std::ops::Range;
         const SIZES: Range<usize> = 16..1000; // in bytes
-        SIZES
-            .prop_map(|output_size| AESPRG::new(output_size))
-            .boxed()
+        SIZES.prop_map(AesPrg::new).boxed()
     }
 }
 
 #[cfg(any(test, feature = "testing"))]
-impl Arbitrary for AESSeed {
+impl Arbitrary for AesSeed {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         prop::collection::vec(any::<u8>(), SEED_SIZE)
-            .prop_map(AESSeed::try_from)
+            .prop_map(AesSeed::try_from)
             .prop_map(Result::unwrap)
             .boxed()
     }
@@ -149,6 +147,6 @@ impl Arbitrary for AESSeed {
 #[cfg(test)]
 mod tests {
     use super::*;
-    check_prg!(AESPRG);
-    check_dpf!(crate::dpf::TwoKeyDpf<AESPRG>);
+    check_prg!(AesPrg);
+    check_dpf!(crate::dpf::TwoKeyDpf<AesPrg>);
 }

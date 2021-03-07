@@ -7,8 +7,8 @@ use std::sync::Arc;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
-use super::DPF;
-use crate::prg::PRG;
+use super::Dpf;
+use crate::prg::Prg;
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Construction<P> {
@@ -26,7 +26,7 @@ impl<P> Construction<P> {
 pub struct Key<M, S> {
     pub encoded_msg: M, //P::Output,
     pub bits: Vec<bool>,
-    pub seeds: Vec<S>, // Vec<<P as PRG>::Seed>,
+    pub seeds: Vec<S>, // Vec<<P as Prg>::Seed>,
 }
 
 impl<M, S> Key<M, S> {
@@ -39,9 +39,9 @@ impl<M, S> Key<M, S> {
     }
 }
 
-impl<P> DPF for Construction<P>
+impl<P> Dpf for Construction<P>
 where
-    P: PRG + Clone,
+    P: Prg + Clone,
     P::Seed: Clone + PartialEq + Eq + Debug,
     P::Output: Clone
         + PartialEq
@@ -100,7 +100,7 @@ where
         vec![Self::Key::new(encoded_msg, bits, seeds); 2]
     }
 
-    /// evaluates the DPF on a given PRGKey and outputs the resulting data
+    /// evaluates the DPF on a given PrgKey and outputs the resulting data
     fn eval(&self, key: Self::Key) -> Vec<P::Output> {
         let msg_ref = Arc::new(key.encoded_msg);
         key.seeds
@@ -144,16 +144,3 @@ impl<P: Arbitrary + 'static> Arbitrary for Construction<P> {
             .boxed()
     }
 }
-
-// #[cfg(any(test, feature = "testing"))]
-// pub fn data_with_dpf<D>() -> impl Strategy<Value = (Bytes, D)>
-// where
-//     D: DPF<Message = Bytes> + Arbitrary + Clone,
-// {
-//     any::<D>().prop_flat_map(|dpf| {
-//         (
-//             any_with::<Bytes>(dpf.null_message().len().into()),
-//             Just(dpf),
-//         )
-//     })
-// }

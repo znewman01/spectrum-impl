@@ -4,11 +4,11 @@ use std::iter::repeat_with;
 
 use serde::{Deserialize, Serialize};
 
-use super::DPF;
+use super::Dpf;
 use crate::algebra::{Field, SpecialExponentMonoid};
 use crate::lss::Shareable;
-use crate::prg::SeedHomomorphicPRG;
-use crate::prg::PRG;
+use crate::prg::Prg;
+use crate::prg::SeedHomomorphicPrg;
 
 #[cfg(any(test, feature = "testing"))]
 use proptest::prelude::*;
@@ -43,9 +43,9 @@ impl<M, S> Key<M, S> {
     }
 }
 
-impl<P> DPF for Construction<P>
+impl<P> Dpf for Construction<P>
 where
-    P: PRG + Clone + SeedHomomorphicPRG,
+    P: Prg + Clone + SeedHomomorphicPrg,
     P::Seed: Clone + PartialEq + Eq + Debug + Field + Shareable<Share = P::Seed>,
     P::Output: Clone + PartialEq + Eq + Debug + SpecialExponentMonoid<Exponent = P::Seed>,
 {
@@ -80,9 +80,7 @@ where
 
         // add message to the set of PRG outputs to "combine" together in the next step
         // encoded message G(S*) ^ msg
-        let encoded_msg = self
-            .prg
-            .combine_outputs(&[&msg, &self.prg.eval(&seed.clone())]);
+        let encoded_msg = self.prg.combine_outputs(&[&msg, &self.prg.eval(&seed)]);
 
         // update the encoded message in the keys
         keys.iter_mut()

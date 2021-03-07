@@ -72,7 +72,9 @@ where
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(size: Self::Parameters) -> Self::Strategy {
-        let range = size.map(SizeRange::from).unwrap_or(SizeRange::from(1..5));
+        let range = size
+            .map(SizeRange::from)
+            .unwrap_or_else(|| SizeRange::from(1..5));
         prop::collection::vec(
             any::<G>().prop_filter("nonzero", |g| g != &G::zero()),
             range,
@@ -130,31 +132,31 @@ where
 // Implementation of a group-based PRG
 #[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
-pub struct GroupPRG<G: Group + 'static> {
+pub struct GroupPrg<G: Group + 'static> {
     generators: ElementVector<G>,
 }
 
-impl<G: Group> GroupPRG<G> {
+impl<G: Group> GroupPrg<G> {
     fn len(&self) -> usize {
         self.generators.0.len()
     }
 }
 
-impl<G> GroupPRG<G>
+impl<G> GroupPrg<G>
 where
     G: Group + Sampleable,
 {
     pub fn new(generators: ElementVector<G>) -> Self {
-        GroupPRG { generators }
+        GroupPrg { generators }
     }
 
     pub fn from_seed(num_elements: usize, seed: <G as Sampleable>::Seed) -> Self {
         let elements = G::sample_many_from_seed(&seed, num_elements);
-        GroupPRG::new(ElementVector(elements))
+        GroupPrg::new(ElementVector(elements))
     }
 }
 
-impl<G> PRG for GroupPRG<G>
+impl<G> Prg for GroupPrg<G>
 where
     G: Group + SpecialExponentMonoid + Clone,
     G::Exponent: Sampleable + Clone,
@@ -188,7 +190,7 @@ where
     }
 }
 
-impl<G> SeedHomomorphicPRG for GroupPRG<G>
+impl<G> SeedHomomorphicPrg for GroupPrg<G>
 where
     G: Group + SpecialExponentMonoid + Clone,
     G::Exponent: Sampleable + Monoid + Clone,
@@ -214,17 +216,17 @@ where
     }
 }
 
-// TODO: should be try_into()
-impl<G> Into<Bytes> for ElementVector<G>
+// TODO: should be try_from()
+impl<G> From<ElementVector<G>> for Bytes
 where
     G: Group + Into<Bytes>,
 {
-    fn into(self) -> Bytes {
+    fn from(value: ElementVector<G>) -> Bytes {
         let chunk_size = G::order_size_in_bytes() - 1;
         // outputs all the elements in the vector concatenated as a sequence of bytes
         // assumes that every element is < 2^(8*31)
-        let mut all_bytes = Vec::with_capacity(chunk_size * self.0.len());
-        for element in self.0.into_iter() {
+        let mut all_bytes = Vec::with_capacity(chunk_size * value.0.len());
+        for element in value.0.into_iter() {
             let bytes: Bytes = element.into();
             let bytes: Vec<u8> = bytes.into();
             assert_eq!(bytes.clone()[31], 0);
@@ -242,6 +244,7 @@ where
     type Output = ElementVector<G>;
 
     // apply the group operation on each component in the vector
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn bitxor(self, rhs: ElementVector<G>) -> ElementVector<G> {
         ElementVector(
             self.0
@@ -253,16 +256,16 @@ where
     }
 }
 
-impl<G> Into<Vec<u8>> for ElementVector<G>
+impl<G> From<ElementVector<G>> for Vec<u8>
 where
     G: Group + Into<Bytes>,
 {
-    fn into(self) -> Vec<u8> {
+    fn from(value: ElementVector<G>) -> Vec<u8> {
         let chunk_size = G::order_size_in_bytes();
         // outputs all the elements in the vector concatenated as a sequence of bytes
         // assumes that every element is < 2^(8*31)
-        let mut all_bytes = Vec::with_capacity(chunk_size * self.0.len());
-        for element in self.0.into_iter() {
+        let mut all_bytes = Vec::with_capacity(chunk_size * value.0.len());
+        for element in value.0.into_iter() {
             let bytes: Bytes = element.into();
             let mut bytes: Vec<u8> = bytes.into();
             all_bytes.append(&mut bytes);
@@ -294,6 +297,7 @@ where
     /// Apply the group operation on each component in the vector.
     // There's a mismatch between operations because we require that the PRG
     // output be XOR-able (and some properties on that).
+    #[allow(clippy::suspicious_op_assign_impl)]
     fn bitxor_assign(&mut self, rhs: ElementVector<G>) {
         self.0
             .iter_mut()

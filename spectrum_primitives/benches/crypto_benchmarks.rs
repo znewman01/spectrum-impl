@@ -3,10 +3,10 @@ use rand::thread_rng;
 use rug::Integer;
 use spectrum_primitives::{
     bytes::Bytes,
-    dpf::{BasicDPF, DPF},
+    dpf::{BasicDpf, Dpf},
     field::Field,
-    prg::{aes::AESPRG, PRG},
-    vdpf::{FieldVDPF, VDPF},
+    prg::{aes::AesPrg, Prg},
+    vdpf::{FieldVdpf, Vdpf},
 };
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -14,11 +14,11 @@ fn criterion_benchmark(c: &mut Criterion) {
     static MB: usize = 1000000;
     static SIZES: [usize; 6] = [KB, 10 * KB, 100 * KB, 250 * KB, 500 * KB, 1 * MB];
 
-    let mut group = c.benchmark_group("AESPRG");
+    let mut group = c.benchmark_group("AesPrg");
     for size in SIZES.iter() {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::new("PRG", size), size, |b, &size| {
-            let prg = AESPRG::new(16, size);
+            let prg = AesPrg::new(16, size);
             let seed = prg.new_seed();
             b.iter_with_large_drop(|| prg.eval(&seed))
         });
@@ -29,7 +29,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     for size in SIZES.iter() {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-            let dpf = BasicDPF::new(AESPRG::new(16, size), 1);
+            let dpf = BasicDpf::new(AesPrg::new(16, size), 1);
             let keys = dpf.gen_empty();
             let key = &keys[0];
             b.iter_with_large_drop(|| dpf.eval(key))
@@ -67,15 +67,15 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
     group.finish();
 
-    let mut group = c.benchmark_group("VDPF.gen_audit() (AES)");
+    let mut group = c.benchmark_group("Vdpf.gen_audit() (AES)");
     for size in SIZES.iter() {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
             let num_points = 1;
             let prime: Integer = Integer::from(800_000_000).next_prime_ref().into();
             let field = Field::new(prime.clone());
-            let dpf = BasicDPF::new(AESPRG::new(16, size), num_points);
-            let vdpf = FieldVDPF::new(dpf, field.clone());
+            let dpf = BasicDpf::new(AesPrg::new(16, size), num_points);
+            let vdpf = FieldVdpf::new(dpf, field.clone());
             let dpf_keys = vdpf.gen_empty();
             let auth_keys = vec![field.zero(); num_points];
             let proof_shares = vdpf.gen_proofs(&field.zero(), 0, &dpf_keys);

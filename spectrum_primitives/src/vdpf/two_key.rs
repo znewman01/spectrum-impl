@@ -1,11 +1,11 @@
 use crate::algebra::Field;
 use crate::bytes::Bytes;
+use crate::dpf::Dpf;
 use crate::dpf::TwoKeyDpf;
-use crate::dpf::DPF;
 use crate::lss::Shareable;
-use crate::prg::PRG;
+use crate::prg::Prg;
 use crate::util::Sampleable;
-use crate::vdpf::VDPF;
+use crate::vdpf::Vdpf;
 
 use std::fmt::Debug;
 use std::iter::repeat_with;
@@ -13,7 +13,7 @@ use std::ops::{BitXor, BitXorAssign};
 use std::sync::Arc;
 use std::{convert::TryInto, ops::Add};
 
-use super::field::FieldVDPF;
+use super::field::FieldVdpf;
 
 #[derive(Clone)]
 pub struct ProofShare<S> {
@@ -43,10 +43,10 @@ impl<S> From<Token<S>> for ProofShare<S> {
     }
 }
 
-impl<F, P> VDPF for FieldVDPF<TwoKeyDpf<P>, F>
+impl<F, P> Vdpf for FieldVdpf<TwoKeyDpf<P>, F>
 where
     F: Field + Sampleable + Clone + Shareable<Share = F>,
-    P: PRG + Clone,
+    P: Prg + Clone,
     P::Seed: Clone + Debug + Eq + TryInto<F>,
     <P::Seed as TryInto<F>>::Error: Debug,
     P::Output: Debug
@@ -73,7 +73,7 @@ where
         &self,
         auth_key: &F,
         idx: usize,
-        dpf_keys: &[<Self as DPF>::Key],
+        dpf_keys: &[<Self as Dpf>::Key],
     ) -> Vec<Self::ProofShare> {
         assert_eq!(dpf_keys.len(), 2, "not implemented");
         // Server i computes: <auth_keys> . <bits[i]> + bit_proofs[i]
@@ -119,7 +119,7 @@ where
     fn gen_audit(
         &self,
         auth_keys: &[F],
-        dpf_key: &<Self as DPF>::Key,
+        dpf_key: &<Self as Dpf>::Key,
         proof_share: Self::ProofShare,
     ) -> Self::Token {
         assert_eq!(auth_keys.len(), dpf_key.bits.len());

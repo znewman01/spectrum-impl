@@ -1,4 +1,4 @@
-use super::DPF;
+use super::Dpf;
 
 use std::marker::PhantomData;
 
@@ -19,7 +19,7 @@ impl<M> Construction<M> {
     }
 }
 
-impl<M> DPF for Construction<M>
+impl<M> Dpf for Construction<M>
 where
     M: Default + Clone + PartialEq + Eq,
 {

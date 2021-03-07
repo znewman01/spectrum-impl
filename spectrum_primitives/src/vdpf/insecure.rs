@@ -1,8 +1,8 @@
-use crate::dpf::{insecure::Construction, DPF};
-use crate::vdpf::VDPF;
+use crate::dpf::{insecure::Construction, Dpf};
+use crate::vdpf::Vdpf;
 use std::iter::repeat;
 
-impl<M> VDPF for Construction<M>
+impl<M> Vdpf for Construction<M>
 where
     M: Default + Clone + Eq,
 {
@@ -25,7 +25,7 @@ where
         &self,
         auth_key: &Self::AuthKey,
         _point_idx: usize,
-        dpf_keys: &[<Self as DPF>::Key],
+        dpf_keys: &[<Self as Dpf>::Key],
     ) -> Vec<Self::ProofShare> {
         dpf_keys.iter().map(|_| *auth_key).collect()
     }
@@ -37,7 +37,7 @@ where
     fn gen_audit(
         &self,
         _auth_keys: &[Self::AuthKey],
-        dpf_key: &<Self as DPF>::Key,
+        dpf_key: &<Self as Dpf>::Key,
         proof_share: Self::ProofShare,
     ) -> Self::Token {
         proof_share || dpf_key.is_none()

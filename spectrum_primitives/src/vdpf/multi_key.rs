@@ -4,10 +4,10 @@ use std::{fmt::Debug, iter::Sum};
 
 use crate::algebra::{Field, Group, SpecialExponentMonoid};
 use crate::bytes::Bytes;
+use crate::dpf::Dpf;
 use crate::dpf::MultiKeyDpf;
-use crate::dpf::DPF;
 use crate::lss::Shareable;
-use crate::prg::GroupPRG;
+use crate::prg::GroupPrg;
 use crate::util::Sampleable;
 
 use super::*;
@@ -62,7 +62,7 @@ impl<S> From<Token<S>> for ProofShare<S> {
     }
 }
 
-impl<G, F> VDPF for FieldVDPF<MultiKeyDpf<GroupPRG<G>>, F>
+impl<G, F> Vdpf for FieldVdpf<MultiKeyDpf<GroupPrg<G>>, F>
 where
     G: Shareable
         + Clone
@@ -91,7 +91,7 @@ where
         &self,
         auth_key: &F,
         idx: usize,
-        dpf_keys: &[<Self as DPF>::Key],
+        dpf_keys: &[<Self as Dpf>::Key],
     ) -> Vec<Self::ProofShare> {
         // Servers take inner product of bit and seed vectors, then sum and check == 0.
         // We need to share a "correction term" that makes that check out.
@@ -112,7 +112,7 @@ where
     fn gen_audit(
         &self,
         auth_keys: &[F],
-        dpf_key: &<Self as DPF>::Key,
+        dpf_key: &<Self as Dpf>::Key,
         proof_share: ProofShare<F>,
     ) -> Token<F> {
         assert_eq!(auth_keys.len(), dpf_key.bits.len());

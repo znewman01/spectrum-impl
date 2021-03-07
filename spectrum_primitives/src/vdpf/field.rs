@@ -1,5 +1,5 @@
 //! Spectrum implementation.
-use crate::dpf::DPF;
+use crate::dpf::Dpf;
 
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -10,104 +10,16 @@ use proptest::prelude::*;
 #[cfg(any(test))]
 use proptest_derive::Arbitrary;
 
-// #[cfg_attr(test, derive(Arbitrary))]
-// #[derive(Clone, PartialEq, Debug)]
-// pub struct FieldToken<F>
-// where
-//     F: Shareable,
-// {
-//     pub bit: F::Share,
-//     pub seed: F::Share,
-//     pub data: Bytes,
-// }
-//
-// impl<F> FieldToken<F>
-// where
-//     F: Shareable,
-// {
-//     pub fn new(bit: F::Share, seed: F::Share, data: Bytes) -> Self {
-//         Self { bit, seed, data }
-//     }
-// }
-//
-// #[cfg_attr(test, derive(Arbitrary))]
-// #[derive(Clone, PartialEq, Debug)]
-// pub struct FieldProof<F> {
-//     bit: F,
-//     seed: F,
-// }
-//
-// impl<F> FieldProof<F> {
-//     fn new(bit: F, seed: F) -> Self {
-//         Self { bit, seed }
-//     }
-// }
-//
-// impl<F> Shareable for FieldProof<F>
-// where
-//     F: Shareable<Share = F> + Clone,
-// {
-//     type Share = Self;
-//
-//     fn share(self, len: usize) -> Vec<Self::Share> {
-//         Iterator::zip(
-//             self.bit.share(len).into_iter(),
-//             self.seed.share(len).into_iter(),
-//         )
-//         .map(|(bit, seed)| Self::new(bit, seed))
-//         .collect()
-//     }
-//
-//     fn recover(shares: Vec<Self::Share>) -> Self {
-//         let bit = F::recover(shares.iter().cloned().map(|proof| proof.bit).collect());
-//         let seed = F::recover(shares.iter().cloned().map(|proof| proof.seed).collect());
-//         Self { bit, seed }
-//     }
-// }
-//
-// impl<F> LinearlyShareable<FieldProof<F>> for FieldProof<F> where
-//     FieldProof<F>: Shareable<Share = FieldProof<F>>
-// {
-// }
-//
-// #[cfg_attr(test, derive(Arbitrary))]
-// #[derive(Clone, PartialEq, Debug)]
-// pub struct FieldProofShare<F>
-// where
-//     F: Shareable,
-// {
-//     pub bit: F::Share,
-//     pub seed: F::Share,
-// }
-//
-// impl<F> FieldProofShare<F>
-// where
-//     F: Shareable,
-// {
-//     pub fn new(bit: F::Share, seed: F::Share) -> Self {
-//         Self { bit, seed }
-//     }
-//
-//     pub fn share(bit_proof: F, seed_proof: F, len: usize) -> Vec<FieldProofShare<F>> {
-//         let bits = bit_proof.share(len);
-//         let seeds = seed_proof.share(len);
-//         bits.into_iter()
-//             .zip(seeds.into_iter())
-//             .map(|(bit, seed)| FieldProofShare::new(bit, seed))
-//             .collect()
-//     }
-// }
-
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
-pub struct FieldVDPF<D, F> {
+pub struct FieldVdpf<D, F> {
     dpf: D,
     phantom: PhantomData<F>,
 }
 
-impl<D, F> FieldVDPF<D, F> {
+impl<D, F> FieldVdpf<D, F> {
     pub fn new(dpf: D) -> Self {
-        FieldVDPF {
+        FieldVdpf {
             dpf,
             phantom: Default::default(),
         }
@@ -115,7 +27,7 @@ impl<D, F> FieldVDPF<D, F> {
 }
 
 // Pass through DPF methods
-impl<D: DPF, F> DPF for FieldVDPF<D, F> {
+impl<D: Dpf, F> Dpf for FieldVdpf<D, F> {
     type Key = D::Key;
     type Message = D::Message;
 
@@ -149,14 +61,5 @@ impl<D: DPF, F> DPF for FieldVDPF<D, F> {
 
     fn combine(&self, parts: Vec<Vec<Self::Message>>) -> Vec<Self::Message> {
         self.dpf.combine(parts)
-    }
-}
-
-#[cfg(any(test, feature = "testing"))]
-mod testing {
-    use proptest::prelude::*;
-
-    pub(super) fn hashes() -> impl Strategy<Value = Vec<u8>> {
-        prop::collection::vec(super::any::<u8>(), 32)
     }
 }

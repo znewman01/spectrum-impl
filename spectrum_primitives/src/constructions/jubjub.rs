@@ -9,7 +9,7 @@ use rug::{integer::Order, Integer};
 
 use crate::algebra::{Field, Group, Monoid, SpecialExponentMonoid};
 use crate::bytes::Bytes;
-use crate::constructions::aes_prg::{AESSeed, AESPRG};
+use crate::constructions::aes_prg::{AesPrg, AesSeed};
 use crate::util::Sampleable;
 
 #[cfg(any(test, feature = "testing"))]
@@ -30,19 +30,19 @@ pub const MODULUS_BYTES: usize = 32;
 const BYTE_ORDER: Order = Order::LsfLe;
 
 /// A curvePoint representing an exponent in the elliptic curve group.
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, Debug, Clone)]
 pub struct CurvePoint {
     inner: SubgroupPoint,
 }
 
-impl Into<Bytes> for CurvePoint {
-    fn into(self) -> Bytes {
-        Bytes::from(Vec::from((&self.inner).to_bytes()))
+impl From<CurvePoint> for Bytes {
+    fn from(value: CurvePoint) -> Bytes {
+        Bytes::from(Vec::from((&value.inner).to_bytes()))
     }
 }
 
 impl Sampleable for CurvePoint {
-    type Seed = AESSeed;
+    type Seed = AesSeed;
 
     fn sample() -> Self {
         use rand::thread_rng;
@@ -73,13 +73,13 @@ impl ops::Add for CurvePoint {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        (self.inner + &rhs.inner).into()
+        (self.inner + rhs.inner).into()
     }
 }
 
 impl ops::AddAssign for CurvePoint {
     fn add_assign(&mut self, rhs: Self) {
-        self.inner += &rhs.inner;
+        self.inner += rhs.inner;
     }
 }
 
@@ -120,12 +120,18 @@ impl Hash for CurvePoint {
     }
 }
 
+impl PartialEq for CurvePoint {
+    fn eq(&self, rhs: &CurvePoint) -> bool {
+        self.inner == rhs.inner
+    }
+}
+
 #[cfg(any(test, feature = "testing"))]
 pub(crate) fn subgroup_points() -> impl Strategy<Value = SubgroupPoint> {
     use ::group::Group as _;
     any::<u8>().prop_map(|mut exp| {
         let g = SubgroupPoint::generator();
-        let mut p = g.clone();
+        let mut p = g;
         loop {
             // Exponentiation by squaring
             // Err, multiplication by doubling, but same idea.
@@ -153,7 +159,7 @@ impl Arbitrary for CurvePoint {
 }
 
 /// A scalar representing an exponent in the elliptic curve group.
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, Debug, Clone)]
 pub struct Scalar {
     inner: Fr,
 }
@@ -184,7 +190,7 @@ impl ops::Add for Scalar {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        (self.inner + &rhs.inner).into()
+        (self.inner + rhs.inner).into()
     }
 }
 
@@ -214,7 +220,7 @@ impl ops::Mul for Scalar {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
-        (self.inner * &rhs.inner).into()
+        (self.inner * rhs.inner).into()
     }
 }
 
@@ -254,9 +260,9 @@ impl From<Integer> for Scalar {
     }
 }
 
-impl Into<Bytes> for Scalar {
-    fn into(self) -> Bytes {
-        Bytes::from(self.inner.to_bytes().to_vec())
+impl From<Scalar> for Bytes {
+    fn from(value: Scalar) -> Bytes {
+        Bytes::from(value.inner.to_bytes().to_vec())
     }
 }
 
@@ -270,7 +276,7 @@ impl TryFrom<Bytes> for Scalar {
             bytes_arr[..len].copy_from_slice(bytes.as_ref());
             Option::<Fr>::from(Fr::from_bytes(&bytes_arr))
                 .map(Scalar::from)
-                .ok_or("Converting from bytes failed.".to_string())
+                .ok_or_else(|| "Converting from bytes failed.".to_string())
         } else if len == 64 {
             let mut bytes_arr: [u8; 64] = [0; 64];
             bytes_arr.copy_from_slice(bytes.as_ref());
@@ -284,6 +290,12 @@ impl TryFrom<Bytes> for Scalar {
 impl Hash for Scalar {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.inner.to_bytes().hash(state);
+    }
+}
+
+impl PartialEq for Scalar {
+    fn eq(&self, rhs: &Scalar) -> bool {
+        self.inner == rhs.inner
     }
 }
 
@@ -305,7 +317,7 @@ impl Arbitrary for Scalar {
 }
 
 impl Sampleable for Scalar {
-    type Seed = AESSeed;
+    type Seed = AesSeed;
     /// identity element in the elliptic curve field
 
     /// generates a new random group element
@@ -315,11 +327,11 @@ impl Sampleable for Scalar {
     }
 
     fn sample_many_from_seed(seed: &Self::Seed, n: usize) -> Vec<Self> {
-        use crate::prg::PRG;
+        use crate::prg::Prg;
         if n == 0 {
             return vec![];
         }
-        let prg = AESPRG::new((MODULUS_BYTES - 1) * n);
+        let prg = AesPrg::new((MODULUS_BYTES - 1) * n);
         let rand_bytes: Vec<u8> = prg.eval(seed).into();
 
         //TODO: maybe use itertools::Itertools chunks?
@@ -333,12 +345,6 @@ impl Sampleable for Scalar {
             })
             .collect()
     }
-
-    // /// generates a set of field elements in the elliptic curve field
-    // /// which are generators for the group (given that the group is of prime order)
-    // /// takes as input a random seed which deterministically generates [num] field elements
-    // fn generators(num: usize, seed: &AESSeed) -> Vec<GroupElement> {
-    // }
 }
 
 impl SpecialExponentMonoid for CurvePoint {
@@ -353,7 +359,7 @@ impl SpecialExponentMonoid for CurvePoint {
 mod tests {
     use super::*;
     use crate::dpf::MultiKeyDpf;
-    use crate::prg::{GroupPRG, SeedHomomorphicPRG, PRG};
+    use crate::prg::GroupPrg;
 
     check_group_laws!(CurvePoint);
     // check_sampleable!(CurvePoint);
@@ -368,7 +374,8 @@ mod tests {
         |x| Scalar::try_from(x).unwrap(),
         point_to_bytes
     );
-    check_prg!(GroupPRG<CurvePoint>);
-    check_seed_homomorphic_prg!(GroupPRG<CurvePoint>);
-    check_dpf!(MultiKeyDpf<GroupPRG<CurvePoint>>);
+    check_prg!(GroupPrg<CurvePoint>);
+    check_seed_homomorphic_prg!(GroupPrg<CurvePoint>);
+
+    check_dpf!(MultiKeyDpf<GroupPrg<CurvePoint>>);
 }

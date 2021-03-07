@@ -1,6 +1,6 @@
-use crate::dpf::DPF;
+use crate::dpf::Dpf;
 
-pub trait VDPF: DPF {
+pub trait Vdpf: Dpf {
     type AuthKey;
     type ProofShare;
     type Token;
@@ -12,7 +12,7 @@ pub trait VDPF: DPF {
         &self,
         auth_key: &Self::AuthKey,
         point_idx: usize,
-        dpf_keys: &[<Self as DPF>::Key],
+        dpf_keys: &[<Self as Dpf>::Key],
     ) -> Vec<Self::ProofShare>;
 
     fn gen_proofs_noop(&self) -> Vec<Self::ProofShare>;
@@ -20,44 +20,44 @@ pub trait VDPF: DPF {
     fn gen_audit(
         &self,
         auth_keys: &[Self::AuthKey],
-        dpf_key: &<Self as DPF>::Key,
+        dpf_key: &<Self as Dpf>::Key,
         proof_share: Self::ProofShare,
     ) -> Self::Token;
 
     fn check_audit(&self, tokens: Vec<Self::Token>) -> bool;
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 macro_rules! check_vdpf {
     ($type:ty) => {
         #[allow(unused_imports)]
-        use crate::{dpf::DPF, vdpf::VDPF};
+        use crate::{dpf::Dpf, vdpf::Vdpf};
         #[allow(unused_imports)]
         use proptest::prelude::*;
 
         #[test]
         fn check_bounds() {
-            fn check<V: VDPF>() {}
+            fn check<V: Vdpf>() {}
             check::<$type>();
         }
 
         fn vdpf_with_keys_data() -> impl Strategy<
             Value = (
                 $type,
-                Vec<<$type as VDPF>::AuthKey>,
-                <$type as DPF>::Message,
+                Vec<<$type as Vdpf>::AuthKey>,
+                <$type as Dpf>::Message,
             ),
         > {
             any::<$type>().prop_flat_map(|vdpf| {
                 (
                     Just(vdpf.clone()),
                     Just(vdpf.new_access_keys()),
-                    <$type as DPF>::Message::arbitrary_with(vdpf.msg_size().into()),
+                    <$type as Dpf>::Message::arbitrary_with(vdpf.msg_size().into()),
                 )
             })
         }
 
-        fn vdpf_with_keys() -> impl Strategy<Value = ($type, Vec<<$type as VDPF>::AuthKey>)> {
+        fn vdpf_with_keys() -> impl Strategy<Value = ($type, Vec<<$type as Vdpf>::AuthKey>)> {
             any::<$type>().prop_flat_map(|vdpf| (Just(vdpf.clone()), Just(vdpf.new_access_keys())))
         }
 

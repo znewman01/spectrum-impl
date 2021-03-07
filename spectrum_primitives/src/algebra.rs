@@ -9,10 +9,10 @@ pub trait Monoid: Eq + ops::Add<Output = Self> + Sized {
     fn zero() -> Self;
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 macro_rules! check_monoid_laws {
-    ($type:ty,$mod_name:ident) => {
-        mod $mod_name {
+    ($type:ty) => {
+        mod monoid {
             #![allow(unused_imports)]
             use super::*;
             use proptest::prelude::*;
@@ -38,9 +38,6 @@ macro_rules! check_monoid_laws {
             }
         }
     };
-    ($type:ty) => {
-        check_monoid_laws!($type, monoid_laws);
-    };
 }
 
 /// A monoid with custom exponentiation for a particular exponent type.
@@ -51,10 +48,10 @@ pub trait SpecialExponentMonoid: Monoid {
     fn pow(&self, exp: Self::Exponent) -> Self;
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 macro_rules! check_monoid_custom_exponent {
-    ($type:ty,$mod_name:ident) => {
-        mod mod_name {
+    ($type:ty) => {
+        mod monoid_exp {
             #![allow(unused_imports)]
             check_monoid_laws!($type);
             use super::*;
@@ -66,7 +63,7 @@ macro_rules! check_monoid_custom_exponent {
                 /// We're using `+` and `.pow` for the monoid operation and
                 /// exponentiation, respectively.
                 #[test]
-                fn test_exponent_sum(
+                fn test_sum(
                     base: $type,
                     exp1: <$type as SpecialExponentMonoid>::Exponent,
                     exp2: <$type as SpecialExponentMonoid>::Exponent
@@ -79,7 +76,7 @@ macro_rules! check_monoid_custom_exponent {
 
                 /// Check x^(a*b) == (x^a)^b.
                 #[test]
-                fn test_exponent_product(
+                fn test_product(
                     base: $type,
                     exp1: <$type as SpecialExponentMonoid>::Exponent,
                     exp2: <$type as SpecialExponentMonoid>::Exponent
@@ -105,9 +102,6 @@ macro_rules! check_monoid_custom_exponent {
             }
         }
     };
-    ($type:ty) => {
-        check_monoid_custom_exponent!($type, monoid_custom_exponent);
-    };
 }
 
 /// A *commutative* group
@@ -122,7 +116,7 @@ pub trait Group: Monoid + ops::Sub<Output = Self> + ops::Neg<Output = Self> + Si
     }
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 macro_rules! check_group_laws {
     ($type:ty,$mod_name:ident) => {
         // wish I could use concat_idents!(group_laws, $type) here
@@ -166,7 +160,7 @@ pub trait Field: Eq + PartialEq + ops::Mul<Output = Self> + Sized + Group {
     fn one() -> Self;
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 macro_rules! check_field_laws {
     ($type:ty,$mod_name:ident) => {
         mod $mod_name {

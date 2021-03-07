@@ -143,7 +143,7 @@ impl Shareable for bool {
     }
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 macro_rules! check_shareable_norandom {
     ($type:ty) => {
         #[allow(unused_imports)]
@@ -169,7 +169,7 @@ macro_rules! check_shareable_norandom {
     };
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 macro_rules! check_shareable {
     ($type:ty) => {
         check_shareable_norandom!($type);
@@ -189,7 +189,7 @@ macro_rules! check_shareable {
     };
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 macro_rules! check_linearly_shareable {
     ($type:ty,$mod_name:ident) => {
         mod $mod_name {

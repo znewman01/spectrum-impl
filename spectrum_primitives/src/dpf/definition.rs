@@ -1,7 +1,7 @@
 /// Distributed Point Function
 /// Must generate a set of keys k_1, k_2, ...
 /// such that combine(eval(k_1), eval(k_2), ...) = e_i * msg
-pub trait DPF {
+pub trait Dpf {
     type Key;
     type Message;
 
@@ -17,28 +17,28 @@ pub trait DPF {
     fn combine(&self, parts: Vec<Vec<Self::Message>>) -> Vec<Self::Message>;
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 macro_rules! check_dpf {
     ($type:ty,$mod_name:ident) => {
         mod $mod_name {
             #![allow(unused_imports)]
             use super::*;
-            use crate::dpf::DPF;
+            use crate::dpf::Dpf;
             use proptest::prelude::*;
             use std::collections::HashSet;
             use std::iter::repeat_with;
 
             #[test]
             fn check_bounds() {
-                fn check<D: DPF>() {}
+                fn check<D: Dpf>() {}
                 check::<$type>();
             }
 
-            fn dpf_with_data() -> impl Strategy<Value = ($type, <$type as DPF>::Message)> {
+            fn dpf_with_data() -> impl Strategy<Value = ($type, <$type as Dpf>::Message)> {
                 any::<$type>().prop_flat_map(|dpf| {
                     (
                         Just(dpf.clone()),
-                        <$type as DPF>::Message::arbitrary_with(dpf.msg_size().into()),
+                        <$type as Dpf>::Message::arbitrary_with(dpf.msg_size().into()),
                     )
                 })
             }

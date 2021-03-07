@@ -20,7 +20,7 @@ pub trait Sampleable {
         Self: Sized;
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 macro_rules! check_sampleable {
     ($type:ty) => {
         mod sampleable {
@@ -88,6 +88,7 @@ macro_rules! check_sampleable {
 /// [`Arbitrary`]: proptest::arbitrary::Arbitrary
 /// [`Clone`]: std::clone::Clone
 #[cfg(any(test, feature = "testing"))]
+#[macro_export]
 macro_rules! check_roundtrip {
     ($type:ty,$to:expr,$from:expr,$name:ident) => {
         mod $name {
