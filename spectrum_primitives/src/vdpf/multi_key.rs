@@ -6,8 +6,8 @@ use crate::algebra::{Field, Group, SpecialExponentMonoid};
 use crate::bytes::Bytes;
 use crate::dpf::Dpf;
 use crate::dpf::MultiKeyDpf;
-use crate::lss::Shareable;
 use crate::prg::GroupPrg;
+use crate::sharing::Shareable;
 use crate::util::Sampleable;
 
 use super::*;

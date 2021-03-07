@@ -2,8 +2,8 @@ use crate::algebra::Field;
 use crate::bytes::Bytes;
 use crate::dpf::Dpf;
 use crate::dpf::TwoKeyDpf;
-use crate::lss::Shareable;
 use crate::prg::Prg;
+use crate::sharing::Shareable;
 use crate::util::Sampleable;
 use crate::vdpf::Vdpf;
 

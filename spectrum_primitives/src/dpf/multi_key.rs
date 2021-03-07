@@ -6,9 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use super::Dpf;
 use crate::algebra::{Field, SpecialExponentMonoid};
-use crate::lss::Shareable;
-use crate::prg::Prg;
-use crate::prg::SeedHomomorphicPrg;
+use crate::prg::{Prg, SeedHomomorphicPrg};
+use crate::sharing::Shareable;
 
 #[cfg(any(test, feature = "testing"))]
 use proptest::prelude::*;

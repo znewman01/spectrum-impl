@@ -146,24 +146,24 @@ impl Shareable for bool {
 #[cfg(test)]
 macro_rules! check_shareable_norandom {
     ($type:ty) => {
-        #[allow(unused_imports)]
-        use super::*;
-        #[allow(unused_imports)]
-        use crate::lss::Shareable;
-        #[allow(unused_imports)]
-        use proptest::prelude::*;
-        const MAX_SHARES: usize = 100;
-        proptest! {
-            #[test]
-            fn test_share_recover_identity(value: $type, num_shares in 2..MAX_SHARES) {
-                let shares = value.clone().share(num_shares);
-                prop_assert_eq!(<$type as Shareable>::recover(shares), value);
-            }
+        mod basic {
+            #![allow(unused_imports)]
+            use super::*;
+            use crate::sharing::Shareable;
+            use proptest::prelude::*;
+            const MAX_SHARES: usize = 100;
+            proptest! {
+                #[test]
+                fn test_share_recover_identity(value: $type, num_shares in 2..MAX_SHARES) {
+                    let shares = value.clone().share(num_shares);
+                    prop_assert_eq!(<$type as Shareable>::recover(shares), value);
+                }
 
-            #[test]
-            #[should_panic]
-            fn test_one_share_invalid(value: $type) {
-                value.share(1);
+                #[test]
+                #[should_panic]
+                fn test_one_share_invalid(value: $type) {
+                    value.share(1);
+                }
             }
         }
     };
@@ -172,18 +172,26 @@ macro_rules! check_shareable_norandom {
 #[cfg(test)]
 macro_rules! check_shareable {
     ($type:ty) => {
-        check_shareable_norandom!($type);
+        mod sharing {
+            #![allow(unused_imports)]
+            use super::*;
+            use crate::sharing::Shareable;
+            use proptest::prelude::*;
+            const MAX_SHARES: usize = 100;
 
-        proptest! {
-            #[test]
-            fn test_share_randomized(
-                value: $type,
-                num_shares in 10..MAX_SHARES  // Need >>2 shares to avoid them being equal by chance
-            ) {
-                prop_assert_ne!(
-                    value.clone().share(num_shares),
-                    value.share(num_shares)
-                );
+            check_shareable_norandom!($type);
+
+            proptest! {
+                #[test]
+                fn test_share_randomized(
+                    value: $type,
+                    num_shares in 10..MAX_SHARES  // Need >>2 shares to avoid them being equal by chance
+                ) {
+                    prop_assert_ne!(
+                        value.clone().share(num_shares),
+                        value.share(num_shares)
+                    );
+                }
             }
         }
     };
@@ -195,7 +203,7 @@ macro_rules! check_linearly_shareable {
         mod $mod_name {
             #![allow(unused_imports)]
             use super::*;
-            use crate::lss::{LinearlyShareable, Shareable};
+            use crate::sharing::{LinearlyShareable, Shareable};
             use proptest::prelude::*;
             const MAX_SHARES: usize = 100;
 

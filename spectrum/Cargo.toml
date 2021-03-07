@@ -30,7 +30,7 @@ clap = { git = "http://github.com/clap-rs/clap/", rev = "37889c661134e8286102f7d
 csv = "1.1"
 etcd-rs = { git = "https://github.com/luncj/etcd-rs", rev = "9b72ee0ca451ef59955ac16e7471575134024981" }
 tempfile = "3"
-spectrum_primitives = { path = "../spectrum_primitives", features = [ "proto" ] }
+spectrum_primitives = { path = "../spectrum_primitives" }
 spectrum_protocol = { path = "../spectrum_protocol", features = [ "proto" ] }
 
 [build-dependencies]

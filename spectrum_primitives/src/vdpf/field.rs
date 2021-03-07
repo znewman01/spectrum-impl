@@ -6,8 +6,6 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 #[cfg(any(test))]
-use proptest::prelude::*;
-#[cfg(any(test))]
 use proptest_derive::Arbitrary;
 
 #[cfg_attr(test, derive(Arbitrary))]

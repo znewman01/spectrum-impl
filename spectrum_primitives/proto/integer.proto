@@ -1,8 +1,0 @@
-syntax = "proto3";
-
-package spectrum_primitives;
-
-// Corresponds to a GMP integer
-message Integer {
-  string data = 1;
-}

@@ -4,7 +4,7 @@ use crate::{accumulator::Accumulatable, Protocol};
 
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
-use spectrum_primitives::{bytes::Bytes, field::FieldTrait, group::Sampleable, lss::Shareable};
+use spectrum_primitives::{bytes::Bytes, field::FieldTrait, group::Sampleable, sharing::Shareable};
 use spectrum_primitives::{
     dpf::{BasicDPF, MultiKeyDPF, DPF},
     prg::{
@@ -25,8 +25,8 @@ use {
     crate::proto,
     spectrum_primitives::{
         dpf,
-        lss::SecretShare,
         prg::PRG,
+        sharing::SecretShare,
         vdpf::{self, FieldProofShare, FieldToken},
     },
     std::convert::{TryFrom, TryInto},

@@ -5,7 +5,7 @@ pub mod algebra;
 #[macro_use]
 pub mod util;
 #[macro_use]
-mod lss;
+mod sharing;
 #[macro_use]
 mod prg;
 
@@ -17,8 +17,3 @@ pub mod dpf;
 pub mod vdpf;
 
 mod constructions;
-
-#[cfg(feature = "proto")]
-pub mod proto {
-    tonic::include_proto!("spectrum_primitives");
-}
