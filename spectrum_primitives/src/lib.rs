@@ -1,19 +1,31 @@
 #![feature(type_ascription)]
 #![allow(dead_code)] // for now
 #[macro_use]
-pub mod algebra;
+mod algebra;
 #[macro_use]
-pub mod util;
+mod util;
 #[macro_use]
 mod sharing;
 #[macro_use]
 mod prg;
-
 #[macro_use]
-pub mod bytes;
+mod bytes;
 #[macro_use]
-pub mod dpf;
+mod dpf;
 #[macro_use]
-pub mod vdpf;
+mod vdpf;
 
 mod constructions;
+
+pub use algebra::Group;
+pub use bytes::Bytes;
+pub use dpf::Dpf;
+pub use prg::Prg;
+pub use vdpf::Vdpf;
+
+pub use constructions::MultiKeyVdpf;
+pub use constructions::TwoKeyVdpf;
+pub use prg::ElementVector;
+
+#[cfg(feature = "testing")]
+pub use constructions::IntsModP;

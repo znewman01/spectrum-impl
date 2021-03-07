@@ -1,5 +1,5 @@
 use crate::Protocol;
-use spectrum_primitives::bytes::Bytes;
+use spectrum_primitives::Bytes;
 
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +15,18 @@ pub struct ChannelKey(pub(in crate) usize, pub(in crate) String);
 impl ChannelKey {
     pub fn new(idx: usize, password: String) -> Self {
         ChannelKey(idx, password)
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl Arbitrary for ChannelKey {
+    type Parameters = (usize, Option<InsecureProtocol>);
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((idx, _protocol): Self::Parameters) -> Self::Strategy {
+        any::<String>()
+            .prop_map(move |password| ChannelKey::new(idx, password))
+            .boxed()
     }
 }
 
@@ -132,7 +144,7 @@ impl Protocol for InsecureProtocol {
         data
     }
 
-    fn null_broadcast(&self) -> Vec<WriteToken> {
+    fn cover(&self) -> Vec<WriteToken> {
         vec![WriteToken::empty(); self.parties]
     }
 
@@ -171,99 +183,17 @@ impl Protocol for InsecureProtocol {
     }
 }
 
-/// Test helpers
-#[cfg(any(test, feature = "testing"))]
-mod testing {
-    use super::*;
-    use crate::tests::*;
-
-    pub fn protocols(channels: usize) -> impl Strategy<Value = InsecureProtocol> {
-        (2..100usize).prop_map(move |p| InsecureProtocol::new(p, channels, MSG_LEN))
-    }
-}
-
 #[cfg(any(test, feature = "testing"))]
 impl Arbitrary for InsecureProtocol {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        use testing::*;
-        (1..10usize).prop_flat_map(protocols).boxed()
+        (2..10usize, 1..10usize, 10..50usize)
+            .prop_map(|(parties, channels, len)| InsecureProtocol::new(parties, channels, len))
+            .boxed()
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::testing::*;
-    use super::*;
-    use crate::tests::*;
-
-    fn keys(channels: usize) -> impl Strategy<Value = Vec<ChannelKey>> {
-        Just(
-            (0..channels)
-                .map(|idx| ChannelKey(idx, format!("password{}", idx)))
-                .collect(),
-        )
-    }
-
-    fn bad_keys(channels: usize) -> impl Strategy<Value = ChannelKey> {
-        (0..channels)
-            .prop_flat_map(|idx| {
-                (
-                    Just(idx),
-                    "\\PC+".prop_filter("Must not be the actual key!", |s| s != "password"),
-                )
-            })
-            .prop_map(|(idx, password)| ChannelKey(idx, password))
-    }
-
-    proptest! {
-        #[test]
-        fn test_null_broadcast_passes_audit(
-            protocol in protocols(CHANNELS),
-            keys in keys(CHANNELS)
-        ) {
-            check_null_broadcast_passes_audit(protocol, keys);
-        }
-
-        #[test]
-        fn test_broadcast_passes_audit(
-            protocol in protocols(CHANNELS),
-            msg in messages(),
-            keys in keys(CHANNELS),
-            idx in any::<prop::sample::Index>(),
-        ) {
-            let idx = idx.index(keys.len());
-            check_broadcast_passes_audit(protocol, msg, keys, idx);
-        }
-
-        #[test]
-        fn test_broadcast_bad_key_fails_audit(
-            protocol in protocols(CHANNELS),
-            msg in messages().prop_filter("Broadcasting null message okay!", |m| *m != Bytes::empty(MSG_LEN)),
-            good_keys in keys(CHANNELS),
-            bad_key in bad_keys(CHANNELS)
-        ) {
-            check_broadcast_bad_key_fails_audit(protocol, msg, good_keys, bad_key);
-        }
-
-        #[test]
-        fn test_null_broadcast_messages_unchanged(
-            (protocol, accumulator) in protocols(CHANNELS).prop_flat_map(and_accumulators)
-        ) {
-            check_null_broadcast_messages_unchanged(protocol, accumulator);
-        }
-
-        #[test]
-        fn test_broadcast_recovers_message(
-            protocol in protocols(CHANNELS),
-            msg in messages(),
-            keys in keys(CHANNELS),
-            idx in any::<prop::sample::Index>(),
-        ) {
-            let idx = idx.index(keys.len());
-            check_broadcast_recovers_message(protocol, msg, keys, idx);
-        }
-    }
-}
+check_protocol!(InsecureProtocol);

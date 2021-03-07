@@ -4,15 +4,7 @@ use crate::{accumulator::Accumulatable, Protocol};
 
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
-use spectrum_primitives::{bytes::Bytes, field::FieldTrait, group::Sampleable, sharing::Shareable};
-use spectrum_primitives::{
-    dpf::{BasicDPF, MultiKeyDPF, DPF},
-    prg::{
-        aes::{AESSeed, AESPRG},
-        group::GroupPRG,
-    },
-    vdpf::{FieldVDPF, VDPF},
-};
+use spectrum_primitives::{Bytes, MultiKeyVdpf, TwoKeyVdpf};
 
 use std::fmt;
 use std::iter::repeat;
@@ -23,16 +15,9 @@ use proptest::prelude::*;
 #[cfg(feature = "proto")]
 use {
     crate::proto,
-    spectrum_primitives::{
-        dpf,
-        prg::PRG,
-        sharing::SecretShare,
-        vdpf::{self, FieldProofShare, FieldToken},
-    },
+    spectrum_primitives::{Dpf, Vdpf},
     std::convert::{TryFrom, TryInto},
 };
-
-pub use spectrum_primitives::vdpf::{BasicVdpf, MultiKeyVdpf};
 
 #[derive(Derivative)]
 #[derivative(
@@ -41,12 +26,12 @@ pub use spectrum_primitives::vdpf::{BasicVdpf, MultiKeyVdpf};
     PartialEq(bound = "V::AuthKey: PartialEq"),
     Eq(bound = "V::AuthKey: Eq")
 )]
-pub struct ChannelKey<V: VDPF> {
+pub struct ChannelKey<V: Vdpf> {
     pub(in crate) idx: usize,
     pub(in crate) secret: V::AuthKey,
 }
 
-impl<V: VDPF> ChannelKey<V> {
+impl<V: Vdpf> ChannelKey<V> {
     pub fn new(idx: usize, secret: V::AuthKey) -> Self {
         ChannelKey { idx, secret }
     }
@@ -54,24 +39,24 @@ impl<V: VDPF> ChannelKey<V> {
 
 #[derive(Derivative)]
 #[derivative(
-    Debug(bound = "V::ProofShare: fmt::Debug, <V as DPF>::Key: fmt::Debug"),
-    PartialEq(bound = "V::ProofShare: PartialEq, <V as DPF>::Key: PartialEq"),
-    Eq(bound = "V::ProofShare: Eq, <V as DPF>::Key: Eq"),
-    Clone(bound = "V::ProofShare: Clone, <V as DPF>::Key: Clone")
+    Debug(bound = "V::ProofShare: fmt::Debug, <V as Dpf>::Key: fmt::Debug"),
+    PartialEq(bound = "V::ProofShare: PartialEq, <V as Dpf>::Key: PartialEq"),
+    Eq(bound = "V::ProofShare: Eq, <V as Dpf>::Key: Eq"),
+    Clone(bound = "V::ProofShare: Clone, <V as Dpf>::Key: Clone")
 )]
-pub struct WriteToken<V: VDPF>(<V as DPF>::Key, V::ProofShare);
+pub struct WriteToken<V: Vdpf>(<V as Dpf>::Key, V::ProofShare);
 
-impl<V: VDPF> WriteToken<V> {
-    fn new(key: <V as DPF>::Key, proof_share: V::ProofShare) -> Self {
+impl<V: Vdpf> WriteToken<V> {
+    fn new(key: <V as Dpf>::Key, proof_share: V::ProofShare) -> Self {
         WriteToken(key, proof_share)
     }
 }
 
 #[cfg(feature = "proto")]
-impl<D, P, F> Into<proto::WriteToken> for WriteToken<FieldVDPF<D, F>>
+impl<D, P, F> Into<proto::WriteToken> for WriteToken<FieldVdpf<D, F>>
 where
-    FieldVDPF<D, F>: VDPF<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare<F>>,
-    P: PRG,
+    FieldVdpf<D, F>: Vdpf<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare<F>>,
+    P: Prg,
     P::Seed: Into<Vec<u8>>,
     P::Output: Into<Vec<u8>>,
     F: FieldTrait + Sampleable + Shareable,
@@ -111,10 +96,10 @@ where
 }
 
 #[cfg(feature = "proto")]
-impl<D, P, F> TryFrom<proto::WriteToken> for WriteToken<FieldVDPF<D, F>>
+impl<D, P, F> TryFrom<proto::WriteToken> for WriteToken<FieldVdpf<D, F>>
 where
-    FieldVDPF<D, F>: VDPF<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare<F>>,
-    P: PRG,
+    FieldVdpf<D, F>: Vdpf<Key = dpf::Key<P>, ProofShare = vdpf::FieldProofShare<F>>,
+    P: Prg,
     P::Seed: From<Vec<u8>>,
     P::Output: TryFrom<Vec<u8>>,
     F: From<proto::Integer> + FieldTrait + Shareable + Clone,
@@ -126,7 +111,7 @@ where
     fn try_from(token: proto::WriteToken) -> Result<Self, Self::Error> {
         if let proto::write_token::Inner::Secure(inner) = token.inner.unwrap() {
             let key_proto = inner.key.unwrap();
-            let dpf_key = <FieldVDPF<D, F> as DPF>::Key::new(
+            let dpf_key = <FieldVdpf<D, F> as Dpf>::Key::new(
                 key_proto.encoded_msg.try_into().unwrap(),
                 key_proto.bits,
                 key_proto.seeds.into_iter().map(Into::into).collect(),
@@ -136,7 +121,7 @@ where
                 F::Shares::from(F::from(proof_proto.bit.unwrap())),
                 F::Shares::from(F::from(proof_proto.seed.unwrap())),
             );
-            Ok(WriteToken::<FieldVDPF<D, F>>(dpf_key, proof_share))
+            Ok(WriteToken::<FieldVdpf<D, F>>(dpf_key, proof_share))
         } else {
             Err("Invalid proto::WriteToken.")
         }
@@ -146,15 +131,15 @@ where
 #[cfg(test)]
 impl<V> Arbitrary for WriteToken<V>
 where
-    V: VDPF,
-    <V as DPF>::Key: Arbitrary + 'static,
+    V: Vdpf,
+    <V as Dpf>::Key: Arbitrary + 'static,
     V::ProofShare: Arbitrary + 'static,
 {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (any::<<V as DPF>::Key>(), any::<V::ProofShare>())
+        (any::<<V as Dpf>::Key>(), any::<V::ProofShare>())
             .prop_map(|(dpf_key, share)| WriteToken::new(dpf_key, share))
             .boxed()
     }
@@ -167,11 +152,11 @@ where
     PartialEq(bound = "V::Token: PartialEq"),
     Eq(bound = "V::Token: Eq")
 )]
-pub struct AuditShare<V: VDPF> {
+pub struct AuditShare<V: Vdpf> {
     token: V::Token,
 }
 
-impl<V: VDPF> AuditShare<V> {
+impl<V: Vdpf> AuditShare<V> {
     fn new(token: V::Token) -> Self {
         AuditShare::<V> { token }
     }
@@ -180,7 +165,7 @@ impl<V: VDPF> AuditShare<V> {
 #[cfg(feature = "proto")]
 impl<V, F> Into<proto::AuditShare> for AuditShare<V>
 where
-    V: VDPF<Token = vdpf::FieldToken<F>>,
+    V: Vdpf<Token = vdpf::FieldToken<F>>,
     F: Shareable,
 {
     fn into(self) -> proto::AuditShare {
@@ -203,7 +188,7 @@ where
 impl<V, F> TryFrom<proto::AuditShare> for AuditShare<V>
 where
     F: Clone + From<proto::Integer> + Sampleable + FieldTrait,
-    V: VDPF<Token = vdpf::FieldToken<F>>,
+    V: Vdpf<Token = vdpf::FieldToken<F>>,
 {
     type Error = &'static str;
 
@@ -226,7 +211,7 @@ where
 #[cfg(test)]
 impl<V> Arbitrary for AuditShare<V>
 where
-    V: VDPF + 'static,
+    V: Vdpf + 'static,
     V::Token: Arbitrary + fmt::Debug + 'static,
 {
     type Parameters = ();
@@ -242,7 +227,7 @@ pub struct SecureProtocol<V> {
     pub vdpf: V, // TODO: should remove pub (need to add some method like sample_keys below)
 }
 
-impl<V: VDPF> SecureProtocol<V> {
+impl<V: Vdpf> SecureProtocol<V> {
     pub fn new(vdpf: V) -> SecureProtocol<V> {
         SecureProtocol { vdpf }
     }
@@ -260,33 +245,33 @@ impl<V: VDPF> SecureProtocol<V> {
 
 impl SecureProtocol<BasicVdpf> {
     pub fn with_aes_prg_dpf(channels: usize, msg_size: usize) -> Self {
-        let vdpf = FieldVDPF::new(BasicDPF::new(AESPRG::new(16, msg_size), channels));
+        let vdpf = FieldVdpf::new(BasicDpf::new(AesPrg::new(16, msg_size), channels));
         SecureProtocol::new(vdpf)
     }
 }
 
 impl SecureProtocol<MultiKeyVdpf> {
     pub fn with_group_prg_dpf(channels: usize, groups: usize, msg_size: usize) -> Self {
-        let seed: AESSeed = AESSeed::from(vec![0u8; 16]);
-        let prg: GroupPRG<_> = GroupPRG::from_aes_seed((msg_size - 1) / 31 + 1, seed);
-        let dpf: MultiKeyDPF<GroupPRG<_>> = MultiKeyDPF::new(prg, channels, groups);
-        let vdpf = FieldVDPF::new(dpf);
+        let seed: AesSeed = AesSeed::from(vec![0u8; 16]);
+        let prg: GroupPrg<_> = GroupPrg::from_aes_seed((msg_size - 1) / 31 + 1, seed);
+        let dpf: MultiKeyDpf<GroupPrg<_>> = MultiKeyDpf::new(prg, channels, groups);
+        let vdpf = FieldVdpf::new(dpf);
         SecureProtocol::new(vdpf)
     }
 }
 
 impl<V> Protocol for SecureProtocol<V>
 where
-    V: VDPF,
-    <V as DPF>::Key: fmt::Debug,
-    <V as DPF>::Message: From<Bytes> + Into<Bytes> + Accumulatable + Clone,
+    V: Vdpf,
+    <V as Dpf>::Key: fmt::Debug,
+    <V as Dpf>::Message: From<Bytes> + Into<Bytes> + Accumulatable + Clone,
     V::Token: Clone,
     V::AuthKey: Clone,
 {
     type ChannelKey = ChannelKey<V>; // channel number, password
     type WriteToken = WriteToken<V>; // message, index, maybe a key
     type AuditShare = AuditShare<V>;
-    type Accumulator = <V as DPF>::Message;
+    type Accumulator = <V as Dpf>::Message;
 
     fn num_parties(&self) -> usize {
         self.vdpf.num_keys()
@@ -345,7 +330,7 @@ where
 #[cfg(test)]
 impl<V> Arbitrary for SecureProtocol<V>
 where
-    V: VDPF + Arbitrary + 'static,
+    V: Vdpf + Arbitrary + 'static,
 {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
