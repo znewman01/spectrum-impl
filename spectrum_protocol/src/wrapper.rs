@@ -1,3 +1,5 @@
+// https://github.com/rust-lang/rust-clippy/issues/6594
+#![allow(clippy::unit_arg)]
 use crate::{
     insecure,
     secure::{self},
@@ -53,9 +55,9 @@ impl TryFrom<ChannelKeyWrapper> for String {
     }
 }
 
-impl Into<ChannelKeyWrapper> for String {
-    fn into(self) -> ChannelKeyWrapper {
-        ChannelKeyWrapper::Insecure(self)
+impl From<String> for ChannelKeyWrapper {
+    fn from(value: String) -> ChannelKeyWrapper {
+        ChannelKeyWrapper::Insecure(value)
     }
 }
 

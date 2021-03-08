@@ -234,11 +234,7 @@ where
             .into_iter()
             .chunks(chunk_size)
             .into_iter()
-            .map(|chunk| {
-                let chunk = chunk.collect::<Vec<u8>>();
-                let res = G::try_from(chunk);
-                res
-            })
+            .map(|chunk| G::try_from(chunk.collect::<Vec<u8>>()))
             .collect::<Result<Vec<G>, _>>()
             .map_err(|_| "conversion failed")
             .map(ElementVector::new)

@@ -42,7 +42,7 @@ use prg::GroupPrg;
 
 impl TwoKeyVdpf {
     pub fn with_channels_msg_size(channels: usize, msg_size: usize) -> Self {
-        TwoKeyVdpf::new(dpf::TwoKeyDpf::new(AesPrg::new(msg_size), channels)).into()
+        TwoKeyVdpf::new(dpf::TwoKeyDpf::new(AesPrg::new(msg_size), channels))
     }
 }
 
@@ -50,7 +50,7 @@ impl MultiKeyVdpf {
     pub fn with_channels_parties_msg_size(channels: usize, groups: usize, msg_size: usize) -> Self {
         let prg = GroupPrg::random(msg_size / 32 + 1);
         let dpf = dpf::MultiKeyDpf::new(prg, channels, groups);
-        MultiKeyVdpf::new(dpf).into()
+        MultiKeyVdpf::new(dpf)
     }
 }
 

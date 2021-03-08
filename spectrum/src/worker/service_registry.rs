@@ -1,3 +1,5 @@
+// https://github.com/rust-lang/rust-clippy/issues/6819
+#![allow(clippy::manual_map)]
 use crate::proto::{leader_client::LeaderClient, worker_client::WorkerClient};
 use crate::{
     config::store::Store,

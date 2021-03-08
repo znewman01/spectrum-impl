@@ -88,15 +88,15 @@ pub struct TlsServerArgs {
     tls_ca: TlsCaArgs,
 }
 
-impl Into<Option<(Identity, Certificate)>> for TlsServerArgs {
-    fn into(self) -> Option<(Identity, Certificate)> {
-        match (self.cert_file, self.key_file) {
+impl From<TlsServerArgs> for Option<(Identity, Certificate)> {
+    fn from(args: TlsServerArgs) -> Option<(Identity, Certificate)> {
+        match (args.cert_file, args.key_file) {
             (None, None) => None,
             (Some(cert_file), Some(key_file)) => {
                 let cert = std::fs::read_to_string(cert_file).unwrap();
                 let key = std::fs::read_to_string(key_file).unwrap();
                 let identity = Identity::from_pem(cert, key);
-                let cert: Option<Certificate> = self.tls_ca.into();
+                let cert: Option<Certificate> = args.tls_ca.into();
                 Some(identity).zip(cert)
             }
             _ => {
@@ -112,19 +112,19 @@ pub struct TlsCaArgs {
     ca_file: Option<String>,
 }
 
-impl Into<Option<Certificate>> for TlsCaArgs {
-    fn into(self) -> Option<Certificate> {
-        self.ca_file.map(|ca_file| {
+impl From<TlsCaArgs> for Option<Certificate> {
+    fn from(args: TlsCaArgs) -> Option<Certificate> {
+        args.ca_file.map(|ca_file| {
             let pem = std::fs::read_to_string(ca_file).unwrap();
             Certificate::from_pem(pem)
         })
     }
 }
 
-impl Into<NetConfig> for NetArgs {
-    fn into(self) -> NetConfig {
-        let tls: Option<(Identity, Certificate)> = self.tls.into();
-        match (self.local_port, self.public_addr) {
+impl From<NetArgs> for NetConfig {
+    fn from(args: NetArgs) -> NetConfig {
+        let tls: Option<(Identity, Certificate)> = args.tls.into();
+        match (args.local_port, args.public_addr) {
             (None, None) => NetConfig::with_free_port_localhost(tls),
             (None, Some(public_addr)) => NetConfig::with_free_port(public_addr, tls),
             (Some(local_port), None) => NetConfig::new_localhost(local_port, tls),

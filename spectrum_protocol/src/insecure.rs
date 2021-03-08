@@ -1,3 +1,5 @@
+// https://github.com/rust-lang/rust-clippy/issues/6594
+#![allow(clippy::unit_arg)]
 use crate::Protocol;
 use spectrum_primitives::Bytes;
 
@@ -149,15 +151,11 @@ impl TryFrom<proto::WriteToken> for WriteToken {
 impl From<WriteToken> for proto::WriteToken {
     fn from(value: WriteToken) -> Self {
         // The main value.
-        let option = if let Some(my_inner) = value.inner {
-            Some(proto::InsecureWriteTokenInner {
-                data: my_inner.data.into(),
-                channel_idx: my_inner.idx.try_into().unwrap(),
-                key: my_inner.key.into(),
-            })
-        } else {
-            None
-        };
+        let option = value.inner.map(|my_inner| proto::InsecureWriteTokenInner {
+            data: my_inner.data.into(),
+            channel_idx: my_inner.idx.try_into().unwrap(),
+            key: my_inner.key,
+        });
         // Stuff it in a wrapper.
         let inner = Some(proto::write_token::Inner::Insecure(
             proto::InsecureWriteToken { inner: option },
