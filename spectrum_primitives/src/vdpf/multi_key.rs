@@ -12,15 +12,31 @@ use crate::util::Sampleable;
 
 use super::*;
 
-#[derive(Debug)]
+#[cfg(any(test, feature = "testing"))]
+use proptest_derive::Arbitrary;
+
+#[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProofShare<S> {
     bit: S,
     seed: S,
 }
 
 impl<S> ProofShare<S> {
-    fn new(bit: S, seed: S) -> Self {
+    pub fn new(bit: S, seed: S) -> Self {
         ProofShare { bit, seed }
+    }
+}
+
+impl<S> ProofShare<S>
+where
+    S: Clone,
+{
+    pub fn bit(&self) -> S {
+        self.bit.clone()
+    }
+    pub fn seed(&self) -> S {
+        self.seed.clone()
     }
 }
 
@@ -47,11 +63,35 @@ where
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
 pub struct Token<S> {
     seed: S,
     bit: S,
     data: Bytes,
+}
+
+impl<S> Token<S> {
+    pub fn new(seed: S, bit: S, data: Bytes) -> Self {
+        Token { seed, bit, data }
+    }
+
+    pub fn data(&self) -> Bytes {
+        self.data.clone()
+    }
+}
+
+impl<S> Token<S>
+where
+    S: Clone,
+{
+    pub fn seed(&self) -> S {
+        self.seed.clone()
+    }
+
+    pub fn bit(&self) -> S {
+        self.bit.clone()
+    }
 }
 
 impl<S> From<Token<S>> for ProofShare<S> {
@@ -71,7 +111,7 @@ where
         + Debug
         + Sampleable
         + SpecialExponentMonoid<Exponent = F>
-        + Into<Bytes>,
+        + Into<Vec<u8>>,
     F: Sampleable + Field + Sum + Clone + Debug + Shareable<Share = F>,
 {
     type AuthKey = F;
@@ -134,12 +174,12 @@ where
                 .fold(F::zero(), Add::add);
 
         // TODO: kill this clone
-        let msg_hash: Bytes = dpf_key.encoded_msg.clone().hash_all();
+        let msg_hash: Vec<u8> = dpf_key.encoded_msg.clone().hash_all();
 
         Token {
             bit: bit_check,
             seed: seed_check,
-            data: msg_hash,
+            data: msg_hash.into(),
         }
     }
 

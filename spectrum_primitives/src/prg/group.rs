@@ -1,7 +1,6 @@
 //! Spectrum implementation.
 use super::*;
 use crate::algebra::{Group, Monoid, SpecialExponentMonoid};
-use crate::bytes::Bytes;
 use crate::util::Sampleable;
 
 use itertools::Itertools;
@@ -90,46 +89,16 @@ where
 
 impl<G> ElementVector<G>
 where
-    G: Group + Into<Bytes>,
+    G: Group + Into<Vec<u8>>,
 {
-    pub fn hash_all(self) -> Bytes {
+    pub fn hash_all(self) -> Vec<u8> {
         let mut hasher = blake3::Hasher::new();
         for element in self.0 {
-            let chunk: Bytes = element.into();
-            let chunk: Vec<u8> = chunk.into();
+            let chunk: Vec<u8> = element.into();
             hasher.update(&chunk);
         }
         let data: [u8; 32] = hasher.finalize().into();
         data.to_vec().into()
-    }
-}
-
-impl<G> From<Bytes> for ElementVector<G>
-where
-    G: Group + TryFrom<Bytes>,
-    G::Error: Debug,
-{
-    fn from(bytes: Bytes) -> Self {
-        // Turns out the group can't represent a lot of 32-byte values
-        // because its modulus is < 2^32.
-        // We use (very unnatural) 31-byte chunks so that
-        // element_from_bytes() succeeds.
-        let chunk_size = G::order_size_in_bytes() - 1;
-        ElementVector(
-            bytes
-                .into_iter()
-                .chunks(chunk_size)
-                .into_iter()
-                .map(|data| {
-                    let mut data: Vec<u8> = data.collect();
-                    while data.len() < G::order_size_in_bytes() {
-                        data.push(0);
-                    }
-                    let data = Bytes::from(data);
-                    G::try_from(data).expect("chunk size chosen s.t. this never fails")
-                })
-                .collect(),
-        )
     }
 }
 
@@ -220,26 +189,26 @@ where
     }
 }
 
-// TODO: should be try_from()
-impl<G> From<ElementVector<G>> for Bytes
-where
-    G: Group + Into<Bytes>,
-{
-    fn from(value: ElementVector<G>) -> Bytes {
-        let chunk_size = G::order_size_in_bytes() - 1;
-        // outputs all the elements in the vector concatenated as a sequence of bytes
-        // assumes that every element is < 2^(8*31)
-        let mut all_bytes = Vec::with_capacity(chunk_size * value.0.len());
-        for element in value.0.into_iter() {
-            let bytes: Bytes = element.into();
-            let bytes: Vec<u8> = bytes.into();
-            assert_eq!(bytes.clone()[31], 0);
-            let bytes = Bytes::from(bytes[0..31].to_vec());
-            all_bytes.append(&mut bytes.into());
-        }
-        Bytes::from(all_bytes)
-    }
-}
+// // TODO: should be try_from()
+// impl<G> From<ElementVector<G>> for Bytes
+// where
+//     G: Group + Into<Bytes>,
+// {
+//     fn from(value: ElementVector<G>) -> Bytes {
+//         let chunk_size = G::order_size_in_bytes() - 1;
+//         // outputs all the elements in the vector concatenated as a sequence of bytes
+//         // assumes that every element is < 2^(8*31)
+//         let mut all_bytes = Vec::with_capacity(chunk_size * value.0.len());
+//         for element in value.0.into_iter() {
+//             let bytes: Bytes = element.into();
+//             let bytes: Vec<u8> = bytes.into();
+//             assert_eq!(bytes.clone()[31], 0);
+//             let bytes = Bytes::from(bytes[0..31].to_vec());
+//             all_bytes.append(&mut bytes.into());
+//         }
+//         Bytes::from(all_bytes)
+//     }
+// }
 
 impl<G> BitXor<ElementVector<G>> for ElementVector<G>
 where
@@ -262,7 +231,7 @@ where
 
 impl<G> From<ElementVector<G>> for Vec<u8>
 where
-    G: Group + Into<Bytes>,
+    G: Group + Into<Vec<u8>>,
 {
     fn from(value: ElementVector<G>) -> Vec<u8> {
         let chunk_size = G::order_size_in_bytes();
@@ -270,27 +239,31 @@ where
         // assumes that every element is < 2^(8*31)
         let mut all_bytes = Vec::with_capacity(chunk_size * value.0.len());
         for element in value.0.into_iter() {
-            let bytes: Bytes = element.into();
-            let mut bytes: Vec<u8> = bytes.into();
+            let mut bytes: Vec<u8> = element.into();
             all_bytes.append(&mut bytes);
         }
         all_bytes
     }
 }
 
-impl<G> From<Vec<u8>> for ElementVector<G>
+impl<G> TryFrom<Vec<u8>> for ElementVector<G>
 where
-    G: Group + TryFrom<Bytes>,
+    G: Group + TryFrom<Vec<u8>>,
     G::Error: Debug,
+    (): From<G::Error>,
 {
-    fn from(bytes: Vec<u8>) -> Self {
+    type Error = ();
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
         let chunk_size = G::order_size_in_bytes();
         // outputs all the elements in the vector concatenated as a sequence of bytes
-        let mut elements = vec![];
-        for chunk in bytes.into_iter().chunks(chunk_size).into_iter() {
-            elements.push(G::try_from(Bytes::from(chunk.collect::<Vec<u8>>())).unwrap());
-        }
-        ElementVector(elements)
+        let elements = bytes
+            .into_iter()
+            .chunks(chunk_size)
+            .into_iter()
+            .map(|chunk| G::try_from(chunk.collect::<Vec<u8>>()))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ElementVector(elements))
     }
 }
 

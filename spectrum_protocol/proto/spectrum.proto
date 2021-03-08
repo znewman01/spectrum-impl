@@ -1,34 +1,25 @@
 syntax = "proto3";
 
 package spectrum;
-import "integer.proto";
 
 ////////////////////////////////////////////////////////////////////////////////
-// Common
-////////////////////////////////////////////////////////////////////////////////
-
-message ClientId {
-  string client_id = 1;
-}
-
-message WorkerId {
-  uint32 group = 1;
-  uint32 idx = 2;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Security Protocol
+// Secure Protocol
 ////////////////////////////////////////////////////////////////////////////////
 
 message Share {
   repeated bytes data = 1;
 }
 
+// TODO: move inside InsecureWriteToken
+message InsecureWriteTokenInner {
+  bytes data = 1;
+  uint64 channel_idx = 2;
+  string key = 3;
+}
+
 // Dummy share/proof/check for testing/benchmarking system
 message InsecureWriteToken {
-  bytes data = 1;
-  uint32 channel_idx = 2;
-  string key = 3;
+  InsecureWriteTokenInner inner = 1;
 }
 
 message InsecureAuditShare {
@@ -38,29 +29,24 @@ message InsecureAuditShare {
 message SecureWriteToken {
   message DpfKey {
     bytes encoded_msg = 1;
-    bytes bits = 2; // one bit per byte
+    // Might be a vector of bits or vector of encodings of bits.
+    repeated bytes bits = 2;
     repeated bytes seeds = 3;
   }
 
   message ProofShare {
-    spectrum_primitives.Integer bit = 1;
-    spectrum_primitives.Integer seed = 2;
-    bool is_first = 3;
+    bytes bit = 1;
+    bytes seed = 2;
   }
 
   DpfKey key = 1;
   ProofShare proof = 2;
-  // TODO(zjn): loosen From/Into requirements on ProtocolWrapper so this doesn't get repeated
-  spectrum_primitives.Integer modulus = 3;
 }
 
 message SecureAuditShare {
-  spectrum_primitives.Integer bit = 1;
-  spectrum_primitives.Integer seed = 2;
+  bytes bit = 1;
+  bytes seed = 2;
   bytes data = 3;
-  // TODO(zjn): loosen From/Into requirements on ProtocolWrapper so this doesn't get repeated
-  spectrum_primitives.Integer modulus = 4;
-  bool is_first = 5;
 }
 
 
@@ -77,82 +63,4 @@ message AuditShare {
     InsecureAuditShare insecure = 1;
     SecureAuditShare secure = 2;
   }
-}
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Services
-////////////////////////////////////////////////////////////////////////////////
-
-service Worker {
-  rpc RegisterClient(RegisterClientRequest) returns (RegisterClientResponse);
-  rpc Upload(UploadRequest) returns (UploadResponse) {}
-  rpc Verify(VerifyRequest) returns (VerifyResponse) {}
-}
-
-message RegisterClientRequest {
-  ClientId client_id = 1;
-  repeated WorkerId shards = 2;
-}
-
-message RegisterClientResponse {
-}
-
-message UploadRequest {
-  ClientId client_id = 1;
-  WriteToken write_token = 2;
-}
-
-message UploadResponse {
-}
-
-message VerifyRequest {
-  // TODO(zjn): repeated to allow batching?
-  ClientId client_id = 1;
-  AuditShare audit_share = 2;
-}
-
-message VerifyResponse {
-}
-
-service Leader {
-  rpc AggregateWorker(AggregateWorkerRequest) returns (AggregateWorkerResponse) {}
-}
-
-message AggregateWorkerRequest {
-  Share share = 1;
-}
-
-message AggregateWorkerResponse {
-}
-
-service Publisher {
-  rpc AggregateGroup(AggregateGroupRequest) returns (AggregateGroupResponse) {}
-}
-
-message AggregateGroupRequest {
-  Share share = 1;
-}
-
-message AggregateGroupResponse {
-}
-
-service StreamingServer {
-  rpc Publish(PublishRequest) returns (PublishResponse) {}
-  rpc Stream(StreamRequest) returns (stream StreamResponse) {}
-}
-
-message PublishRequest {
-  repeated bytes channel_data = 1;
-}
-
-message PublishResponse {
-}
-
-message StreamRequest {
-  uint32 channel_id = 1;
-}
-
-message StreamResponse {
-  bytes data = 1;
 }

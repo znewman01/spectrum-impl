@@ -5,7 +5,7 @@ pub use definition::Vdpf;
 
 mod field;
 mod insecure;
-mod multi_key;
-mod two_key;
+pub mod multi_key;
+pub mod two_key;
 
 pub use field::FieldVdpf;

@@ -15,23 +15,64 @@ use std::{convert::TryInto, ops::Add};
 
 use super::field::FieldVdpf;
 
-#[derive(Clone)]
+#[cfg(any(test, feature = "testing"))]
+use proptest_derive::Arbitrary;
+
+#[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProofShare<S> {
     seed: S,
     bit: S,
 }
 
 impl<S> ProofShare<S> {
-    fn new(seed: S, bit: S) -> Self {
+    pub fn new(seed: S, bit: S) -> Self {
         ProofShare { seed, bit }
     }
 }
 
+impl<S> ProofShare<S>
+where
+    S: Clone,
+{
+    pub fn bit(&self) -> S {
+        self.bit.clone()
+    }
+
+    pub fn seed(&self) -> S {
+        self.seed.clone()
+    }
+}
+
+#[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Token<S> {
     seed: S,
     bit: S,
     data: Bytes,
+}
+
+impl<S> Token<S> {
+    pub fn new(seed: S, bit: S, data: Bytes) -> Self {
+        Token { seed, bit, data }
+    }
+
+    pub fn data(&self) -> Bytes {
+        self.data.clone()
+    }
+}
+
+impl<S> Token<S>
+where
+    S: Clone,
+{
+    pub fn seed(&self) -> S {
+        self.seed.clone()
+    }
+
+    pub fn bit(&self) -> S {
+        self.bit.clone()
+    }
 }
 
 impl<S> From<Token<S>> for ProofShare<S> {

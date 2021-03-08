@@ -7,7 +7,9 @@ use crate::dpf::{MultiKeyDpf, TwoKeyDpf};
 use crate::prg::GroupPrg;
 use crate::vdpf::FieldVdpf;
 
-use aes_prg::{AesPrg, AesSeed};
+use aes_prg::AesPrg;
+
+pub use aes_prg::AesSeed;
 
 impl From<AesSeed> for jubjub::Scalar {
     fn from(rhs: AesSeed) -> jubjub::Scalar {

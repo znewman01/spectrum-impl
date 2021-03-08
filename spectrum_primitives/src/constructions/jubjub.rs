@@ -1,4 +1,4 @@
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::hash::{Hash, Hasher};
 use std::iter::Sum;
 use std::ops;
@@ -29,15 +29,38 @@ const MODULUS: [u64; 4] = [
 pub const MODULUS_BYTES: usize = 32;
 const BYTE_ORDER: Order = Order::LsfLe;
 
-/// A curvePoint representing an exponent in the elliptic curve group.
+/// A CurvePoint representing an exponent in the elliptic curve group.
 #[derive(Eq, Debug, Clone)]
 pub struct CurvePoint {
     inner: SubgroupPoint,
 }
 
-impl From<CurvePoint> for Bytes {
-    fn from(value: CurvePoint) -> Bytes {
-        Bytes::from(Vec::from((&value.inner).to_bytes()))
+// // TODO: want From<Bytes> to be: encoding a message. And TryFrom<Vec<u8>> to be: serializing a CurvePoint.
+// impl From<CurvePoint> for Bytes {
+//     fn from(value: CurvePoint) -> Bytes {
+//         Bytes::from(Vec::from((&value.inner).to_bytes()))
+//     }
+// }
+//
+// impl From<Bytes> for CurvePoint {
+//     fn from(value: CurvePoint) -> Bytes {
+//         Bytes::from(Vec::from((&value.inner).to_bytes()))
+//     }
+// }
+
+impl From<CurvePoint> for Vec<u8> {
+    fn from(value: CurvePoint) -> Self {
+        Vec::from((&value.inner).to_bytes())
+    }
+}
+
+impl TryFrom<Vec<u8>> for CurvePoint {
+    type Error = ();
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        let bytes = value.try_into().map_err(|_| ())?;
+        let result: Option<SubgroupPoint> = SubgroupPoint::from_bytes(&bytes).into();
+        result.ok_or(()).map(Into::into)
     }
 }
 
@@ -287,6 +310,22 @@ impl TryFrom<Bytes> for Scalar {
     }
 }
 
+impl TryFrom<Vec<u8>> for Scalar {
+    type Error = ();
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        Option::<Fr>::from(Fr::from_bytes(&value.try_into().map_err(|_| ())?))
+            .map(Scalar::from)
+            .ok_or(())
+    }
+}
+
+impl From<Scalar> for Vec<u8> {
+    fn from(value: Scalar) -> Vec<u8> {
+        value.inner.to_bytes().into()
+    }
+}
+
 impl Hash for Scalar {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.inner.to_bytes().hash(state);
@@ -301,7 +340,6 @@ impl PartialEq for Scalar {
 
 #[cfg(any(test, feature = "testing"))]
 pub(crate) fn jubjubs() -> impl Strategy<Value = Fr> {
-    use std::convert::TryInto;
     proptest::collection::vec(any::<u8>(), 64)
         .prop_map(|v| Fr::from_bytes_wide(v.as_slice().try_into().unwrap()))
 }
@@ -367,15 +405,30 @@ mod tests {
     check_sampleable!(Scalar);
     check_shareable!(Scalar);
     check_linearly_shareable!(Scalar);
-    // TODO: add roundtrip for CurvePoint
+    // check_roundtrip!(Bytes, Into::<CurvePoint>::into, Bytes::from, bytes_to_point);
     check_roundtrip!(
-        Scalar,
-        Into::<Bytes>::into,
-        |x| Scalar::try_from(x).unwrap(),
-        point_to_bytes
+        CurvePoint,
+        Into::<Vec<u8>>::into,
+        |x| CurvePoint::try_from(x).unwrap(),
+        point_to_vec_u8
     );
     check_prg!(GroupPrg<CurvePoint>);
     check_seed_homomorphic_prg!(GroupPrg<CurvePoint>);
 
     check_dpf!(MultiKeyDpf<GroupPrg<CurvePoint>>);
+
+    check_roundtrip!(
+        Scalar,
+        Into::<Vec<u8>>::into,
+        |x| Scalar::try_from(x).unwrap(),
+        scalar_to_vec_u8
+    );
+
+    use crate::ElementVector;
+    check_roundtrip!(
+        ElementVector<CurvePoint>,
+        Into::<Vec<u8>>::into,
+        |d| ElementVector::<CurvePoint>::try_from(d).unwrap(),
+        element_vector
+    );
 }

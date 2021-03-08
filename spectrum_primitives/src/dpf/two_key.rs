@@ -22,20 +22,69 @@ impl<P> Construction<P> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Key<M, S> {
-    pub encoded_msg: M, //P::Output,
+    pub encoded_msg: M, // P::Output,
     pub bits: Vec<bool>,
     pub seeds: Vec<S>, // Vec<<P as Prg>::Seed>,
 }
 
 impl<M, S> Key<M, S> {
-    fn new(encoded_msg: M, bits: Vec<bool>, seeds: Vec<S>) -> Self {
+    pub fn new(encoded_msg: M, bits: Vec<bool>, seeds: Vec<S>) -> Self {
         Key {
             encoded_msg,
             bits,
             seeds,
         }
+    }
+    pub fn bits(&self) -> Vec<bool> {
+        self.bits.clone()
+    }
+}
+
+impl<M, S> Key<M, S>
+where
+    M: Clone,
+{
+    pub fn msg(&self) -> M {
+        self.encoded_msg.clone()
+    }
+}
+
+impl<M, S> Key<M, S>
+where
+    S: Clone,
+{
+    pub fn seeds(&self) -> Vec<S> {
+        self.seeds.clone()
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl<M, S> Arbitrary for Key<M, S>
+where
+    M: Arbitrary,
+    S: Arbitrary,
+{
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        use prop::collection::vec;
+        (1..10usize)
+            .prop_flat_map(|length| {
+                (
+                    any::<M>(),
+                    vec(any::<bool>(), length),
+                    vec(any::<S>(), length),
+                )
+                    .prop_map(|(encoded_msg, bits, seeds)| Key {
+                        encoded_msg,
+                        bits,
+                        seeds,
+                    })
+            })
+            .boxed()
     }
 }
 

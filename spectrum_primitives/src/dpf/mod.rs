@@ -2,8 +2,8 @@
 mod definition;
 
 pub(in crate) mod insecure;
-mod multi_key;
-mod two_key;
+pub mod multi_key;
+pub mod two_key;
 
 pub use definition::Dpf;
 pub use multi_key::Construction as MultiKeyDpf;

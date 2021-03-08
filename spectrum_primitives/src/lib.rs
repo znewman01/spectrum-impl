@@ -25,7 +25,16 @@ pub use vdpf::Vdpf;
 
 pub use constructions::MultiKeyVdpf;
 pub use constructions::TwoKeyVdpf;
+
+// These are kind-of leaking. Better to do away with entirely.
+pub use constructions::AesSeed;
+pub use dpf::multi_key::Key as MultiKeyKey;
+pub use dpf::two_key::Key as TwoKeyKey;
 pub use prg::ElementVector;
+pub use vdpf::multi_key::ProofShare as MultiKeyProof;
+pub use vdpf::multi_key::Token as MultiKeyToken;
+pub use vdpf::two_key::ProofShare as TwoKeyProof;
+pub use vdpf::two_key::Token as TwoKeyToken;
 
 #[cfg(feature = "testing")]
 pub use constructions::IntsModP;

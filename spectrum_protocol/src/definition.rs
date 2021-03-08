@@ -33,41 +33,9 @@ pub trait Protocol {
     fn to_accumulator(&self, token: Self::WriteToken) -> Vec<Self::Accumulator>;
 }
 
-// #[cfg(test)]
-// pub mod tests {
-//     use super::*;
-//     use proptest::prelude::*;
-//     use std::fmt::Debug;
-//
-//     pub const CHANNELS: usize = 3;
-//     pub const MSG_LEN: usize = 64;
-//
-//     pub fn messages() -> impl Strategy<Value = Bytes> {
-//         prop::collection::vec(any::<u8>(), MSG_LEN).prop_map(Into::into)
-//     }
-//
-//     pub fn and_messages<P>(protocol: P) -> impl Strategy<Value = (P, Bytes)>
-//     where
-//         P: Protocol + Debug + Clone,
-//     {
-//         let size = protocol.message_len();
-//         (Just(protocol), any_with::<Bytes>(size.into()))
-//     }
-//
-//     pub fn and_accumulators<P>(protocol: P) -> impl Strategy<Value = (P, Vec<P::Accumulator>)>
-//     where
-//         P: Protocol + Debug + Clone,
-//         P::Accumulator: Arbitrary<Parameters = prop::collection::SizeRange>,
-//     {
-//         let channels = protocol.num_channels();
-//         let size = protocol.message_len();
-//         (
-//             Just(protocol),
-//             prop::collection::vec(any_with::<P::Accumulator>(size.into()), channels),
-//         )
-//     }
-// }
-
+/// Checks correctness of protocol implementation.
+///
+/// Also, if feature `proto` is enable, tests roundtrips to/from proto format.
 #[cfg(test)]
 macro_rules! check_protocol {
     ($type:ty) => {
@@ -221,6 +189,34 @@ macro_rules! check_protocol {
                         }
                     }
                 }
+            }
+            #[cfg(feature = "proto")]
+            mod proto {
+                use super::*;
+                use crate::proto::{AuditShare, Share, WriteToken};
+                use std::convert::TryFrom;
+                use crate::Protocol;
+                use spectrum_primitives::check_roundtrip;
+                check_roundtrip!(
+                    <$type as Protocol>::WriteToken,
+                    WriteToken::from,
+                    |p| <$type as Protocol>::WriteToken::try_from(p).unwrap(),
+                    write_token_rt
+                );
+
+                check_roundtrip!(
+                    <$type as Protocol>::AuditShare,
+                    AuditShare::from,
+                    |p| <$type as Protocol>::AuditShare::try_from(p).unwrap(),
+                    audit_share_rt
+                );
+
+                check_roundtrip!(
+                    Vec::<<$type as Protocol>::Accumulator>,
+                    Share::from,
+                    |p| Vec::<<$type as Protocol>::Accumulator>::try_from(p).unwrap(),
+                    share_rt
+                );
             }
         }
     };
