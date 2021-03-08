@@ -6,6 +6,7 @@ use std::ops;
 use ::group::GroupEncoding;
 use jubjub::{Fr, SubgroupPoint};
 use rug::{integer::Order, Integer};
+use serde::{Deserialize, Serialize};
 
 use crate::algebra::{Field, Group, Monoid, SpecialExponentMonoid};
 use crate::bytes::Bytes;
@@ -30,7 +31,8 @@ pub const MODULUS_BYTES: usize = 32;
 const BYTE_ORDER: Order = Order::LsfLe;
 
 /// A CurvePoint representing an exponent in the elliptic curve group.
-#[derive(Eq, Debug, Clone)]
+#[derive(Eq, Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "Vec<u8>", into = "Vec<u8>")]
 pub struct CurvePoint {
     inner: SubgroupPoint,
 }
@@ -55,12 +57,12 @@ impl From<CurvePoint> for Vec<u8> {
 }
 
 impl TryFrom<Vec<u8>> for CurvePoint {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        let bytes = value.try_into().map_err(|_| ())?;
+        let bytes = value.try_into().map_err(|_| "bad bytes size")?;
         let result: Option<SubgroupPoint> = SubgroupPoint::from_bytes(&bytes).into();
-        result.ok_or(()).map(Into::into)
+        result.ok_or("bad conversion from bytes").map(Into::into)
     }
 }
 
@@ -182,7 +184,9 @@ impl Arbitrary for CurvePoint {
 }
 
 /// A scalar representing an exponent in the elliptic curve group.
-#[derive(Eq, Debug, Clone)]
+#[derive(Eq, Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "Vec<u8>", into = "Vec<u8>")]
+// #[derive(Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct Scalar {
     inner: Fr,
 }
@@ -311,12 +315,14 @@ impl TryFrom<Bytes> for Scalar {
 }
 
 impl TryFrom<Vec<u8>> for Scalar {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        Option::<Fr>::from(Fr::from_bytes(&value.try_into().map_err(|_| ())?))
-            .map(Scalar::from)
-            .ok_or(())
+        Option::<Fr>::from(Fr::from_bytes(
+            &value.try_into().map_err(|_| "vec was wrong size")?,
+        ))
+        .map(Scalar::from)
+        .ok_or("converting from bytes failed")
     }
 }
 
@@ -410,7 +416,14 @@ mod tests {
         CurvePoint,
         Into::<Vec<u8>>::into,
         |x| CurvePoint::try_from(x).unwrap(),
-        point_to_vec_u8
+        point_to_vec_u8_rt
+    );
+
+    check_roundtrip!(
+        CurvePoint,
+        |p: CurvePoint| serde_json::to_string(&p).unwrap(),
+        |s: String| serde_json::from_str(&s).unwrap(),
+        point_to_json_rt
     );
     check_prg!(GroupPrg<CurvePoint>);
     check_seed_homomorphic_prg!(GroupPrg<CurvePoint>);
@@ -423,12 +436,18 @@ mod tests {
         |x| Scalar::try_from(x).unwrap(),
         scalar_to_vec_u8
     );
+    check_roundtrip!(
+        Scalar,
+        |p: Scalar| serde_json::to_string(&p).unwrap(),
+        |s: String| serde_json::from_str(&s).unwrap(),
+        scalar_to_json_rt
+    );
 
     use crate::ElementVector;
     check_roundtrip!(
         ElementVector<CurvePoint>,
         Into::<Vec<u8>>::into,
         |d| ElementVector::<CurvePoint>::try_from(d).unwrap(),
-        element_vector
+        element_vector_vec_u8_rt
     );
 }

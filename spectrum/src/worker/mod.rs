@@ -2,11 +2,7 @@ use crate::{
     config::store::Store,
     experiment::Experiment,
     net::Config as NetConfig,
-    protocols::{
-        accumulator::Accumulator,
-        wrapper::{ChannelKeyWrapper, ProtocolWrapper},
-        Protocol,
-    },
+    protocols::{accumulator::Accumulator, Protocol},
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},

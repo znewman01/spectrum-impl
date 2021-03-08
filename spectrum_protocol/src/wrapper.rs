@@ -1,68 +1,65 @@
 use crate::{
     insecure,
-    secure::{self, BasicVdpf, MultiKeyVdpf},
+    secure::{self},
     Protocol,
 };
 
 use serde::{Deserialize, Serialize};
-use spectrum_primitives::{group::GroupElement, vdpf::VDPF};
+use spectrum_primitives::{AuthKey, MultiKeyVdpf, TwoKeyVdpf};
 
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
+type SecureProtocolTwoKey = secure::Wrapper<TwoKeyVdpf>;
+type SecureProtocolMultiKey = secure::Wrapper<MultiKeyVdpf>;
+
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum ChannelKeyWrapper {
-    Insecure(usize, String),
-    Secure(usize, GroupElement),
+    Insecure(String),
+    Secure(AuthKey),
 }
 
-impl<V> TryFrom<ChannelKeyWrapper> for secure::ChannelKey<V>
-where
-    V: VDPF<AuthKey = GroupElement>,
-{
+impl TryFrom<ChannelKeyWrapper> for AuthKey {
     type Error = &'static str;
 
     fn try_from(wrapper: ChannelKeyWrapper) -> Result<Self, Self::Error> {
-        if let ChannelKeyWrapper::Secure(idx, secret) = wrapper {
-            Ok(secure::ChannelKey::<V>::new(idx, secret))
+        if let ChannelKeyWrapper::Secure(secret) = wrapper {
+            Ok(secret)
         } else {
             Err("Invalid channel key")
         }
     }
 }
 
-impl<V> Into<ChannelKeyWrapper> for secure::ChannelKey<V>
-where
-    V: VDPF<AuthKey = GroupElement>,
-{
-    fn into(self) -> ChannelKeyWrapper {
-        ChannelKeyWrapper::Secure(self.idx, self.secret)
+impl From<AuthKey> for ChannelKeyWrapper {
+    fn from(key: AuthKey) -> Self {
+        ChannelKeyWrapper::Secure(key)
     }
 }
 
-impl TryFrom<ChannelKeyWrapper> for insecure::ChannelKey {
+impl TryFrom<ChannelKeyWrapper> for String {
     type Error = &'static str;
 
     fn try_from(wrapper: ChannelKeyWrapper) -> Result<Self, Self::Error> {
-        if let ChannelKeyWrapper::Insecure(idx, password) = wrapper {
-            Ok(insecure::ChannelKey::new(idx, password))
+        if let ChannelKeyWrapper::Insecure(password) = wrapper {
+            Ok(password)
         } else {
             Err("Invalid channel key")
         }
     }
 }
 
-impl Into<ChannelKeyWrapper> for insecure::ChannelKey {
+impl Into<ChannelKeyWrapper> for String {
     fn into(self) -> ChannelKeyWrapper {
-        ChannelKeyWrapper::Insecure(self.0, self.1)
+        ChannelKeyWrapper::Insecure(self)
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ProtocolWrapper {
-    Secure(secure::SecureProtocol<BasicVdpf>),
+    Secure(SecureProtocolTwoKey),
     Insecure(insecure::InsecureProtocol),
-    SecureMultiKey(secure::SecureProtocol<MultiKeyVdpf>),
+    SecureMultiKey(SecureProtocolMultiKey),
 }
 
 impl From<insecure::InsecureProtocol> for ProtocolWrapper {
@@ -71,14 +68,14 @@ impl From<insecure::InsecureProtocol> for ProtocolWrapper {
     }
 }
 
-impl From<secure::SecureProtocol<BasicVdpf>> for ProtocolWrapper {
-    fn from(protocol: secure::SecureProtocol<BasicVdpf>) -> Self {
+impl From<SecureProtocolTwoKey> for ProtocolWrapper {
+    fn from(protocol: SecureProtocolTwoKey) -> Self {
         Self::Secure(protocol)
     }
 }
 
-impl From<secure::SecureProtocol<MultiKeyVdpf>> for ProtocolWrapper {
-    fn from(protocol: secure::SecureProtocol<MultiKeyVdpf>) -> Self {
+impl From<SecureProtocolMultiKey> for ProtocolWrapper {
+    fn from(protocol: SecureProtocolMultiKey) -> Self {
         Self::SecureMultiKey(protocol)
     }
 }
@@ -94,10 +91,16 @@ impl ProtocolWrapper {
         match security_bytes {
             true => {
                 if multi_key {
-                    secure::SecureProtocol::with_group_prg_dpf(channels, groups, msg_size).into()
+                    Into::<secure::Wrapper<_>>::into(MultiKeyVdpf::with_channels_parties_msg_size(
+                        channels, groups, msg_size,
+                    ))
+                    .into()
                 } else {
                     assert_eq!(groups, 2);
-                    secure::SecureProtocol::with_aes_prg_dpf(channels, msg_size).into()
+                    Into::<secure::Wrapper<_>>::into(TwoKeyVdpf::with_channels_msg_size(
+                        channels, msg_size,
+                    ))
+                    .into()
                 }
             }
             false => insecure::InsecureProtocol::new(groups, channels, msg_size).into(),
@@ -133,13 +136,20 @@ impl ProtocolWrapper {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    use spectrum_primitives::check_roundtrip;
     use std::convert::TryInto;
 
-    proptest! {
-        #[test]
-        fn test_secure_channel_key_proto_roundtrips(key in any::<secure::ChannelKey<BasicVdpf>>()) {
-            let wrapped: ChannelKeyWrapper = key.clone().into();
-            assert_eq!(key, wrapped.try_into().unwrap());
-        }
-    }
+    check_roundtrip!(
+        String,
+        Into::<ChannelKeyWrapper>::into,
+        |w: ChannelKeyWrapper| w.try_into().unwrap(),
+        string_channelkeywrapper_rt
+    );
+
+    check_roundtrip!(
+        AuthKey,
+        Into::<ChannelKeyWrapper>::into,
+        |w: ChannelKeyWrapper| w.try_into().unwrap(),
+        authkey_channelkeywrapper_rt
+    );
 }

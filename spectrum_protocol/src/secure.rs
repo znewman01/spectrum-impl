@@ -1,29 +1,24 @@
 use crate::{accumulator::Accumulatable, Protocol};
 
+use serde::{Deserialize, Serialize};
 use spectrum_primitives::{Dpf, Vdpf};
 
 use std::fmt;
 use std::iter::repeat;
 
-// impl SecureProtocol<BasicVdpf> {
-//     pub fn with_aes_prg_dpf(channels: usize, msg_size: usize) -> Self {
-//         let vdpf = FieldVdpf::new(BasicDpf::new(AesPrg::new(16, msg_size), channels));
-//         SecureProtocol::new(vdpf)
-//     }
-// }
-//
-// impl SecureProtocol<MultiKeyVdpf> {
-//     pub fn with_group_prg_dpf(channels: usize, groups: usize, msg_size: usize) -> Self {
-//         let seed: AesSeed = AesSeed::from(vec![0u8; 16]);
-//         let prg: GroupPrg<_> = GroupPrg::from_aes_seed((msg_size - 1) / 31 + 1, seed);
-//         let dpf: MultiKeyDpf<GroupPrg<_>> = MultiKeyDpf::new(prg, channels, groups);
-//         let vdpf = FieldVdpf::new(dpf);
-//         SecureProtocol::new(vdpf)
-//     }
-// }
-
 #[cfg(any(test, feature = "testing"))]
 use proptest_derive::Arbitrary;
+
+#[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Wrapper<V> {
+    vdpf: V,
+}
+impl<V> From<V> for Wrapper<V> {
+    fn from(vdpf: V) -> Self {
+        Wrapper { vdpf }
+    }
+}
 
 #[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +45,7 @@ impl<T> AuditShare<T> {
     }
 }
 
-impl<V> Protocol for V
+impl<V> Protocol for Wrapper<V>
 where
     V: Vdpf,
     <V as Vdpf>::Token: Clone,
@@ -65,15 +60,15 @@ where
     type Accumulator = <V as Dpf>::Message;
 
     fn num_parties(&self) -> usize {
-        self.keys()
+        self.vdpf.keys()
     }
 
     fn num_channels(&self) -> usize {
-        self.points()
+        self.vdpf.points()
     }
 
     fn message_len(&self) -> usize {
-        self.msg_size()
+        self.vdpf.msg_size()
     }
 
     fn broadcast(
@@ -82,16 +77,16 @@ where
         idx: usize,
         key: Self::ChannelKey,
     ) -> Vec<Self::WriteToken> {
-        let dpf_keys = self.gen(message, idx);
-        let proof_shares = self.gen_proofs(&key, idx, &dpf_keys);
+        let dpf_keys = self.vdpf.gen(message, idx);
+        let proof_shares = self.vdpf.gen_proofs(&key, idx, &dpf_keys);
         Iterator::zip(dpf_keys.into_iter(), proof_shares.into_iter())
             .map(|(k, p)| WriteToken::new(k, p))
             .collect()
     }
 
     fn cover(&self) -> Vec<Self::WriteToken> {
-        let dpf_keys = self.gen_empty();
-        let proof_shares = self.gen_proofs_noop();
+        let dpf_keys = self.vdpf.gen_empty();
+        let proof_shares = self.vdpf.gen_proofs_noop();
         Iterator::zip(dpf_keys.into_iter(), proof_shares.into_iter())
             .map(|(k, p)| WriteToken::new(k, p))
             .collect()
@@ -102,7 +97,9 @@ where
         keys: &[Self::ChannelKey],
         write_token: Self::WriteToken,
     ) -> Vec<Self::AuditShare> {
-        let token = self.gen_audit(&keys, &write_token.key, write_token.proof);
+        let token = self
+            .vdpf
+            .gen_audit(&keys, &write_token.key, write_token.proof);
         repeat(token)
             .map(AuditShare::new)
             .take(self.num_parties())
@@ -111,15 +108,16 @@ where
 
     fn check_audit(&self, tokens: Vec<Self::AuditShare>) -> bool {
         assert_eq!(tokens.len(), self.num_parties());
-        self.check_audit(tokens.into_iter().map(|x| x.token).collect())
+        self.vdpf
+            .check_audit(tokens.into_iter().map(|x| x.token).collect())
     }
 
     fn new_accumulator(&self) -> Vec<Self::Accumulator> {
-        vec![self.null_message(); self.num_channels()]
+        vec![self.vdpf.null_message(); self.num_channels()]
     }
 
     fn to_accumulator(&self, token: Self::WriteToken) -> Vec<Self::Accumulator> {
-        self.eval(token.key)
+        self.vdpf.eval(token.key)
     }
 }
 

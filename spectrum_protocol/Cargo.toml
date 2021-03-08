@@ -6,7 +6,7 @@ edition = "2018"
 
 [features]
 testing = ["proptest", "proptest-derive"]
-proto = ["prost"]
+proto = ["prost", "prost-build"]
 
 [dependencies]
 spectrum_primitives = { path = "../spectrum_primitives" }

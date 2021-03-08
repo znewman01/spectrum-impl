@@ -19,7 +19,7 @@ use crate::{
 use chrono::prelude::*;
 use futures::prelude::*;
 use log::{debug, error, info, trace};
-use spectrum_primitives::bytes::Bytes;
+use spectrum_primitives::Bytes;
 use std::sync::Arc;
 use tokio::spawn;
 use tonic::{Request, Response, Status};

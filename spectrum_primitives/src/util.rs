@@ -98,7 +98,7 @@ macro_rules! check_roundtrip {
             proptest! {
                 #[test]
                 fn test_roundtrip(x: $type) {
-                    prop_assert_eq!(($from)(($to)(x.clone())), x);
+                    prop_assert_eq!(($from)(($to)(x.clone())): $type, x: $type);
                 }
             }
         }

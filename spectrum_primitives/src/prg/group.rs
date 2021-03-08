@@ -250,9 +250,9 @@ impl<G> TryFrom<Vec<u8>> for ElementVector<G>
 where
     G: Group + TryFrom<Vec<u8>>,
     G::Error: Debug,
-    (): From<G::Error>,
+    &'static str: From<G::Error>,
 {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
         let chunk_size = G::order_size_in_bytes();
