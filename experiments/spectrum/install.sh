@@ -13,7 +13,7 @@ sudo apt-get install -y \
 
 curl https://sh.rustup.rs -sSf | sh -s -- \
     -y \
-    --default-toolchain nightly-2020-12-22
+    --default-toolchain nightly-2021-02-26
 
 curl https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
     -o "awscliv2.zip"
