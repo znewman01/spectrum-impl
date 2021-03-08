@@ -95,7 +95,7 @@ macro_rules! check_roundtrip {
     };
     ($type:ty,$strat:expr,$to:expr,$from:expr,$name:ident) => {
         mod $name {
-            #![allow(unused_imports)]
+            #![allow(unused_imports,clippy::redundant_closure_call)]
             use super::*;
             use proptest::prelude::*;
             proptest! {
