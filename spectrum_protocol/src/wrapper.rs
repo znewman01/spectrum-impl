@@ -13,6 +13,10 @@ use std::fmt::Debug;
 type SecureProtocolTwoKey = secure::Wrapper<TwoKeyVdpf>;
 type SecureProtocolMultiKey = secure::Wrapper<MultiKeyVdpf>;
 
+#[cfg(any(test, feature = "testing"))]
+use proptest_derive::Arbitrary;
+
+#[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum ChannelKeyWrapper {
     Insecure(String),

@@ -184,8 +184,10 @@ pub mod tests {
             (protocols, group_size)
                 .prop_flat_map(move |(protocol, group_size)| {
                     let clients: Range<u128> = (protocol.num_channels() as u128)..20;
-                    clients.prop_map(move |clients| {
-                        Experiment::new(protocol.clone(), group_size, clients, hammer)
+                    let keys =
+                        prop::collection::vec(any::<ChannelKeyWrapper>(), protocol.num_channels());
+                    (clients, keys).prop_map(move |(clients, keys)| {
+                        Experiment::new(protocol.clone(), group_size, clients, hammer, keys)
                     })
                 })
                 .boxed()
