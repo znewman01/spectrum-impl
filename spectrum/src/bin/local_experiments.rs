@@ -79,14 +79,14 @@ impl InputRecord {
 impl From<InputRecord> for Experiment {
     fn from(record: InputRecord) -> Experiment {
         let protocol = ProtocolWrapper::new(
-            record.security_bits,
+            record.security_bits.is_some(),
             false, // TODO: allow multi key experiments
             record.groups,
             record.channels,
             record.msg_size,
         );
         let hammer = false;
-        Experiment::new(protocol, record.group_size, record.clients, hammer)
+        Experiment::new_sample_keys(protocol, record.group_size, record.clients, hammer)
     }
 }
 

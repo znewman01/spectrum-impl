@@ -101,7 +101,7 @@ macro_rules! check_roundtrip {
             proptest! {
                 #[test]
                 fn test_roundtrip(x in $strat) {
-                    prop_assert_eq!(($from)(($to)(x.clone())): $type, x: $type);
+                    prop_assert_eq!(($from)(($to)(x.clone())): $type, x: $type, "round-trip failed");
                 }
             }
         }

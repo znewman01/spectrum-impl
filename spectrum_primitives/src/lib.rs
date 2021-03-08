@@ -37,7 +37,7 @@ pub use vdpf::multi_key::Token as MultiKeyToken;
 pub use vdpf::two_key::ProofShare as TwoKeyProof;
 pub use vdpf::two_key::Token as TwoKeyToken;
 
-use constructions::{AesPrg, AesSeed};
+use constructions::AesPrg;
 use prg::GroupPrg;
 
 impl TwoKeyVdpf {
@@ -48,9 +48,7 @@ impl TwoKeyVdpf {
 
 impl MultiKeyVdpf {
     pub fn with_channels_parties_msg_size(channels: usize, groups: usize, msg_size: usize) -> Self {
-        use std::convert::TryFrom;
-        let seed: AesSeed = AesSeed::try_from(vec![0u8; 16]).unwrap();
-        let prg = GroupPrg::from_seed((msg_size - 1) / 31 + 1, seed);
+        let prg = GroupPrg::random(msg_size / 32 + 1);
         let dpf = dpf::MultiKeyDpf::new(prg, channels, groups);
         MultiKeyVdpf::new(dpf).into()
     }

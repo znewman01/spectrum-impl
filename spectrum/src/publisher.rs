@@ -1,7 +1,7 @@
 use crate::proto::{
     expect_field,
     publisher_server::{Publisher, PublisherServer},
-    AggregateGroupRequest, AggregateGroupResponse,
+    AggregateGroupRequest, AggregateGroupResponse, Share,
 };
 use crate::{
     accumulator::Accumulator,
@@ -21,7 +21,7 @@ use chrono::prelude::*;
 use futures::prelude::*;
 use log::{debug, error, info, trace};
 use spectrum_primitives::Bytes;
-use std::{convert::TryInto, sync::Arc};
+use std::{convert::TryInto, fmt::Debug, sync::Arc};
 use tokio::spawn;
 use tonic::{Request, Response, Status};
 
@@ -71,7 +71,8 @@ where
     R: Remote + 'static,
     P: Protocol + 'static,
     P::Accumulator: Clone + Sync + Send + Into<Bytes>,
-    Vec<u8>: TryInto<P::Accumulator>,
+    Share: TryInto<Vec<P::Accumulator>>,
+    <Share as TryInto<Vec<P::Accumulator>>>::Error: Debug,
 {
     async fn aggregate_group(
         &self,
@@ -79,7 +80,7 @@ where
     ) -> Result<Response<AggregateGroupResponse>, Status> {
         let request = request.into_inner();
 
-        let data = expect_field(request.share, "Share")?.data;
+        let share: Share = expect_field(request.share, "Share")?;
         let total_groups = self.total_groups;
         let accumulator = self.accumulator.clone();
 
@@ -87,7 +88,8 @@ where
         // TODO: factor out?
         spawn(async move {
             // TODO: spawn_blocking for heavy computation?
-            let data: Vec<P::Accumulator> = data.into_iter().map(Into::into).collect();
+            let data: Vec<P::Accumulator> =
+                TryInto::<Vec<P::Accumulator>>::try_into(share).unwrap();
             let group_count = accumulator.accumulate(data).await;
             if group_count < total_groups {
                 trace!(
@@ -105,13 +107,13 @@ where
                 return;
             }
 
-            let share = accumulator.get().await;
+            let result = accumulator.get().await;
             // in seed-homomorphic case this is expensive, so it needs to happen
             // before we call remote.done(). we log the length so the into()
             // call won't get optimized away!
-            let share: Vec<Bytes> = share.into_iter().map(Into::into).collect();
+            let result: Vec<Bytes> = result.into_iter().map(Into::into).collect();
             info!("Publisher finished!");
-            trace!("Recovered value len: {:?}", share.len());
+            trace!("Recovered value len: {:?}", result.len());
             remote.done().await;
         });
 
@@ -133,7 +135,8 @@ where
     F: Future<Output = ()> + Send + 'static,
     P: Protocol + 'static,
     P::Accumulator: Clone + Sync + Send + Into<Bytes>,
-    Vec<u8>: TryInto<P::Accumulator>,
+    Share: TryInto<Vec<P::Accumulator>>,
+    <Share as TryInto<Vec<P::Accumulator>>>::Error: Debug,
 {
     let state = MyPublisher::from_protocol(protocol, remote.clone());
     info!("Publisher starting up.");

@@ -188,14 +188,14 @@ where
         // make sure all hashes are equal
         let distinct_hashes: HashSet<_> = tokens.iter().map(|t| t.data.clone()).collect();
         if distinct_hashes.len() != 1 {
-            println!("bad hashes {:?}", distinct_hashes);
+            eprintln!("bad hashes {:?}", distinct_hashes);
             return false;
         }
 
         // and bit/seed checks sum to zero
         let proof = ProofShare::recover(tokens.into_iter().map(ProofShare::from).collect());
         if proof.bit != F::zero() || proof.seed != F::zero() {
-            println!("bad pf bits {:?}", proof);
+            eprintln!("bad pf bits {:?}", proof);
             return false;
         }
 

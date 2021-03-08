@@ -48,7 +48,7 @@ impl TryFrom<Bytes> for CurvePoint {
             bytes.extend(vec![0u8; 32 - bytes.len()]);
         }
         let bytes: [u8; 32] = bytes.try_into().map_err(|_| "bytes wrong len")?;
-        let inner: Option<SubgroupPoint> = SubgroupPoint::from_bytes_unchecked(&bytes).into();
+        let inner: Option<SubgroupPoint> = SubgroupPoint::from_bytes(&bytes).into();
         let inner = inner.ok_or("from bytes failed")?;
         Ok(CurvePoint { inner })
     }
@@ -64,7 +64,8 @@ impl From<CurvePoint> for Bytes {
 
 impl From<CurvePoint> for Vec<u8> {
     fn from(value: CurvePoint) -> Self {
-        Vec::from((&value.inner).to_bytes())
+        let bytes = (&value.inner).to_bytes();
+        Vec::from(bytes)
     }
 }
 
@@ -463,19 +464,15 @@ mod tests {
         element_vector_vec_u8_rt
     );
     // This is bad, but everything compiles.
+    use group::Group;
     check_roundtrip!(
         Bytes,
         // multiples of 32 all-zero bytes
-        prop::collection::vec(prop::collection::vec(Just(0u8), 32), 0..100)
-            .prop_map(|v| { v.into_iter().flatten().collect::<Vec<_>>() })
-            .prop_map(Bytes::from),
+        Just(Bytes::from(Vec::<u8>::from(
+            SubgroupPoint::generator().to_bytes()
+        ))),
         |b| TryInto::<ElementVector<CurvePoint>>::try_into(b).unwrap(),
-        |p| {
-            println!("{:?}", p);
-            let bb = Bytes::from(p);
-            println!("len: {:?}", bb.len());
-            bb
-        },
+        Bytes::from,
         bytes_element_vector_rt
     );
 }

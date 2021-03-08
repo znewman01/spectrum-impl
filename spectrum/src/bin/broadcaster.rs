@@ -4,7 +4,7 @@ use rand::{thread_rng, Rng};
 use spectrum_impl::{
     cli, client, config, experiment, protocols::wrapper::ChannelKeyWrapper, services::ClientInfo,
 };
-use spectrum_primitives::bytes::Bytes;
+use spectrum_primitives::Bytes;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::Read;

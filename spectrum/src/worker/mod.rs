@@ -26,7 +26,7 @@ use crate::{
 use std::time::Instant;
 
 use futures::prelude::*;
-use log::{error, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::sync::Arc;
@@ -117,7 +117,7 @@ where
             .collect::<Result<Vec<P::ChannelKey>, _>>()
             .unwrap();
 
-        spawn_blocking(move || protocol.gen_audit(&keys, &write_token))
+        spawn_blocking(move || protocol.gen_audit(&keys, write_token))
             .await
             .expect("Generating audit should not panic.")
     }
@@ -282,6 +282,7 @@ where
         let client_info = ClientInfo::from(&client_id);
         trace!("upload() client_info: {:?}", &client_info);
         let write_token = expect_field(request.write_token, "Write Token")?;
+        debug!("upload() write token: {:?}", &client_info);
         let state = self.state.clone();
         let peers: Vec<SharedClient> = self.get_peers(&client_info).await?;
 
@@ -480,6 +481,7 @@ where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
 {
+    debug!("auth keys: {:?}", experiment.get_keys());
     match protocol {
         ProtocolWrapper::Secure(protocol) => {
             inner_run(config, experiment, protocol, info, net, shutdown).await?;

@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package protocol_protos;
+
+////////////////////////////////////////////////////////////////////////////////
+// Secure Protocol
+////////////////////////////////////////////////////////////////////////////////
+
+message Share {
+  repeated bytes data = 1;
+}
+
+// TODO: move inside InsecureWriteToken
+message InsecureWriteTokenInner {
+  bytes data = 1;
+  uint64 channel_idx = 2;
+  string key = 3;
+}
+
+// Dummy share/proof/check for testing/benchmarking system
+message InsecureWriteToken {
+  InsecureWriteTokenInner inner = 1;
+}
+
+message InsecureAuditShare {
+  bool okay = 1;
+}
+
+message SecureWriteToken {
+  message DpfKey {
+    bytes encoded_msg = 1;
+    // Might be a vector of bits or vector of encodings of bits.
+    repeated bytes bits = 2;
+    repeated bytes seeds = 3;
+  }
+
+  message ProofShare {
+    bytes bit = 1;
+    bytes seed = 2;
+  }
+
+  DpfKey key = 1;
+  ProofShare proof = 2;
+}
+
+message SecureAuditShare {
+  bytes bit = 1;
+  bytes seed = 2;
+  bytes data = 3;
+}
+
+
+message WriteToken {
+  oneof inner {
+    InsecureWriteToken insecure = 1;
+    SecureWriteToken secure = 2;
+  }
+}
+
+// what workers exchange to collaboratively verify shares
+message AuditShare {
+  oneof inner {
+    InsecureAuditShare insecure = 1;
+    SecureAuditShare secure = 2;
+  }
+}

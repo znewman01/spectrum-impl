@@ -190,22 +190,22 @@ impl<M, S> TryFrom<proto::secure_write_token::DpfKey> for MultiKeyKey<M, S>
 where
     Vec<u8>: TryInto<M> + TryInto<S>,
 {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(proto: proto::secure_write_token::DpfKey) -> Result<Self, Self::Error> {
-        let msg = proto.encoded_msg.try_into().map_err(|_| ())?;
+        let msg = proto.encoded_msg.try_into().map_err(|_| "msg failed")?;
         let bits = proto
             .bits
             .into_iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<S>, _>>()
-            .map_err(|_| ())?;
+            .map_err(|_| "bits failed")?;
         let seeds = proto
             .seeds
             .into_iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<S>, _>>()
-            .map_err(|_| ())?;
+            .map_err(|_| "seeds failed")?;
         Ok(Self::new(msg, bits, seeds))
     }
 }
@@ -283,6 +283,7 @@ where
 impl<K, P> TryFrom<proto::WriteToken> for WriteToken<K, P>
 where
     proto::secure_write_token::DpfKey: TryInto<K>,
+    <proto::secure_write_token::DpfKey as TryInto<K>>::Error: std::fmt::Debug,
     proto::secure_write_token::ProofShare: TryInto<P>,
 {
     type Error = &'static str;

@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package spectrum;
+import "protocol.proto";
+
+////////////////////////////////////////////////////////////////////////////////
+// Common
+////////////////////////////////////////////////////////////////////////////////
+
+message ClientId {
+  string client_id = 1;
+}
+
+message WorkerId {
+  uint32 group = 1;
+  uint32 idx = 2;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Services
+////////////////////////////////////////////////////////////////////////////////
+
+service Worker {
+  rpc RegisterClient(RegisterClientRequest) returns (RegisterClientResponse);
+  rpc Upload(UploadRequest) returns (UploadResponse) {}
+  rpc Verify(VerifyRequest) returns (VerifyResponse) {}
+}
+
+message RegisterClientRequest {
+  ClientId client_id = 1;
+  repeated WorkerId shards = 2;
+}
+
+message RegisterClientResponse {
+}
+
+message UploadRequest {
+  ClientId client_id = 1;
+  protocol_protos.WriteToken write_token = 2;
+}
+
+message UploadResponse {
+}
+
+message VerifyRequest {
+  // TODO(zjn): repeated to allow batching?
+  ClientId client_id = 1;
+  protocol_protos.AuditShare audit_share = 2;
+}
+
+message VerifyResponse {
+}
+
+service Leader {
+  rpc AggregateWorker(AggregateWorkerRequest) returns (AggregateWorkerResponse) {}
+}
+
+message AggregateWorkerRequest {
+  protocol_protos.Share share = 1;
+}
+
+message AggregateWorkerResponse {
+}
+
+service Publisher {
+  rpc AggregateGroup(AggregateGroupRequest) returns (AggregateGroupResponse) {}
+}
+
+message AggregateGroupRequest {
+  protocol_protos.Share share = 1;
+}
+
+message AggregateGroupResponse {
+}
+
+service StreamingServer {
+  rpc Publish(PublishRequest) returns (PublishResponse) {}
+  rpc Stream(StreamRequest) returns (stream StreamResponse) {}
+}
+
+message PublishRequest {
+  repeated bytes channel_data = 1;
+}
+
+message PublishResponse {
+}
+
+message StreamRequest {
+  uint32 channel_id = 1;
+}
+
+message StreamResponse {
+  bytes data = 1;
+}

@@ -15,6 +15,7 @@ pub struct Experiment {
     group_size: u16,
     clients: u128,
     pub hammer: bool,
+    keys: Vec<ChannelKeyWrapper>,
 }
 
 impl Experiment {
@@ -23,15 +24,40 @@ impl Experiment {
         group_size: u16,
         clients: u128,
         hammer: bool,
+        keys: Vec<ChannelKeyWrapper>,
     ) -> Experiment {
         assert!(group_size >= 1, "Expected at least 1 worker per group.");
         assert!(clients >= 1, "Expected at least 1 client.");
+        assert_eq!(protocol.num_channels(), keys.len());
         Experiment {
             protocol,
             group_size,
             clients,
             hammer,
+            keys,
         }
+    }
+
+    pub fn new_sample_keys(
+        protocol: ProtocolWrapper,
+        group_size: u16,
+        clients: u128,
+        hammer: bool,
+    ) -> Self {
+        use spectrum_primitives::{AuthKey, Sampleable};
+        let channels = 0..protocol.num_channels();
+        let keys: Vec<ChannelKeyWrapper> = match &protocol {
+            ProtocolWrapper::Secure(_) => {
+                channels.map(|_: usize| AuthKey::sample().into()).collect()
+            }
+            ProtocolWrapper::SecureMultiKey(_) => {
+                channels.map(|_: usize| AuthKey::sample().into()).collect()
+            }
+            ProtocolWrapper::Insecure(_) => channels
+                .map(|idx| format!("password{}", idx).into())
+                .collect(),
+        };
+        Experiment::new(protocol, group_size, clients, hammer, keys)
     }
 
     pub fn groups(&self) -> u16 {
@@ -77,12 +103,29 @@ impl Experiment {
         let viewers = (0..(self.channels() as u128))
             .zip(self.get_keys().into_iter())
             .map(move |(idx, key)| {
-                let msg = (1usize..msg_size)
-                    .map(|x| (x % 256).try_into().unwrap())
-                    .chain(once((idx as u8) + 100))
-                    .collect::<Vec<_>>()
-                    .into();
-                ClientInfo::new_broadcaster(idx, msg, key)
+                let msg: Vec<u8> = match self.get_protocol() {
+                    ProtocolWrapper::SecureMultiKey(_) => {
+                        // need multiple of 32
+                        let rem = msg_size % 32;
+                        let size = if rem != 0 {
+                            msg_size + (32 - rem)
+                        } else {
+                            msg_size
+                        };
+                        let chunks = size / 32;
+                        use std::iter::repeat;
+                        let good_elem: Vec<u8> = vec![
+                            203, 85, 12, 213, 56, 234, 12, 193, 19, 132, 128, 64, 142, 110, 170,
+                            185, 179, 108, 97, 63, 13, 211, 247, 120, 79, 219, 110, 234, 131, 123,
+                            19, 215,
+                        ];
+                        repeat(good_elem).take(chunks).flatten().collect()
+                    }
+                    _ => {
+                        vec![(idx % 256).try_into().unwrap(); msg_size]
+                    }
+                };
+                ClientInfo::new_broadcaster(idx, msg.into(), key)
             })
             .map(Service::from);
         let broadcasters = ((self.channels() as u128)..self.clients())
@@ -96,19 +139,7 @@ impl Experiment {
     }
 
     pub fn get_keys(&self) -> Vec<ChannelKeyWrapper> {
-        use spectrum_primitives::{AuthKey, Sampleable};
-        let channels = 0..self.channels();
-        match &self.protocol {
-            ProtocolWrapper::Secure(protocol) => channels
-                .map(|idx: usize| AuthKey::sample().into())
-                .collect(),
-            ProtocolWrapper::SecureMultiKey(protocol) => channels
-                .map(|idx: usize| AuthKey::sample().into())
-                .collect(),
-            ProtocolWrapper::Insecure(_) => channels
-                .map(|idx| format!("password{}", idx).into())
-                .collect(),
-        }
+        self.keys.clone()
     }
 }
 

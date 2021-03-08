@@ -199,7 +199,7 @@ impl ExperimentArgs {
 impl From<ExperimentArgs> for ProtocolWrapper {
     fn from(args: ExperimentArgs) -> Self {
         ProtocolWrapper::new(
-            args.security_bytes(),
+            args.security_bytes().is_some(),
             args.security_multi_key_bytes.is_some(),
             args.groups,
             args.channels,
@@ -213,7 +213,7 @@ impl From<ExperimentArgs> for Experiment {
         let group_size = args.group_size;
         let clients = args.clients;
         let hammer = args.hammer;
-        Experiment::new(args.into(), group_size, clients, hammer)
+        Experiment::new_sample_keys(args.into(), group_size, clients, hammer)
     }
 }
 

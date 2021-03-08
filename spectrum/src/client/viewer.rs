@@ -8,6 +8,7 @@ use crate::{
         ClientInfo,
     },
 };
+use spectrum_primitives::Bytes;
 
 use config::store::Store;
 use futures::prelude::*;
@@ -36,7 +37,15 @@ where
     P: Protocol,
     P::ChannelKey: TryFrom<ChannelKeyWrapper>,
     <P::ChannelKey as TryFrom<ChannelKeyWrapper>>::Error: fmt::Debug,
-    P::WriteToken: Into<proto::WriteToken> + fmt::Debug + Send,
+    P::WriteToken: Into<proto::WriteToken>
+        + fmt::Debug
+        + Send
+        + Clone
+        + TryFrom<proto::WriteToken>
+        + PartialEq,
+    Bytes: TryInto<P::Accumulator> + TryFrom<P::Accumulator>,
+    <Bytes as TryInto<P::Accumulator>>::Error: fmt::Debug,
+    <Bytes as TryFrom<P::Accumulator>>::Error: fmt::Debug,
 {
     info!("Client starting");
     let start_time = wait_for_start_time_set(&config).await?;
@@ -48,8 +57,11 @@ where
         Some((msg, key)) => {
             info!("Broadcaster about to send write token.");
             debug!("Write token: msg.len()={}, key={:?}", msg.len(), key);
-            // TODO: write to a non-zero index
-            protocol.broadcast(msg, 0, key.try_into().unwrap())
+            protocol.broadcast(
+                msg.try_into().unwrap(),
+                info.idx.try_into().expect("idx should be small"),
+                key.try_into().unwrap(),
+            )
         }
         None => protocol.cover(),
     };

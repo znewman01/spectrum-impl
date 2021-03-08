@@ -130,6 +130,12 @@ where
         let elements = G::sample_many_from_seed(&seed, num_elements);
         GroupPrg::new(ElementVector(elements))
     }
+
+    pub fn random(num_elements: usize) -> Self {
+        use std::iter::repeat_with;
+        let elements = repeat_with(G::sample).take(num_elements).collect();
+        GroupPrg::new(ElementVector(elements))
+    }
 }
 
 impl<G> Prg for GroupPrg<G>
@@ -199,12 +205,17 @@ where
     type Error = &'static str;
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
+        let len = value.len();
         value
             .into_iter()
             .chunks(32)
             .into_iter()
             .map(|chunk| G::try_from(Into::<Bytes>::into(chunk.collect::<Vec<_>>())))
             .collect::<Result<Vec<G>, _>>()
+            .map(|vec| {
+                assert_eq!(vec.len() * 32, len);
+                vec
+            })
             .map(ElementVector::new)
             .map_err(|_| "conversion from bytes failed")
     }
@@ -212,7 +223,8 @@ where
 
 impl<G> TryFrom<Vec<u8>> for ElementVector<G>
 where
-    G: Group + TryFrom<Vec<u8>>,
+    G: Group + TryFrom<Vec<u8>> + std::fmt::Debug,
+    <G as TryFrom<Vec<u8>>>::Error: std::fmt::Debug,
 {
     type Error = &'static str;
 
@@ -223,11 +235,9 @@ where
             .chunks(chunk_size)
             .into_iter()
             .map(|chunk| {
-                let mut chunk = chunk.collect::<Vec<_>>();
-                if chunk.len() < chunk_size {
-                    chunk.extend(vec![0; chunk_size - chunk.len()]);
-                }
-                G::try_from(chunk)
+                let chunk = chunk.collect::<Vec<u8>>();
+                let res = G::try_from(chunk);
+                res
             })
             .collect::<Result<Vec<G>, _>>()
             .map_err(|_| "conversion failed")
@@ -247,7 +257,7 @@ where
         for element in value.0.into_iter() {
             let bytes: Bytes = element.into();
             let bytes: Vec<u8> = bytes.into();
-            assert_eq!(bytes.clone()[31], 0);
+            // assert_eq!(bytes.clone()[31], 0);
             let bytes = Bytes::from(bytes[0..32].to_vec());
             all_bytes.append(&mut bytes.into());
         }
@@ -279,7 +289,7 @@ where
     G: Group + Into<Vec<u8>>,
 {
     fn from(value: ElementVector<G>) -> Vec<u8> {
-        let chunk_size = G::order_size_in_bytes();
+        let chunk_size = 32;
         // outputs all the elements in the vector concatenated as a sequence of bytes
         // assumes that every element is < 2^(8*31)
         let mut all_bytes = Vec::with_capacity(chunk_size * value.0.len());

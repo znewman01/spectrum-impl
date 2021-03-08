@@ -21,6 +21,8 @@ use spectrum_primitives::Bytes;
 
 use futures::Future;
 use log::{debug, error, info, trace};
+use std::convert::{TryFrom, TryInto};
+use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::{
     spawn,
@@ -58,7 +60,9 @@ where
 impl<P> Leader for MyLeader<P>
 where
     P: Protocol + 'static,
-    P::Accumulator: Clone + Sync + Send + From<Vec<u8>> + Into<Vec<u8>>,
+    P::Accumulator: Clone + Sync + Send + Into<Vec<u8>>,
+    Share: TryInto<Vec<P::Accumulator>>,
+    <Share as TryInto<Vec<P::Accumulator>>>::Error: Debug,
 {
     async fn aggregate_worker(
         &self,
@@ -66,7 +70,7 @@ where
     ) -> Result<Response<AggregateWorkerResponse>, Status> {
         let request = request.into_inner();
 
-        let data = expect_field(request.share, "Share")?.data;
+        let data = expect_field(request.share, "Share")?;
         let accumulator = self.accumulator.clone();
         let total_workers = self.total_workers;
         let publisher = self
@@ -78,7 +82,7 @@ where
 
         spawn(async move {
             // TODO: spawn_blocking for heavy computation?
-            let data: Vec<_> = data.into_iter().map(P::Accumulator::from).collect();
+            let data: Vec<P::Accumulator> = data.try_into().unwrap();
             let worker_count = accumulator.accumulate(data).await;
             if worker_count < total_workers {
                 trace!("Leader receieved {}/{} shares", worker_count, total_workers);
@@ -117,7 +121,9 @@ where
     C: Store,
     F: Future<Output = ()> + Send + 'static,
     P: Protocol + 'static,
-    P::Accumulator: Sync + Send + Clone + From<Bytes> + From<Vec<u8>> + Into<Vec<u8>>,
+    P::Accumulator: Sync + Send + Clone + TryFrom<Bytes> + Into<Vec<u8>>,
+    Share: TryInto<Vec<P::Accumulator>>,
+    <Share as TryInto<Vec<P::Accumulator>>>::Error: Debug,
 {
     let (tx, rx) = watch::channel(None);
     let state = MyLeader::from_protocol(protocol, experiment.group_size(), rx);
