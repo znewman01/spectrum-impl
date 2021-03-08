@@ -98,7 +98,7 @@ where
             hasher.update(&chunk);
         }
         let data: [u8; 32] = hasher.finalize().into();
-        data.to_vec().into()
+        data.to_vec()
     }
 }
 
