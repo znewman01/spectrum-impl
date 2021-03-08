@@ -37,18 +37,30 @@ pub struct CurvePoint {
     inner: SubgroupPoint,
 }
 
-// // TODO: want From<Bytes> to be: encoding a message. And TryFrom<Vec<u8>> to be: serializing a CurvePoint.
-// impl From<CurvePoint> for Bytes {
-//     fn from(value: CurvePoint) -> Bytes {
-//         Bytes::from(Vec::from((&value.inner).to_bytes()))
-//     }
-// }
-//
-// impl From<Bytes> for CurvePoint {
-//     fn from(value: CurvePoint) -> Bytes {
-//         Bytes::from(Vec::from((&value.inner).to_bytes()))
-//     }
-// }
+// From/to bytes encodes a message as a group point. To/from Vec<u8> encodes a group point as a message.
+// This is a terrible hack and insecure (however not relevant to our performance); use Curve25119 instead.
+impl TryFrom<Bytes> for CurvePoint {
+    type Error = &'static str;
+
+    fn try_from(value: Bytes) -> Result<Self, Self::Error> {
+        let mut bytes: Vec<u8> = value.into();
+        if bytes.len() < 32 {
+            bytes.extend(vec![0u8; 32 - bytes.len()]);
+        }
+        let bytes: [u8; 32] = bytes.try_into().map_err(|_| "bytes wrong len")?;
+        let inner: Option<SubgroupPoint> = SubgroupPoint::from_bytes_unchecked(&bytes).into();
+        let inner = inner.ok_or("from bytes failed")?;
+        Ok(CurvePoint { inner })
+    }
+}
+
+impl From<CurvePoint> for Bytes {
+    fn from(value: CurvePoint) -> Bytes {
+        let array: [u8; 32] = value.inner.to_bytes();
+        let vec: Vec<u8> = array.into();
+        vec.into()
+    }
+}
 
 impl From<CurvePoint> for Vec<u8> {
     fn from(value: CurvePoint) -> Self {
@@ -449,5 +461,21 @@ mod tests {
         Into::<Vec<u8>>::into,
         |d| ElementVector::<CurvePoint>::try_from(d).unwrap(),
         element_vector_vec_u8_rt
+    );
+    // This is bad, but everything compiles.
+    check_roundtrip!(
+        Bytes,
+        // multiples of 32 all-zero bytes
+        prop::collection::vec(prop::collection::vec(Just(0u8), 32), 0..100)
+            .prop_map(|v| { v.into_iter().flatten().collect::<Vec<_>>() })
+            .prop_map(Bytes::from),
+        |b| TryInto::<ElementVector<CurvePoint>>::try_into(b).unwrap(),
+        |p| {
+            println!("{:?}", p);
+            let bb = Bytes::from(p);
+            println!("len: {:?}", bb.len());
+            bb
+        },
+        bytes_element_vector_rt
     );
 }

@@ -4,10 +4,11 @@ use crate::proto::{
     AggregateGroupRequest, AggregateGroupResponse,
 };
 use crate::{
+    accumulator::Accumulator,
     config::store::Store,
     experiment,
     net::Config as NetConfig,
-    protocols::{accumulator::Accumulator, wrapper::ProtocolWrapper, Protocol},
+    protocols::{wrapper::ProtocolWrapper, Protocol},
     services::{
         discovery::{register, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -20,7 +21,7 @@ use chrono::prelude::*;
 use futures::prelude::*;
 use log::{debug, error, info, trace};
 use spectrum_primitives::Bytes;
-use std::sync::Arc;
+use std::{convert::TryInto, sync::Arc};
 use tokio::spawn;
 use tonic::{Request, Response, Status};
 
@@ -69,7 +70,8 @@ impl<R, P> Publisher for MyPublisher<R, P>
 where
     R: Remote + 'static,
     P: Protocol + 'static,
-    P::Accumulator: Clone + Sync + Send + From<Vec<u8>> + Into<Bytes>,
+    P::Accumulator: Clone + Sync + Send + Into<Bytes>,
+    Vec<u8>: TryInto<P::Accumulator>,
 {
     async fn aggregate_group(
         &self,
@@ -130,7 +132,8 @@ where
     R: Remote + 'static,
     F: Future<Output = ()> + Send + 'static,
     P: Protocol + 'static,
-    P::Accumulator: Clone + Sync + Send + From<Vec<u8>>,
+    P::Accumulator: Clone + Sync + Send + Into<Bytes>,
+    Vec<u8>: TryInto<P::Accumulator>,
 {
     let state = MyPublisher::from_protocol(protocol, remote.clone());
     info!("Publisher starting up.");

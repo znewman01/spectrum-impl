@@ -3,7 +3,7 @@ pub mod health;
 pub mod quorum;
 mod retry;
 
-use spectrum_primitives::bytes::Bytes;
+use spectrum_primitives::Bytes;
 
 use crate::proto::{ClientId, WorkerId};
 use crate::protocols::wrapper::ChannelKeyWrapper;

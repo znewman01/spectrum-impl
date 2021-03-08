@@ -91,13 +91,16 @@ macro_rules! check_sampleable {
 #[macro_export]
 macro_rules! check_roundtrip {
     ($type:ty,$to:expr,$from:expr,$name:ident) => {
+        check_roundtrip!($type, any::<$type>(), $to, $from, $name);
+    };
+    ($type:ty,$strat:expr,$to:expr,$from:expr,$name:ident) => {
         mod $name {
             #![allow(unused_imports)]
             use super::*;
             use proptest::prelude::*;
             proptest! {
                 #[test]
-                fn test_roundtrip(x: $type) {
+                fn test_roundtrip(x in $strat) {
                     prop_assert_eq!(($from)(($to)(x.clone())): $type, x: $type);
                 }
             }

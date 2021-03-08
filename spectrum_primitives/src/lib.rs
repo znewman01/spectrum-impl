@@ -31,6 +31,7 @@ pub use constructions::AuthKey;
 pub use dpf::multi_key::Key as MultiKeyKey;
 pub use dpf::two_key::Key as TwoKeyKey;
 pub use prg::ElementVector;
+pub use util::Sampleable;
 pub use vdpf::multi_key::ProofShare as MultiKeyProof;
 pub use vdpf::multi_key::Token as MultiKeyToken;
 pub use vdpf::two_key::ProofShare as TwoKeyProof;

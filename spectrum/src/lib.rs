@@ -20,7 +20,9 @@ use tokio::{
 use tonic::transport::{Certificate, Identity};
 
 pub use spectrum_protocol as protocols;
+pub use spectrum_protocol::proto as protocol_protos;
 
+mod accumulator;
 pub mod client;
 pub mod leader;
 pub mod publisher;
@@ -32,11 +34,11 @@ pub mod experiment;
 pub mod net;
 pub mod services;
 
-mod proto {
+pub mod proto {
     use tonic::Status;
 
-    pub use spectrum_protocol::proto::*;
     tonic::include_proto!("spectrum");
+    pub use spectrum_protocol::proto::*;
 
     pub fn expect_field<T>(opt: Option<T>, name: &str) -> Result<T, Status> {
         opt.ok_or_else(|| Status::invalid_argument(format!("{} must be set.", name)))

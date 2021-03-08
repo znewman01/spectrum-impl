@@ -4,8 +4,8 @@ mod accumulator;
 #[macro_use]
 mod definition;
 
-mod insecure;
-mod secure;
+pub mod insecure;
+pub mod secure;
 pub mod wrapper;
 
 pub use accumulator::Accumulatable;

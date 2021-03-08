@@ -48,9 +48,10 @@ where
         Some((msg, key)) => {
             info!("Broadcaster about to send write token.");
             debug!("Write token: msg.len()={}, key={:?}", msg.len(), key);
-            protocol.broadcast(msg, key.try_into().unwrap())
+            // TODO: write to a non-zero index
+            protocol.broadcast(msg, 0, key.try_into().unwrap())
         }
-        None => protocol.null_broadcast(),
+        None => protocol.cover(),
     };
 
     delay_until(start_time).await;
@@ -97,7 +98,7 @@ where
         if !hammer {
             break;
         }
-        write_tokens = protocol.null_broadcast();
+        write_tokens = protocol.cover();
     }
 
     shutdown.await;

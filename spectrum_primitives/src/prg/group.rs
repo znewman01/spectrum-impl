@@ -1,7 +1,10 @@
 //! Spectrum implementation.
 use super::*;
-use crate::algebra::{Group, Monoid, SpecialExponentMonoid};
 use crate::util::Sampleable;
+use crate::{
+    algebra::{Group, Monoid, SpecialExponentMonoid},
+    Bytes,
+};
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -189,26 +192,68 @@ where
     }
 }
 
-// // TODO: should be try_from()
-// impl<G> From<ElementVector<G>> for Bytes
-// where
-//     G: Group + Into<Bytes>,
-// {
-//     fn from(value: ElementVector<G>) -> Bytes {
-//         let chunk_size = G::order_size_in_bytes() - 1;
-//         // outputs all the elements in the vector concatenated as a sequence of bytes
-//         // assumes that every element is < 2^(8*31)
-//         let mut all_bytes = Vec::with_capacity(chunk_size * value.0.len());
-//         for element in value.0.into_iter() {
-//             let bytes: Bytes = element.into();
-//             let bytes: Vec<u8> = bytes.into();
-//             assert_eq!(bytes.clone()[31], 0);
-//             let bytes = Bytes::from(bytes[0..31].to_vec());
-//             all_bytes.append(&mut bytes.into());
-//         }
-//         Bytes::from(all_bytes)
-//     }
-// }
+impl<G> TryFrom<Bytes> for ElementVector<G>
+where
+    G: Group + TryFrom<Bytes>,
+{
+    type Error = &'static str;
+
+    fn try_from(value: Bytes) -> Result<Self, Self::Error> {
+        value
+            .into_iter()
+            .chunks(32)
+            .into_iter()
+            .map(|chunk| G::try_from(Into::<Bytes>::into(chunk.collect::<Vec<_>>())))
+            .collect::<Result<Vec<G>, _>>()
+            .map(ElementVector::new)
+            .map_err(|_| "conversion from bytes failed")
+    }
+}
+
+impl<G> TryFrom<Vec<u8>> for ElementVector<G>
+where
+    G: Group + TryFrom<Vec<u8>>,
+{
+    type Error = &'static str;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        let chunk_size = 32;
+        value
+            .into_iter()
+            .chunks(chunk_size)
+            .into_iter()
+            .map(|chunk| {
+                let mut chunk = chunk.collect::<Vec<_>>();
+                if chunk.len() < chunk_size {
+                    chunk.extend(vec![0; chunk_size - chunk.len()]);
+                }
+                G::try_from(chunk)
+            })
+            .collect::<Result<Vec<G>, _>>()
+            .map_err(|_| "conversion failed")
+            .map(ElementVector::new)
+    }
+}
+
+impl<G> From<ElementVector<G>> for Bytes
+where
+    G: Group + Into<Bytes>,
+{
+    fn from(value: ElementVector<G>) -> Bytes {
+        let chunk_size = 32;
+        // outputs all the elements in the vector concatenated as a sequence of bytes
+        // assumes that every element is < 2^(8*31)
+        let mut all_bytes = Vec::with_capacity(chunk_size * value.0.len());
+        for element in value.0.into_iter() {
+            let bytes: Bytes = element.into();
+            let bytes: Vec<u8> = bytes.into();
+            assert_eq!(bytes.clone()[31], 0);
+            let bytes = Bytes::from(bytes[0..32].to_vec());
+            all_bytes.append(&mut bytes.into());
+        }
+        Bytes::from(all_bytes)
+    }
+}
 
 impl<G> BitXor<ElementVector<G>> for ElementVector<G>
 where
@@ -243,27 +288,6 @@ where
             all_bytes.append(&mut bytes);
         }
         all_bytes
-    }
-}
-
-impl<G> TryFrom<Vec<u8>> for ElementVector<G>
-where
-    G: Group + TryFrom<Vec<u8>>,
-    G::Error: Debug,
-    &'static str: From<G::Error>,
-{
-    type Error = &'static str;
-
-    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        let chunk_size = G::order_size_in_bytes();
-        // outputs all the elements in the vector concatenated as a sequence of bytes
-        let elements = bytes
-            .into_iter()
-            .chunks(chunk_size)
-            .into_iter()
-            .map(|chunk| G::try_from(chunk.collect::<Vec<u8>>()))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(ElementVector(elements))
     }
 }
 

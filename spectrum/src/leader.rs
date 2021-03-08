@@ -5,10 +5,11 @@ use crate::proto::{
     AggregateGroupRequest, AggregateWorkerRequest, AggregateWorkerResponse, Share,
 };
 use crate::{
+    accumulator::Accumulator,
     config::store::Store,
     experiment::Experiment,
     net::Config as NetConfig,
-    protocols::{accumulator::Accumulator, wrapper::ProtocolWrapper, Protocol},
+    protocols::{wrapper::ProtocolWrapper, Protocol},
     services::{
         discovery::{register, resolve_all, Node},
         health::{wait_for_health, AllGoodHealthServer, HealthServer},
@@ -16,7 +17,7 @@ use crate::{
         LeaderInfo, Service,
     },
 };
-use spectrum_primitives::bytes::Bytes;
+use spectrum_primitives::Bytes;
 
 use futures::Future;
 use log::{debug, error, info, trace};

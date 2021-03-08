@@ -1,8 +1,5 @@
 use crate::config::store::{Error, Store};
-use crate::protocols::{
-    insecure, secure,
-    wrapper::{ChannelKeyWrapper, ProtocolWrapper},
-};
+use crate::protocols::wrapper::{ChannelKeyWrapper, ProtocolWrapper};
 use crate::services::{ClientInfo, Group, LeaderInfo, PublisherInfo, Service, WorkerInfo};
 
 use serde::{Deserialize, Serialize};
@@ -99,27 +96,17 @@ impl Experiment {
     }
 
     pub fn get_keys(&self) -> Vec<ChannelKeyWrapper> {
+        use spectrum_primitives::{AuthKey, Sampleable};
         let channels = 0..self.channels();
         match &self.protocol {
             ProtocolWrapper::Secure(protocol) => channels
-                .map(|idx: usize| {
-                    // TODO: sample randomly (keep an Option<Key> in Self).
-                    let secret = protocol.vdpf.field.new_element(idx.into());
-                    secure::ChannelKey::<secure::BasicVdpf>::new(idx, secret).into()
-                })
+                .map(|idx: usize| AuthKey::sample().into())
                 .collect(),
             ProtocolWrapper::SecureMultiKey(protocol) => channels
-                .map(|idx: usize| {
-                    // TODO: sample randomly (keep an Option<Key> in Self).
-                    let secret = protocol.vdpf.field.new_element(idx.into());
-                    secure::ChannelKey::<secure::BasicVdpf>::new(idx, secret).into()
-                })
+                .map(|idx: usize| AuthKey::sample().into())
                 .collect(),
             ProtocolWrapper::Insecure(_) => channels
-                .map(|idx| {
-                    let password = format!("password{}", idx);
-                    insecure::ChannelKey::new(idx, password).into()
-                })
+                .map(|idx| format!("password{}", idx).into())
                 .collect(),
         }
     }

@@ -135,9 +135,8 @@ use {
 impl<M, S> TryFrom<proto::secure_write_token::DpfKey> for TwoKeyKey<M, S>
 where
     Vec<u8>: Into<M> + TryInto<S>,
-    (): From<<Vec<u8> as TryInto<S>>::Error>,
 {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(proto: proto::secure_write_token::DpfKey) -> Result<Self, Self::Error> {
         let msg = proto.encoded_msg.into();
@@ -154,13 +153,14 @@ where
                     _ => Err(()),
                 }
             })
-            .collect::<Result<Vec<bool>, _>>()?;
+            .collect::<Result<Vec<bool>, _>>()
+            .map_err(|_| "couldn't convert bits")?;
         let seeds = proto
             .seeds
             .into_iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<S>, _>>()
-            .map_err(|_| ())?;
+            .map_err(|_| "couldn't convert seeds")?;
         Ok(Self::new(msg, bits, seeds))
     }
 }
@@ -229,13 +229,12 @@ where
 impl<S> TryFrom<proto::secure_write_token::ProofShare> for TwoKeyProof<S>
 where
     Vec<u8>: TryInto<S>,
-    (): From<<Vec<u8> as TryInto<S>>::Error>,
 {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(proto: proto::secure_write_token::ProofShare) -> Result<Self, Self::Error> {
-        let seed = proto.seed.try_into()?;
-        let bit = proto.bit.try_into()?;
+        let seed = proto.seed.try_into().map_err(|_| "can't convert seed")?;
+        let bit = proto.bit.try_into().map_err(|_| "can't convert bit")?;
         Ok(Self::new(seed, bit))
     }
 }
@@ -257,13 +256,12 @@ where
 impl<S> TryFrom<proto::secure_write_token::ProofShare> for MultiKeyProof<S>
 where
     Vec<u8>: TryInto<S>,
-    (): From<<Vec<u8> as TryInto<S>>::Error>,
 {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(proto: proto::secure_write_token::ProofShare) -> Result<Self, Self::Error> {
-        let seed = proto.seed.try_into()?;
-        let bit = proto.bit.try_into()?;
+        let seed = proto.seed.try_into().map_err(|_| "can't convert seed")?;
+        let bit = proto.bit.try_into().map_err(|_| "can't convert bit")?;
         Ok(Self::new(bit, seed))
     }
 }
@@ -284,21 +282,29 @@ where
 #[cfg(feature = "proto")]
 impl<K, P> TryFrom<proto::WriteToken> for WriteToken<K, P>
 where
-    proto::secure_write_token::DpfKey: TryInto<K, Error = ()>,
-    proto::secure_write_token::ProofShare: TryInto<P, Error = ()>,
+    proto::secure_write_token::DpfKey: TryInto<K>,
+    proto::secure_write_token::ProofShare: TryInto<P>,
 {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(value: proto::WriteToken) -> Result<Self, Self::Error> {
         // WriteToken has an optional enum for the token type; this should always be populated.
-        let token_enum = value.inner.ok_or(())?;
+        let token_enum = value.inner.ok_or("no inner")?;
         // We expect the enum value to be a SecureWriteToken.
         if let proto::write_token::Inner::Secure(token) = token_enum {
-            let key = token.key.ok_or(())?.try_into()?;
-            let proof = token.proof.ok_or(())?.try_into()?;
+            let key = token
+                .key
+                .ok_or("no key")?
+                .try_into()
+                .map_err(|_| "can't convert key")?;
+            let proof = token
+                .proof
+                .ok_or("no proof")?
+                .try_into()
+                .map_err(|_| "can't convert proof")?;
             Ok(WriteToken::new(key, proof))
         } else {
-            Err(())
+            Err("bad")
         }
     }
 }
@@ -325,13 +331,12 @@ where
 impl<S> TryFrom<proto::SecureAuditShare> for TwoKeyToken<S>
 where
     Vec<u8>: TryInto<S>,
-    (): From<<Vec<u8> as TryInto<S>>::Error>,
 {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(proto: proto::SecureAuditShare) -> Result<Self, Self::Error> {
-        let bit = proto.bit.try_into()?;
-        let seed = proto.seed.try_into()?;
+        let bit = proto.bit.try_into().map_err(|_| "can't convert bit")?;
+        let seed = proto.seed.try_into().map_err(|_| "can't convert seed")?;
         let data = proto.data.into();
         Ok(Self::new(seed, bit, data))
     }
@@ -355,13 +360,12 @@ where
 impl<S> TryFrom<proto::SecureAuditShare> for MultiKeyToken<S>
 where
     Vec<u8>: TryInto<S>,
-    (): From<<Vec<u8> as TryInto<S>>::Error>,
 {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(proto: proto::SecureAuditShare) -> Result<Self, Self::Error> {
-        let bit = proto.bit.try_into()?;
-        let seed = proto.seed.try_into()?;
+        let bit = proto.bit.try_into().map_err(|_| "can't convert bit")?;
+        let seed = proto.seed.try_into().map_err(|_| "can't convert seed")?;
         let data = proto.data.into();
         Ok(Self::new(seed, bit, data))
     }
@@ -384,19 +388,19 @@ where
 #[cfg(feature = "proto")]
 impl<T> TryFrom<proto::AuditShare> for AuditShare<T>
 where
-    proto::SecureAuditShare: TryInto<T, Error = ()>,
+    proto::SecureAuditShare: TryInto<T>,
 {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(value: proto::AuditShare) -> Result<Self, Self::Error> {
         // AuditShare has an optional enum for the token type; this should always be populated.
-        let token_enum = value.inner.ok_or(())?;
+        let token_enum = value.inner.ok_or("no enum")?;
         // We expect the enum value to be a SecureAuditShare.
         if let proto::audit_share::Inner::Secure(token_proto) = token_enum {
-            let token = token_proto.try_into()?;
+            let token = token_proto.try_into().map_err(|_| "can't convert token")?;
             Ok(AuditShare::new(token))
         } else {
-            Err(())
+            Err("wrong type")
         }
     }
 }
@@ -431,9 +435,8 @@ where
 impl<G> TryFrom<proto::Share> for Vec<ElementVector<G>>
 where
     ElementVector<G>: TryFrom<Vec<u8>>,
-    (): From<<ElementVector<G> as TryFrom<Vec<u8>>>::Error>,
 {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(proto: proto::Share) -> Result<Self, Self::Error> {
         proto
@@ -441,6 +444,6 @@ where
             .into_iter()
             .map(ElementVector::<G>::try_from)
             .collect::<Result<Vec<_>, _>>()
-            .map_err(Into::into)
+            .map_err(|_| "conversion failed")
     }
 }
