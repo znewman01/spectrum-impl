@@ -98,13 +98,13 @@ mod transpose_tests {
 
             let outer = vec.len();
             assert_ne!(outer, 0);
-            let inner = vec.iter().map(Vec::len).nth(0).unwrap();
+            let inner = vec.iter().map(Vec::len).next().unwrap();
             assert_ne!(inner, 0);
 
             let transposed = transpose(vec);
 
             prop_assert_eq!(transposed.len(), inner);
-            prop_assert_eq!(transposed.iter().map(Vec::len).nth(0).unwrap_or(0), outer);
+            prop_assert_eq!(transposed.iter().map(Vec::len).next().unwrap_or(0), outer);
         }
     }
 }

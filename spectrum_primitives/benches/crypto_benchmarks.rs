@@ -1,38 +1,20 @@
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
-use rug::Integer;
-use spectrum_primitives::{
-    bytes::Bytes,
-    dpf::{BasicDpf, Dpf},
-    field::Field,
-    prg::{aes::AesPrg, Prg},
-    vdpf::{FieldVdpf, Vdpf},
-};
+use spectrum_primitives::{Bytes, Dpf, MultiKeyVdpf, TwoKeyVdpf, Vdpf};
 
 fn criterion_benchmark(c: &mut Criterion) {
     static KB: usize = 1000;
     static MB: usize = 1000000;
     static SIZES: [usize; 6] = [KB, 10 * KB, 100 * KB, 250 * KB, 500 * KB, 1 * MB];
 
-    let mut group = c.benchmark_group("AesPrg");
-    for size in SIZES.iter() {
-        group.throughput(Throughput::Bytes(*size as u64));
-        group.bench_with_input(BenchmarkId::new("PRG", size), size, |b, &size| {
-            let prg = AesPrg::new(16, size);
-            let seed = prg.new_seed();
-            b.iter_with_large_drop(|| prg.eval(&seed))
-        });
-    }
-    group.finish();
-
     let mut group = c.benchmark_group("DPF (AES) Evaluation");
     for size in SIZES.iter() {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-            let dpf = BasicDpf::new(AesPrg::new(16, size), 1);
+            let dpf = TwoKeyVdpf::with_channels_msg_size(1, size);
             let keys = dpf.gen_empty();
             let key = &keys[0];
-            b.iter_with_large_drop(|| dpf.eval(key))
+            b.iter_batched(|| key.clone(), |key| dpf.eval(key), BatchSize::LargeInput)
         });
     }
     group.finish();
@@ -71,17 +53,17 @@ fn criterion_benchmark(c: &mut Criterion) {
     for size in SIZES.iter() {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-            let num_points = 1;
-            let prime: Integer = Integer::from(800_000_000).next_prime_ref().into();
-            let field = Field::new(prime.clone());
-            let dpf = BasicDpf::new(AesPrg::new(16, size), num_points);
-            let vdpf = FieldVdpf::new(dpf, field.clone());
+            let vdpf = MultiKeyVdpf::with_channels_parties_msg_size(1, 3, size);
+            let auth_keys = vdpf.new_access_keys();
             let dpf_keys = vdpf.gen_empty();
-            let auth_keys = vec![field.zero(); num_points];
-            let proof_shares = vdpf.gen_proofs(&field.zero(), 0, &dpf_keys);
+            let proof_shares = vdpf.gen_proofs_noop();
             let dpf_key = &dpf_keys[0];
             let proof_share = &proof_shares[0];
-            b.iter(|| vdpf.gen_audit(&auth_keys, dpf_key, proof_share))
+            b.iter_batched(
+                || proof_share.clone(),
+                |proof| vdpf.gen_audit(&auth_keys, dpf_key, proof),
+                BatchSize::LargeInput,
+            )
         });
     }
 
