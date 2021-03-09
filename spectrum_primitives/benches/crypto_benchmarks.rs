@@ -22,8 +22,9 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("DPF (SH) Evaluation");
     for size in SIZES.iter() {
-        group.throughput(Throughput::Bytes(*size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+        let size = size / 10;
+        group.throughput(Throughput::Bytes(size as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
             let dpf = MultiKeyVdpf::with_channels_parties_msg_size(1, 3, size);
             let keys = dpf.gen_empty();
             let key = &keys[0];
@@ -33,7 +34,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.finish();
 
     let mut group = c.benchmark_group("XOR");
-    for size in SIZES.iter() {
+    for size in SIZES.iter().take(3) {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::new("Bytes", size), size, |b, &size| {
             b.iter_batched(

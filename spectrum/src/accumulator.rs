@@ -53,9 +53,7 @@ mod tests {
             MyData(0)
         }
 
-        fn params(&self) -> Self::Parameters {
-            ()
-        }
+        fn params(&self) -> Self::Parameters {}
     }
 
     #[tokio::test]

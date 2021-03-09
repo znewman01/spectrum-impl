@@ -203,7 +203,7 @@ mod tests {
     // 2) Starting up an etcd process for each proptest case is a pain in the butt.
     //    Instead, we start one up per test, and run all the cases with it.
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_put_and_get() {
         let wrapper = Runner::create().await.unwrap();
         let store = wrapper.get_store().await.unwrap();
@@ -218,7 +218,7 @@ mod tests {
             .unwrap()
     }
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_get_empty() {
         let wrapper = Runner::create().await.unwrap();
         let store = wrapper.get_store().await.unwrap();
@@ -233,7 +233,7 @@ mod tests {
             .unwrap()
     }
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_put_and_get_keep_latter() {
         let wrapper = Runner::create().await.unwrap();
         let store = wrapper.get_store().await.unwrap();
@@ -248,7 +248,7 @@ mod tests {
             .unwrap()
     }
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_list() {
         let wrapper = Runner::create().await.unwrap();
         let store = wrapper.get_store().await.unwrap();
