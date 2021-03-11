@@ -30,6 +30,10 @@ def format_args(var_dict: Dict[str, Any]) -> List:
 
 @contextmanager
 def terraform(tf_vars: Dict[str, Any], tf_dir: Path):
+    import os
+
+    if "AWS_ACCESS_KEY_ID" not in os.environ:
+        raise RuntimeError("Missing AWS creds")
     with TemporaryDirectory() as tmpdir:
         with Halo("[infrastructure] checking current state") as spinner:
             plan = Path(tmpdir) / "tfplan"

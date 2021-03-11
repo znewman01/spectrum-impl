@@ -19,7 +19,7 @@ from experiments.util import Bytes
 
 
 RESULT_RE = r"Processed (?P<queries>\d*) queries in (?P<time>[\d.]*)s"
-WAIT_TIME = 15  # the servers usually stop accepting requests about 6-7 seconds in
+WAIT_TIME = 30  # the servers usually stop accepting requests about 6-7 seconds in
 HOME = Path("/home/ubuntu")
 RIPOSTE_BASE = HOME / "go/src/bitbucket.org/henrycg/riposte"
 PORT = 4000
@@ -94,8 +94,8 @@ class Environment(system.Environment):
 @dataclass(frozen=True)
 class Experiment(system.Experiment):
     instance_type: InstanceType = DEFAULT_INSTANCE_TYPE
-    server_threads: int = 18  # num cores
-    client_threads: int = 36  # 2 * (num cores)
+    server_threads: int = 8  # num cores
+    client_threads: int = 16  # 2 * (num cores)
     channels: int = 1
     message_size: Bytes = Bytes(160)
     # TODO: >2 servers?
@@ -142,18 +142,22 @@ class Experiment(system.Experiment):
         await asyncio.gather(*tasks)
 
     def _parse(self, server_output: List[str]) -> Result:
+        log_path = Path("riposte.log")
+        with open(log_path, "w") as log_file:
+            for line in server_output:
+                log_file.write(line + "\n")
+
         matches = list(filter(None, map(partial(re.search, RESULT_RE), server_output)))
         time = 0.0
         queries = 0
-        if len(matches) <= 2:
-            log_path = Path("riposte.log")
-            with open(log_path, "w") as log_file:
-                for line in server_output:
-                    log_file.write(line + "\n")
+        count = len(matches)
+        if count <= 2:
             raise ValueError(
-                f"Output from server contains no indications of performance "
+                f"Output from server contains only {count} indications of performance "
                 f"(output in {log_path})"
             )
+        # We modified Riposte to report marginal, rather than cumulative,
+        # queries/time. So we can sum accross.
         for match in matches[1:]:
             queries += int(match.group("queries"))
             time += float(match.group("time"))  # seconds
@@ -173,7 +177,9 @@ class Experiment(system.Experiment):
             f"ulimit -n 65536 && "
             f"{RIPOSTE_BASE}/server/server -idx {{idx}} "
             f"    -servers {hosts} "
-            f"    -threads {self.server_threads}"
+            f"    -threads {self.server_threads} "
+            f"2>&1 "
+            f"| tee /tmp/riposte.log"
         )
         auditor_proc = auditor.ssh.create_process(server_cmd.format(idx=2))
         server_proc = server.ssh.create_process(server_cmd.format(idx=1))
@@ -190,7 +196,9 @@ class Experiment(system.Experiment):
                         f"{RIPOSTE_BASE}/client/client "
                         f"    -leader {leader.hostname}:{PORT} "
                         f"    -hammer "
-                        f"    -threads {self.client_threads}"
+                        f"    -threads {self.client_threads} "
+                        f"2>&1 "
+                        f"| tee /tmp/riposte-client.log"
                     )
                     client_procs = await asyncio.gather(
                         *[c.ssh.create_process(client_cmd) for c in setting.clients]
@@ -209,18 +217,20 @@ class Experiment(system.Experiment):
                     auditor_proc.kill()
 
         spinner.text = "[experiment] parsing output"
-        lines = (await leader_proc.stderr.read()).split("\n")
+        lines = (await leader_proc.stdout.read()).split("\n")
         return self._parse(lines)
 
     async def run(self, setting: Setting, spinner: Halo) -> Result:
         # See Riposte sec. 3.2 for how to calculate number of writers that we
-        # can handle. This gives a 95% success rate
-        rows = math.ceil(self.channels * 2.7)
+        # can handle. This gives a 95% success rate.
+        # The Riposte implementation uses XOR, not field addition so we need the
+        # 19.5 multiplier not 2.7.
+        rows = math.ceil(self.channels * 19.5)
 
         # See Riposte sec. 4.3 for how to calculate communication-optimal width/height
         # these variable names correspond to that section
         alpha = 128
-        beta = 8000
+        beta = self.message_size * 8  # bits per byte
         c = math.sqrt(beta / (1 + alpha))  # pylint: disable=invalid-name
         height_optimal = math.ceil(math.sqrt(rows) * c)
         width_optimal = math.ceil(math.sqrt(rows) / c)

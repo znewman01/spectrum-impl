@@ -3,6 +3,7 @@ set -eo pipefail
 
 main() {
   TMP_DIR=$(mktemp -d)
+  TRIALS=10
   echo "Temporary directory:" ${TMP_DIR}
   mkdir ${TMP_DIR}/{experiments,results}
 
@@ -11,7 +12,7 @@ main() {
 
   # Make experiment spec files
   pushd data > /dev/null
-  python make_experiments.py ${TMP_DIR}/experiments
+  python make_experiments.py --trials ${TRIALS} ${TMP_DIR}/experiments
   popd > /dev/null
 
   for system in express riposte spectrum; do
@@ -41,7 +42,7 @@ main() {
         ${system} ${extra_args} ${exp_path} || true
     done
 
-    # Clean up AWS resources
+    # Extra data
     var="ran_${system}"
     if [ ! -z ${!var} ]; then
       if [ $system = "spectrum" ]; then
@@ -66,6 +67,7 @@ main() {
           "openssl speed -elapsed -evp aes-128-ctr 2>&1" \
           > ${TMP_DIR}/results/openssl-stderr.txt
       fi
+      # Clean up AWS resources
       echo "[]" | python -m experiments --cleanup ${system} -
     fi
   done
