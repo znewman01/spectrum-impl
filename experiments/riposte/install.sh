@@ -8,7 +8,7 @@ sudo cp "$HOME/config/sysctl.conf" /etc/sysctl.d/20-spectrum.conf
 go get bitbucket.org/henrycg/riposte
 RIPOSTE_BASE=go/src/bitbucket.org/henrycg/riposte
 cd "$RIPOSTE_BASE"
-git checkout multiparty
+git checkout linear
 # we'll need to rebuild each time since the parameters are hardcoded but we
 # still build here to pre-fetch dependencies
 go build ./...  

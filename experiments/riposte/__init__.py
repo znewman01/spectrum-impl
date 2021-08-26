@@ -18,8 +18,8 @@ from experiments.cloud import DEFAULT_INSTANCE_TYPE, InstanceType, AWS_REGION
 from experiments.util import Bytes
 
 
-RESULT_RE = r"Processed (?P<queries>\d*) queries in (?P<time>[\d.]*)s"
-WAIT_TIME = 30  # the servers usually stop accepting requests about 6-7 seconds in
+RESULT_RE = r"Served (?P<queries>\d*) requests at (?P<rate>[\d.]*) reqs/sec"
+WAIT_TIME = 60
 HOME = Path("/home/ubuntu")
 RIPOSTE_BASE = HOME / "go/src/bitbucket.org/henrycg/riposte"
 PORT = 4000
@@ -110,11 +110,6 @@ class Experiment(system.Experiment):
         return cls(**data)
 
     async def _compile_machine(self, machine: Machine, width: int, height: int):
-        # Riposte does some funky things with counting time/queries; substitute
-        # our own in
-        # TODO(zjn): use a patch instead of a full file to make the diff clearer?
-        await machine.ssh.run(f"cp {HOME}/config/server.go {RIPOSTE_BASE}/db/server.go")
-
         # Patch our template types.go file in the Riposte source tree
         env_vars = {
             "TABLE_WIDTH": str(width),
@@ -148,8 +143,8 @@ class Experiment(system.Experiment):
                 log_file.write(line + "\n")
 
         matches = list(filter(None, map(partial(re.search, RESULT_RE), server_output)))
-        time = 0.0
-        queries = 0
+        total_time = 0.0
+        total_queries = 0
         count = len(matches)
         if count <= 2:
             raise ValueError(
@@ -159,11 +154,16 @@ class Experiment(system.Experiment):
         # We modified Riposte to report marginal, rather than cumulative,
         # queries/time. So we can sum accross.
         for match in matches[1:]:
-            queries += int(match.group("queries"))
-            time += float(match.group("time"))  # seconds
+            queries = int(match.group("queries"))
+            rate = float(match.group("rate"))
+            time = queries / rate
+            total_queries += int(match.group("queries"))
+            total_time += time
 
         return Result(
-            experiment=self, time=Milliseconds(int(time * 1000)), queries=queries
+            experiment=self,
+            time=Milliseconds(int(total_time * 1000)),
+            queries=total_queries,
         )
 
     async def _run(self, setting: Setting, spinner: Halo) -> Result:
