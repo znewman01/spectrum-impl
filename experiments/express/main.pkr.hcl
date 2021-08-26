@@ -1,12 +1,12 @@
 
 variable "aws_access_key" {
   type    = string
-  default = "${env("AWS_ACCESS_KEY_ID")}"
+  default = env("AWS_ACCESS_KEY_ID")
 }
 
 variable "aws_secret_key" {
   type    = string
-  default = "${env("AWS_SECRET_ACCESS_KEY")}"
+  default = env("AWS_SECRET_ACCESS_KEY")
 }
 
 variable "instance_type" {
@@ -19,7 +19,7 @@ variable "region" {
 }
 
 data "amazon-ami" "ubuntu" {
-  access_key = "${var.aws_access_key}"
+  access_key = var.aws_access_key
   filters = {
     name                = "ubuntu/images/*ubuntu-focal-20.04-amd64-server-*"
     root-device-type    = "ebs"
@@ -27,19 +27,19 @@ data "amazon-ami" "ubuntu" {
   }
   most_recent = true
   owners      = ["099720109477"]
-  region      = "${var.region}"
-  secret_key  = "${var.aws_secret_key}"
+  region      = var.region
+  secret_key  = var.aws_secret_key
 }
 
 locals { timestamp = regex_replace(timestamp(), "[- TZ:]", "") }
 
 source "amazon-ebs" "express" {
-  access_key    = "${var.aws_access_key}"
+  access_key    = var.aws_access_key
   ami_name      = "express-${local.timestamp}"
-  instance_type = "${var.instance_type}"
-  region        = "${var.region}"
-  secret_key    = "${var.aws_secret_key}"
-  source_ami    = "${data.amazon-ami.ubuntu.id}"
+  instance_type = var.instance_type
+  region        = var.region
+  secret_key    = var.aws_secret_key
+  source_ami    = data.amazon-ami.ubuntu.id
   ssh_username  = "ubuntu"
   tags = {
     Name = "express_image"
@@ -60,7 +60,7 @@ build {
 
   post-processor "manifest" {
     custom_data = {
-      instance_type = "${var.instance_type}"
+      instance_type = var.instance_type
     }
     output = "manifest.json"
   }

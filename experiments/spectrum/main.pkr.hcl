@@ -12,9 +12,24 @@ variable "instance_type" {
   type = string
 }
 
+variable "profile" {
+  type    = string
+  default = "debug"
+}
+
 variable "region" {
   type    = string
   default = "us-east-2"
+}
+
+variable "sha" {
+  type    = string
+  default = ""
+}
+
+variable "src_archive" {
+  type    = string
+  default = ""
 }
 
 data "amazon-ami" "ubuntu" {
@@ -32,22 +47,22 @@ data "amazon-ami" "ubuntu" {
 
 locals { timestamp = regex_replace(timestamp(), "[- TZ:]", "") }
 
-source "amazon-ebs" "riposte" {
+source "amazon-ebs" "spectrum" {
   access_key    = var.aws_access_key
-  ami_name      = "riposte-${local.timestamp}"
+  ami_name      = "spectrum-${local.timestamp}"
   instance_type = var.instance_type
   region        = var.region
   secret_key    = var.aws_secret_key
   source_ami    = data.amazon-ami.ubuntu.id
   ssh_username  = "ubuntu"
   tags = {
-    Name = "riposte_image"
+    Name = "spectrum_image"
     Project = "spectrum"
   }
 }
 
 build {
-  sources = ["source.amazon-ebs.riposte"]
+  sources = ["source.amazon-ebs.spectrum"]
 
   provisioner "shell" {
     inline = ["while [ ! -f /var/lib/cloud/instance/boot-finished ]; do echo 'Waiting for cloud-init...'; sleep 1; done"]
@@ -62,9 +77,21 @@ build {
     script = "./install.sh"
   }
 
+  provisioner "file" {
+    destination = "/home/ubuntu/spectrum-src.tar.gz"
+    source      = var.src_archive
+  }
+
+  provisioner "shell" {
+    environment_vars = ["AWS_ACCESS_KEY_ID=${var.aws_access_key}", "AWS_SECRET_ACCESS_KEY=${var.aws_secret_key}", "SRC_SHA=${var.sha}", "INSTANCE_TYPE=${var.instance_type}", "PROFILE=${var.profile}"]
+    script           = "./compile.sh"
+  }
+
   post-processor "manifest" {
     custom_data = {
       instance_type = var.instance_type
+      profile       = var.profile
+      sha           = var.sha
     }
     output = "manifest.json"
   }

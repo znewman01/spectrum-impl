@@ -96,7 +96,7 @@ def ensure_ami_build(
             msg = f"[infrastructure] building AMI (output in [{log_file.name}])"
             with Halo(msg) as spinner:
                 check_call(
-                    ["packer", "build"] + packer_vars + ["packer.json"],
+                    ["packer", "build"] + packer_vars + ["main.pkr.hcl"],
                     stdout=log_file,
                     cwd=packer_dir,
                 )
