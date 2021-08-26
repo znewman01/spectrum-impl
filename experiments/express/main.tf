@@ -12,18 +12,23 @@ terraform {
   }
 }
 
-provider "aws" {
-  region = var.region
-  default_tags {
-    tags = {
-      Project = "spectrum"
-    }
-  }
+locals {
+  tags = { Project = "spectrum" }
 }
 
-variable "ami" {
-  type    = string
-  default = ""
+provider "aws" {
+  region = var.region
+  default_tags { tags = local.tags }
+}
+provider "aws" {
+  alias  = "west"
+  region = "us-west-1"
+  default_tags { tags = local.tags }
+}
+provider "aws" {
+  alias  = "east"
+  region = "us-east-1"
+  default_tags { tags = local.tags }
 }
 
 variable "region" {
@@ -35,26 +40,23 @@ variable "instance_type" {
   type = string
 }
 
-data "aws_ami" "express" {
-  count       = var.ami == "" ? 1 : 0
-  most_recent = true
-  owners      = ["self"]
-  filter {
-    name   = "tag:Project"
-    values = ["spectrum"]
-  }
-  filter {
-    name   = "tag:Name"
-    values = ["express_image"]
-  }
-  filter {
-    name   = "tag:InstanceType"
-    values = [var.instance_type]
-  }
+module "image_main" {
+  source        = "../modules/image"
+  image_name    = "express_image"
+  instance_type = var.instance_type
+  providers     = { aws = aws }
 }
-
-locals {
-  ami = var.ami != "" ? var.ami : data.aws_ami.express[0].id
+module "image_east" {
+  source        = "../modules/image"
+  image_name    = "express_image"
+  instance_type = var.instance_type
+  providers     = { aws = aws.east }
+}
+module "image_west" {
+  source        = "../modules/image"
+  image_name    = "express_image"
+  instance_type = var.instance_type
+  providers     = { aws = aws.west }
 }
 
 resource "tls_private_key" "key" {
@@ -62,75 +64,85 @@ resource "tls_private_key" "key" {
   rsa_bits  = 4096
 }
 
-resource "aws_key_pair" "key" {
+resource "aws_key_pair" "main" {
   public_key = tls_private_key.key.public_key_openssh
   tags = {
     Name = "express_keypair"
   }
 }
 
-resource "aws_security_group" "allow_ssh" {
-
-  ingress {
-    description = "SSH from internet"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "All traffic within group"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    self        = true
-  }
-
-  egress {
-    description = "All outgoing traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "express_security_group"
+module "network_main" {
+  source     = "../modules/net"
+  public_key = tls_private_key.key.public_key_openssh
+  providers = {
+    aws = aws
   }
 }
-
-resource "aws_instance" "serverA" {
-  ami             = local.ami
-  instance_type   = var.instance_type
-  key_name        = aws_key_pair.key.key_name
-  security_groups = [aws_security_group.allow_ssh.name]
-  tags = {
-    Name = "express_serverA"
+module "network_east" {
+  source     = "../modules/net"
+  public_key = tls_private_key.key.public_key_openssh
+  providers = {
+    aws = aws.east
   }
+}
+module "network_west" {
+  source     = "../modules/net"
+  public_key = tls_private_key.key.public_key_openssh
+  providers = {
+    aws = aws.west
+  }
+}
+resource "aws_instance" "serverA" {
+  ami             = module.image_east.ami.id
+  provider        = aws.east
+  instance_type   = var.instance_type
+  key_name        = module.network_east.key_pair.key_name
+  security_groups = [module.network_east.security_group.name]
+  tags            = { Name = "express_serverA" }
 }
 
 resource "aws_instance" "serverB" {
-  ami             = local.ami
+  ami             = module.image_west.ami.id
+  provider        = aws.west
   instance_type   = var.instance_type
-  key_name        = aws_key_pair.key.key_name
-  security_groups = [aws_security_group.allow_ssh.name]
-  tags = {
-    Name = "express_serverB"
-  }
+  key_name        = module.network_west.key_pair.key_name
+  security_groups = [module.network_west.security_group.name]
+  tags            = { Name = "express_serverB" }
 }
 
 # TODO(zjn): add more client servers?
 # Express evaluation only uses one but we (and Riposte) use >1
 resource "aws_instance" "client" {
-  ami             = local.ami
+  ami             = module.image_main.ami.id
   instance_type   = var.instance_type
-  key_name        = aws_key_pair.key.key_name
-  security_groups = [aws_security_group.allow_ssh.name]
-  tags = {
-    Name = "express_client"
-  }
+  key_name        = module.network_main.key_pair.key_name
+  security_groups = [module.network_main.security_group.name]
+  tags            = { Name = "express_client" }
 }
+
+locals {
+  instances = [aws_instance.client, aws_instance.serverA, aws_instance.serverB]
+}
+
+module "secgroup_main" {
+  source         = "./modules/secgroup"
+  instances      = local.instances
+  security_group = module.network_main.security_group
+  providers      = { aws = aws }
+}
+module "secgroup_east" {
+  source         = "./modules/secgroup"
+  instances      = local.instances
+  security_group = module.network_east.security_group
+  providers      = { aws = aws.east }
+}
+module "secgroup_west" {
+  source         = "./modules/secgroup"
+  instances      = local.instances
+  security_group = module.network_west.security_group
+  providers      = { aws = aws.west }
+}
+
 
 output "serverA" {
   value = aws_instance.serverA.public_dns

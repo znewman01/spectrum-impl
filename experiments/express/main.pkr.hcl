@@ -38,6 +38,7 @@ source "amazon-ebs" "express" {
   ami_name      = "express-${local.timestamp}"
   instance_type = var.instance_type
   region        = var.region
+  ami_regions = ["us-east-1", "us-west-1"]
   secret_key    = var.aws_secret_key
   source_ami    = data.amazon-ami.ubuntu.id
   ssh_username  = "ubuntu"
