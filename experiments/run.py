@@ -5,9 +5,9 @@ import asyncio
 import contextlib
 import traceback
 
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager, nullcontext, contextmanager
 from dataclasses import dataclass
-from typing import Optional, Set, List, Any, AsyncIterator
+from typing import Optional, Set, List, Any, AsyncIterator, Dict, Iterator
 
 
 import asyncssh
@@ -63,6 +63,31 @@ async def _connect_ssh(hostname: Hostname, *args, **kwargs) -> AsyncIterator[Mac
         raise reraise_err from None
 
 
+@contextmanager
+def packer_and_tf(
+    environment: Environment,
+    system: System,
+    force_rebuilt: Optional[Set[Any]],
+    build_args: BuildArgs,
+) -> Iterator[Dict[Any, Any]]:
+    packer_config = system.packer_config.from_args(build_args, environment)
+
+    if force_rebuilt is not None:
+        build = packer.ensure_ami_build(packer_config, force_rebuilt, system.root_dir)
+    else:
+        build = None
+    tf_vars = environment.make_tf_vars(build, build_args)
+    try:
+        with cloud.terraform(tf_vars, system.root_dir) as data:
+            yield data
+    except cloud.NoImageError:
+        Halo("[infrastructure] no image found; forcing build").info()
+        build = packer.ensure_ami_build(packer_config, set(), system.root_dir)
+        tf_vars = environment.make_tf_vars(build, build_args)
+        with cloud.terraform(tf_vars, system.root_dir) as data:
+            yield data
+
+
 @asynccontextmanager
 async def deployed(
     environment: Environment,
@@ -85,10 +110,7 @@ async def deployed(
     """
     Halo(f"[infrastructure] {environment}").stop_and_persist(symbol="•")
 
-    packer_config = system.packer_config.from_args(build_args, environment)
-    build = packer.ensure_ami_build(packer_config, force_rebuilt, system.root_dir)
-
-    with cloud.terraform(environment.make_tf_vars(build), system.root_dir) as data:
+    with packer_and_tf(environment, system, force_rebuilt, build_args) as data:
         ssh_key = asyncssh.import_private_key(data["private_key"])
 
         # The "stack" bit is so that we can have an async context manager that,

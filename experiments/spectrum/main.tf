@@ -21,8 +21,12 @@ provider "aws" {
   }
 }
 
-
 variable "ami" {
+  type    = string
+  default = ""
+}
+
+variable "sha" {
   type = string
 }
 
@@ -52,6 +56,32 @@ resource "aws_key_pair" "key" {
   tags = {
     Name = "spectrum_keypair"
   }
+}
+
+data "aws_ami" "spectrum" {
+  count       = var.ami == "" ? 1 : 0
+  most_recent = true
+  owners      = ["self"]
+  filter {
+    name   = "tag:Project"
+    values = ["spectrum"]
+  }
+  filter {
+    name   = "tag:Name"
+    values = ["spectrum_image"]
+  }
+  filter {
+    name   = "tag:InstanceType"
+    values = [var.instance_type]
+  }
+  filter {
+    name   = "tag:Sha"
+    values = [var.sha]
+  }
+}
+
+locals {
+  ami = var.ami != "" ? var.ami : data.aws_ami.spectrum[0].id
 }
 
 resource "aws_security_group" "allow_ssh" {
@@ -85,8 +115,9 @@ resource "aws_security_group" "allow_ssh" {
   }
 }
 
+
 resource "aws_instance" "publisher" {
-  ami             = var.ami
+  ami             = local.ami
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
@@ -96,7 +127,7 @@ resource "aws_instance" "publisher" {
 }
 
 resource "aws_instance" "worker" {
-  ami             = var.ami
+  ami             = local.ami
   count           = var.worker_machine_count
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
@@ -107,7 +138,7 @@ resource "aws_instance" "worker" {
 }
 
 resource "aws_instance" "client" {
-  ami             = var.ami
+  ami             = local.ami
   count           = var.client_machine_count
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name

@@ -40,9 +40,13 @@ source "amazon-ebs" "riposte" {
   secret_key    = var.aws_secret_key
   source_ami    = data.amazon-ami.ubuntu.id
   ssh_username  = "ubuntu"
+  run_tags = {
+    Project = "spectrum"
+  }
   tags = {
     Name = "riposte_image"
     Project = "spectrum"
+    InstanceType = var.instance_type
   }
 }
 

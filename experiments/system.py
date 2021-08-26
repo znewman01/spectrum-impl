@@ -113,7 +113,7 @@ class Environment(_SupportsLessThan, ABC):
     """
 
     @abstractmethod
-    def make_tf_vars(self, build) -> Dict[str, Any]:
+    def make_tf_vars(self, build: Any, build_args: BuildArgs) -> Dict[str, Any]:
         ...
 
     @staticmethod

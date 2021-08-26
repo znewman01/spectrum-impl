@@ -22,7 +22,8 @@ provider "aws" {
 }
 
 variable "ami" {
-  type = string
+  type    = string
+  default = ""
 }
 
 variable "region" {
@@ -34,6 +35,28 @@ variable "instance_type" {
   type = string
 }
 
+data "aws_ami" "express" {
+  count       = var.ami == "" ? 1 : 0
+  most_recent = true
+  owners      = ["self"]
+  filter {
+    name   = "tag:Project"
+    values = ["spectrum"]
+  }
+  filter {
+    name   = "tag:Name"
+    values = ["express_image"]
+  }
+  filter {
+    name   = "tag:InstanceType"
+    values = [var.instance_type]
+  }
+}
+
+locals {
+  ami = var.ami != "" ? var.ami : data.aws_ami.express[0].id
+}
+
 resource "tls_private_key" "key" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -42,7 +65,7 @@ resource "tls_private_key" "key" {
 resource "aws_key_pair" "key" {
   public_key = tls_private_key.key.public_key_openssh
   tags = {
-    Name = "spectrum_express_keypair"
+    Name = "express_keypair"
   }
 }
 
@@ -73,39 +96,39 @@ resource "aws_security_group" "allow_ssh" {
   }
 
   tags = {
-    Name = "spectrum_express_security_group"
+    Name = "express_security_group"
   }
 }
 
 resource "aws_instance" "serverA" {
-  ami             = var.ami
+  ami             = local.ami
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Name = "spectrum_express_serverA"
+    Name = "express_serverA"
   }
 }
 
 resource "aws_instance" "serverB" {
-  ami             = var.ami
+  ami             = local.ami
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Name = "spectrum_express_serverB"
+    Name = "express_serverB"
   }
 }
 
 # TODO(zjn): add more client servers?
 # Express evaluation only uses one but we (and Riposte) use >1
 resource "aws_instance" "client" {
-  ami             = var.ami
+  ami             = local.ami
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Name = "spectrum_express_client"
+    Name = "express_client"
   }
 }
 

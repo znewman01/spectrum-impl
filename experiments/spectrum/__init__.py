@@ -118,14 +118,19 @@ class Environment(system.Environment):
     def total_machines(self) -> int:
         return self.client_machines + self.worker_machines + 1
 
-    def make_tf_vars(self, build: packer.Build) -> Dict[str, Any]:
-        return {
-            "ami": build.ami,
-            "region": build.region,
+    def make_tf_vars(
+        self, build: Optional[packer.Build], build_args: BuildArgs
+    ) -> Dict[str, Any]:
+        tf_vars = {
             "instance_type": self.instance_type,
             "client_machine_count": self.client_machines,
             "worker_machine_count": self.worker_machines,
+            "region": AWS_REGION,
+            "sha": build_args.sha,
         }
+        if build:
+            tf_vars["ami"] = build.ami
+        return tf_vars
 
     @staticmethod
     def make_tf_cleanup_vars():
@@ -135,6 +140,7 @@ class Environment(system.Environment):
             "instance_type": "null",
             "client_machine_count": 0,
             "worker_machine_count": 0,
+            "sha": "null",
         }
 
 
@@ -231,7 +237,8 @@ async def _prepare_worker(
 
     # don't let this same output confuse us if we run on this machine again
     await machine.ssh.run(
-        "sudo journalctl --rotate && sudo journalctl --vacuum-time=1s", check=True,
+        "sudo journalctl --rotate && sudo journalctl --vacuum-time=1s",
+        check=True,
     )
 
     await machine.ssh.run(

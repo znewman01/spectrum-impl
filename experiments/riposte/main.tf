@@ -1,5 +1,6 @@
 variable "ami" {
-  type = string
+  type    = string
+  default = ""
 }
 
 variable "region" {
@@ -16,6 +17,28 @@ provider "aws" {
   region  = var.region
 }
 
+data "aws_ami" "riposte" {
+  count       = var.ami == "" ? 1 : 0
+  most_recent = true
+  owners      = ["self"]
+  filter {
+    name   = "tag:Project"
+    values = ["spectrum"]
+  }
+  filter {
+    name   = "tag:Name"
+    values = ["riposte_image"]
+  }
+  filter {
+    name   = "tag:InstanceType"
+    values = [var.instance_type]
+  }
+}
+
+locals {
+  ami = var.ami != "" ? var.ami : data.aws_ami.riposte[0].id
+}
+
 resource "tls_private_key" "key" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -24,8 +47,7 @@ resource "tls_private_key" "key" {
 resource "aws_key_pair" "key" {
   public_key = tls_private_key.key.public_key_openssh
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_riposte_keypair"
+    Name = "riposte_keypair"
   }
 }
 
@@ -56,53 +78,48 @@ resource "aws_security_group" "allow_ssh" {
   }
 
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_riposte_security_group"
+    Name = "riposte_security_group"
   }
 }
 
 resource "aws_instance" "leader" {
-  ami             = var.ami
+  ami             = local.ami
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_riposte_leader"
+    Name = "riposte_leader"
   }
 }
 
 resource "aws_instance" "server" {
-  ami             = var.ami
+  ami             = local.ami
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_riposte_server"
+    Name = "riposte_server"
   }
 }
 
 resource "aws_instance" "auditor" {
-  ami             = var.ami
+  ami             = local.ami
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_riposte_auditor"
+    Name = "riposte_auditor"
   }
 }
 
 resource "aws_instance" "client" {
-  ami             = var.ami
+  ami             = local.ami
   count           = 2 # TODO(zjn): make it 8 # from Riposte paper
   instance_type   = var.instance_type
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_riposte_client"
+    Name = "riposte_client"
   }
 }
 

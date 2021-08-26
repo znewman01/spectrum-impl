@@ -1,4 +1,5 @@
 # encoding: utf8
+import os
 import json
 import operator
 import subprocess
@@ -8,7 +9,7 @@ from functools import reduce
 from pathlib import Path
 from subprocess import check_call, check_output
 from tempfile import TemporaryDirectory
-from typing import NewType, Dict, Any, List
+from typing import NewType, Dict, Any, List, Iterator
 
 from halo import Halo
 
@@ -24,14 +25,16 @@ AWS_REGION = Region("us-east-2")
 DEFAULT_INSTANCE_TYPE = InstanceType("c5.4xlarge")
 
 
+class NoImageError(Exception):
+    pass
+
+
 def format_args(var_dict: Dict[str, Any]) -> List:
     return reduce(operator.add, [["-var", f"{k}={v}"] for k, v in var_dict.items()])
 
 
 @contextmanager
-def terraform(tf_vars: Dict[str, Any], tf_dir: Path):
-    import os
-
+def terraform(tf_vars: Dict[str, Any], tf_dir: Path) -> Iterator[Dict[Any, Any]]:
     if "AWS_ACCESS_KEY_ID" not in os.environ:
         raise RuntimeError("Missing AWS creds")
     with TemporaryDirectory() as tmpdir:
@@ -48,6 +51,8 @@ def terraform(tf_vars: Dict[str, Any], tf_dir: Path):
                     check_output(["terraform", "init"], cwd=tf_dir)
                     spinner.text = "[infrastructure] checking current state"
                     plan_output = check_output(cmd, cwd=tf_dir)
+                elif "Your query returned no results" in err.output.decode("utf8"):
+                    raise NoImageError() from err
                 else:
                     with open("terraform.log", "w") as log_file:
                         log_file.write(err.output.decode("utf8"))

@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, Iterator, Union, Tuple, ClassVar, List
+from typing import Any, Dict, Iterator, Union, Tuple, ClassVar, List, Optional
 
 from halo import Halo
 
@@ -75,12 +75,14 @@ class Setting(system.Setting):
 class Environment(system.Environment):
     instance_type: InstanceType
 
-    def make_tf_vars(self, build: packer.Build) -> Dict[str, Any]:
-        return {
-            "ami": build.ami,
-            "region": build.region,
+    def make_tf_vars(self, build: Optional[packer.Build], _: Any) -> Dict[str, Any]:
+        tf_vars = {
+            "region": AWS_REGION,
             "instance_type": self.instance_type,
         }
+        if build:
+            tf_vars["ami"] = build.ami
+        return tf_vars
 
     @staticmethod
     def make_tf_cleanup_vars():

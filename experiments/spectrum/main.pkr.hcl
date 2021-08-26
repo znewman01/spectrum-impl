@@ -55,9 +55,14 @@ source "amazon-ebs" "spectrum" {
   secret_key    = var.aws_secret_key
   source_ami    = data.amazon-ami.ubuntu.id
   ssh_username  = "ubuntu"
+  run_tags = {
+    Project = "spectrum"
+  }
   tags = {
     Name = "spectrum_image"
     Project = "spectrum"
+    Sha = var.sha
+    InstanceType = var.instance_type
   }
 }
 
