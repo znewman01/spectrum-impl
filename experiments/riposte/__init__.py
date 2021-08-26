@@ -158,9 +158,15 @@ class Experiment(system.Experiment):
         for match in matches[1:]:
             queries = int(match.group("queries"))
             rate = float(match.group("rate"))
-            time = queries / rate
+            try:
+                time = queries / rate
+            except ZeroDivisionError:
+                continue
             total_queries += int(match.group("queries"))
             total_time += time
+
+        if total_queries == 0:
+            raise RuntimeError("Riposte did not succeed")
 
         return Result(
             experiment=self,
