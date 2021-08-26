@@ -1,3 +1,27 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 3.0"
+    }
+
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 3.1"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.region
+  default_tags {
+    tags = {
+      Project = "spectrum"
+    }
+  }
+}
+
+
 variable "ami" {
   type = string
 }
@@ -18,16 +42,6 @@ variable "worker_machine_count" {
   type = number
 }
 
-provider "aws" {
-  profile = "default"
-  region  = var.region
-  version = "~> 2.63"
-}
-
-provider "tls" {
-  version = "~> 2.1"
-}
-
 resource "tls_private_key" "key" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -36,8 +50,7 @@ resource "tls_private_key" "key" {
 resource "aws_key_pair" "key" {
   public_key = tls_private_key.key.public_key_openssh
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_keypair"
+    Name = "spectrum_keypair"
   }
 }
 
@@ -68,8 +81,7 @@ resource "aws_security_group" "allow_ssh" {
   }
 
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_security_group"
+    Name = "spectrum_security_group"
   }
 }
 
@@ -79,8 +91,7 @@ resource "aws_instance" "publisher" {
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_publisher"
+    Name = "spectrum_publisher"
   }
 }
 
@@ -91,8 +102,7 @@ resource "aws_instance" "worker" {
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_worker"
+    Name = "spectrum_worker"
   }
 }
 
@@ -103,8 +113,7 @@ resource "aws_instance" "client" {
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_client"
+    Name = "spectrum_client"
   }
 }
 
@@ -113,13 +122,14 @@ output "publisher" {
 }
 
 output "workers" {
-  value = "${aws_instance.worker.*.public_dns}"
+  value = aws_instance.worker.*.public_dns
 }
 
 output "clients" {
-  value = "${aws_instance.client.*.public_dns}"
+  value = aws_instance.client.*.public_dns
 }
 
 output "private_key" {
-  value = tls_private_key.key.private_key_pem
+  value     = tls_private_key.key.private_key_pem
+  sensitive = true
 }

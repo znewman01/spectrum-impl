@@ -1,3 +1,26 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 3.0"
+    }
+
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 3.1"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.region
+  default_tags {
+    tags = {
+      Project = "spectrum"
+    }
+  }
+}
+
 variable "ami" {
   type = string
 }
@@ -11,11 +34,6 @@ variable "instance_type" {
   type = string
 }
 
-provider "aws" {
-  profile = "default"
-  region  = var.region
-}
-
 resource "tls_private_key" "key" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -24,8 +42,7 @@ resource "tls_private_key" "key" {
 resource "aws_key_pair" "key" {
   public_key = tls_private_key.key.public_key_openssh
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_express_keypair"
+    Name = "spectrum_express_keypair"
   }
 }
 
@@ -56,8 +73,7 @@ resource "aws_security_group" "allow_ssh" {
   }
 
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_express_security_group"
+    Name = "spectrum_express_security_group"
   }
 }
 
@@ -67,8 +83,7 @@ resource "aws_instance" "serverA" {
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_express_serverA"
+    Name = "spectrum_express_serverA"
   }
 }
 
@@ -78,8 +93,7 @@ resource "aws_instance" "serverB" {
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_express_serverB"
+    Name = "spectrum_express_serverB"
   }
 }
 
@@ -91,8 +105,7 @@ resource "aws_instance" "client" {
   key_name        = aws_key_pair.key.key_name
   security_groups = [aws_security_group.allow_ssh.name]
   tags = {
-    Project = "spectrum",
-    Name    = "spectrum_express_client"
+    Name = "spectrum_express_client"
   }
 }
 
@@ -109,5 +122,6 @@ output "client" {
 }
 
 output "private_key" {
-  value = tls_private_key.key.private_key_pem
+  value     = tls_private_key.key.private_key_pem
+  sensitive = true
 }

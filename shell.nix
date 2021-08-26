@@ -4,9 +4,9 @@ let
   rust_overlay = import (builtins.fetchTarball
     "https://github.com/oxalica/rust-overlay/archive/master.tar.gz");
   nixpkgs = import <nixpkgs> { overlays = [ rust_overlay ]; };
-  rustChannel = nixpkgs.rust-bin.nightly."2021-02-26".rust.override {
+  rustChannel = nixpkgs.rust-bin.nightly."2021-08-25".default.override {
     extensions =
-      [ "rust-src" "rust-analysis" "clippy-preview" "rustfmt-preview" ];
+      [ "rust-src" "rust-analysis" ];
   };
   pythonPackages = python38Packages;
 in pkgs.mkShell rec {
@@ -17,6 +17,7 @@ in pkgs.mkShell rec {
     gmp6
     stdenv
     rustChannel
+    rust-analyzer
     protobuf
     glibc
     gnum4
@@ -29,7 +30,7 @@ in pkgs.mkShell rec {
 
     # DevOps -- for running experiments
     packer
-    terraform
+    terraform_0_15
 
     # Python -- for experiment scripts
     pythonPackages.python

@@ -61,6 +61,8 @@ def terraform(tf_vars: Dict[str, Any], tf_dir: Path):
             if changes:
                 spinner.succeed("[infrastructure] found changes to apply:")
                 for change in changes:
+                    if "unchanged attributes hidden" in change:
+                        continue
                     change = change.lstrip(" #")
                     print(f"  • {change}")
             else:
