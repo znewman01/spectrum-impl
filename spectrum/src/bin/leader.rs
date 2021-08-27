@@ -1,6 +1,6 @@
 use clap::{crate_authors, crate_version, Clap};
 use futures::prelude::*;
-use spectrum_impl::{
+use spectrum::{
     cli, config, experiment, leader,
     services::{Group, LeaderInfo},
 };

@@ -1,5 +1,5 @@
 [package]
-name = "spectrum-impl"
+name = "spectrum"
 version = "0.1.1"
 authors = ["Zachary Newman <zjn@mit.edu>", "Sacha Servan-Schreiber <3s@mit.edu>"]
 edition = "2018"

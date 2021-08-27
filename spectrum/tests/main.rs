@@ -1,7 +1,7 @@
-extern crate spectrum_impl;
+extern crate spectrum;
 
 use simplelog::{LevelFilter, TermLogger, TerminalMode};
-use spectrum_impl::{
+use spectrum::{
     config, experiment::Experiment, protocols::wrapper::ProtocolWrapper, run_in_process,
 };
 
@@ -10,7 +10,7 @@ async fn test_pass() {
     TermLogger::init(
         LevelFilter::Trace,
         simplelog::ConfigBuilder::new()
-            .add_filter_allow_str("spectrum_impl")
+            .add_filter_allow_str("spectrum")
             .build(),
         TerminalMode::Stderr,
     )

@@ -1,6 +1,6 @@
 use clap::{crate_authors, crate_version, Clap};
 use futures::prelude::*;
-use spectrum_impl::{cli, config, experiment, publisher, services::PublisherInfo};
+use spectrum::{cli, config, experiment, publisher, services::PublisherInfo};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::signal::ctrl_c;

@@ -1,7 +1,7 @@
 use clap::{crate_authors, crate_version, ArgGroup, Clap};
 use futures::prelude::*;
 use rand::{thread_rng, Rng};
-use spectrum_impl::{
+use spectrum::{
     cli, client, config, experiment, protocols::wrapper::ChannelKeyWrapper, services::ClientInfo,
 };
 use spectrum_primitives::Bytes;

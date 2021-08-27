@@ -4,7 +4,7 @@ use tonic::transport::Certificate;
 
 use clap::{crate_authors, crate_version, Clap};
 use futures::stream::{FuturesUnordered, StreamExt};
-use spectrum_impl::{cli, client, config, experiment, services::ClientInfo};
+use spectrum::{cli, client, config, experiment, services::ClientInfo};
 
 /// Run a Spectrum viewing client.
 ///

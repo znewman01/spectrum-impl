@@ -37,7 +37,7 @@ pub struct LogArgs {
 impl LogArgs {
     pub fn init(&self) {
         use simplelog::{CombinedLogger, ConfigBuilder, SharedLogger};
-        const FILTER: &str = "spectrum_impl";
+        const FILTER: &str = "spectrum";
 
         let config = ConfigBuilder::new().add_filter_ignore_str(FILTER).build();
         let other_logger: Box<dyn SharedLogger> =
