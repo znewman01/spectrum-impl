@@ -39,8 +39,8 @@ data "aws_ami" "main" {
   dynamic "filter" {
     for_each = var.extra_filters
     content {
-      name   = each.key
-      values = each.value
+      name   = filter.key
+      values = filter.value
     }
   }
 }

@@ -26,7 +26,7 @@ serde_json = "1.0"
 port_check = "0.1.5"
 derivative = "2.2.0"  # https://github.com/rust-lang/rust/issues/26925
 itertools = "0.10"
-clap = { git = "http://github.com/clap-rs/clap/", rev = "37889c661134e8286102f7d2ab3267965d010403" }
+clap = "3.0.0-beta.4"
 csv = "1.1"
 etcd-rs = "0.5"
 tempfile = "3"

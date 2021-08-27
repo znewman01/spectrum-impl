@@ -151,7 +151,7 @@ struct Args {
     #[clap(
         long,
         short,
-        long_help = &*INPUT_STRING,
+        long_about = &*INPUT_STRING,
     )]
     input: Option<String>,
 }

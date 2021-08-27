@@ -30,7 +30,7 @@ impl From<Args> for Experiment {
 #[derive(Clap)]
 pub struct LogArgs {
     /// Log level.
-    #[clap(short = "v", long, default_value = "debug", env = "SPECTRUM_LOG_LEVEL")]
+    #[clap(short = 'v', long, default_value = "debug", env = "SPECTRUM_LOG_LEVEL")]
     log_level: LevelFilter,
 }
 
@@ -78,10 +78,12 @@ pub struct NetArgs {
 
 #[derive(Clap)]
 pub struct TlsServerArgs {
-    #[clap(long = "tls-cert", env = "SPECTRUM_TLS_CERT", help = "Path to .crt")]
+    /// Path to .crt
+    #[clap(long = "tls-cert", env = "SPECTRUM_TLS_CERT")]
     cert_file: Option<String>,
 
-    #[clap(long = "tls-key", env = "SPECTRUM_TLS_KEY", help = "Path to .key")]
+    /// Path to .key
+    #[clap(long = "tls-key", env = "SPECTRUM_TLS_KEY")]
     key_file: Option<String>,
 
     #[clap(flatten)]
@@ -108,7 +110,8 @@ impl From<TlsServerArgs> for Option<(Identity, Certificate)> {
 
 #[derive(Clap)]
 pub struct TlsCaArgs {
-    #[clap(long = "tls-ca", env = "SPECTRUM_TLS_CA", help = "Path to ca.pem")]
+    /// Path to ca.pem
+    #[clap(long = "tls-ca", env = "SPECTRUM_TLS_CA")]
     ca_file: Option<String>,
 }
 

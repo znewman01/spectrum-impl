@@ -112,6 +112,7 @@ class Environment(_SupportsLessThan, ABC):
     `Setting`.
     """
 
+    # TODO: remove "build" argument
     @abstractmethod
     def make_tf_vars(self, build: Any, build_args: BuildArgs) -> Dict[str, Any]:
         ...
