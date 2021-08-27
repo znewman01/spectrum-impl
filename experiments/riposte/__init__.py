@@ -75,13 +75,11 @@ class Setting(system.Setting):
 class Environment(system.Environment):
     instance_type: InstanceType
 
-    def make_tf_vars(self, build: Optional[packer.Build], _: Any) -> Dict[str, Any]:
+    def make_tf_vars(self, _build: Optional[packer.Build], _: Any) -> Dict[str, Any]:
         tf_vars = {
             "region": AWS_REGION,
             "instance_type": self.instance_type,
         }
-        if build:
-            tf_vars["ami"] = build.ami
         return tf_vars
 
     @staticmethod

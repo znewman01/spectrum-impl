@@ -1,6 +1,15 @@
-variable "ami" {
-  type    = string
-  default = ""
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 3.0"
+    }
+
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 3.1"
+    }
+  }
 }
 
 variable "region" {
@@ -12,31 +21,48 @@ variable "instance_type" {
   type = string
 }
 
-provider "aws" {
-  profile = "default"
-  region  = var.region
-}
-
-data "aws_ami" "riposte" {
-  count       = var.ami == "" ? 1 : 0
-  most_recent = true
-  owners      = ["self"]
-  filter {
-    name   = "tag:Project"
-    values = ["spectrum"]
-  }
-  filter {
-    name   = "tag:Name"
-    values = ["riposte_image"]
-  }
-  filter {
-    name   = "tag:InstanceType"
-    values = [var.instance_type]
-  }
-}
-
 locals {
-  ami = var.ami != "" ? var.ami : data.aws_ami.riposte[0].id
+  tags = { Project = "spectrum" }
+}
+
+provider "aws" {
+  region = var.region
+  default_tags {
+    tags = local.tags
+  }
+}
+provider "aws" {
+  alias  = "east"
+  region = "us-east-1"
+  default_tags {
+    tags = local.tags
+  }
+}
+provider "aws" {
+  alias  = "west"
+  region = "us-west-1"
+  default_tags {
+    tags = local.tags
+  }
+}
+
+module "image_main" {
+  source        = "../modules/image"
+  image_name    = "riposte_image"
+  instance_type = var.instance_type
+  providers     = { aws = aws }
+}
+module "image_east" {
+  source        = "../modules/image"
+  image_name    = "riposte_image"
+  instance_type = var.instance_type
+  providers     = { aws = aws.east }
+}
+module "image_west" {
+  source        = "../modules/image"
+  image_name    = "riposte_image"
+  instance_type = var.instance_type
+  providers     = { aws = aws.west }
 }
 
 resource "tls_private_key" "key" {
@@ -44,83 +70,93 @@ resource "tls_private_key" "key" {
   rsa_bits  = 4096
 }
 
-resource "aws_key_pair" "key" {
+resource "aws_key_pair" "main" {
   public_key = tls_private_key.key.public_key_openssh
   tags = {
     Name = "riposte_keypair"
   }
 }
 
-resource "aws_security_group" "allow_ssh" {
-
-  ingress {
-    description = "SSH from internet"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "All traffic within group"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    self        = true
-  }
-
-  egress {
-    description = "All outgoing traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "riposte_security_group"
-  }
+module "network_main" {
+  source     = "../modules/net"
+  public_key = tls_private_key.key.public_key_openssh
+  providers  = { aws = aws }
+}
+module "network_east" {
+  source     = "../modules/net"
+  public_key = tls_private_key.key.public_key_openssh
+  providers  = { aws = aws.east }
+}
+module "network_west" {
+  source     = "../modules/net"
+  public_key = tls_private_key.key.public_key_openssh
+  providers  = { aws = aws.west }
 }
 
 resource "aws_instance" "leader" {
-  ami             = local.ami
+  provider        = aws.east
+  ami             = module.image_east.ami.id
   instance_type   = var.instance_type
-  key_name        = aws_key_pair.key.key_name
-  security_groups = [aws_security_group.allow_ssh.name]
+  key_name        = module.network_east.key_pair.key_name
+  security_groups = [module.network_east.security_group.name]
   tags = {
     Name = "riposte_leader"
   }
 }
 
 resource "aws_instance" "server" {
-  ami             = local.ami
+  provider        = aws.west
+  ami             = module.image_west.ami.id
   instance_type   = var.instance_type
-  key_name        = aws_key_pair.key.key_name
-  security_groups = [aws_security_group.allow_ssh.name]
+  key_name        = module.network_west.key_pair.key_name
+  security_groups = [module.network_west.security_group.name]
   tags = {
     Name = "riposte_server"
   }
 }
 
 resource "aws_instance" "auditor" {
-  ami             = local.ami
+  ami             = module.image_main.ami.id
   instance_type   = var.instance_type
-  key_name        = aws_key_pair.key.key_name
-  security_groups = [aws_security_group.allow_ssh.name]
+  key_name        = module.network_main.key_pair.key_name
+  security_groups = [module.network_main.security_group.name]
   tags = {
     Name = "riposte_auditor"
   }
 }
 
 resource "aws_instance" "client" {
-  ami             = local.ami
+  ami             = module.image_main.ami.id
   count           = 2 # TODO(zjn): make it 8 # from Riposte paper
   instance_type   = var.instance_type
-  key_name        = aws_key_pair.key.key_name
-  security_groups = [aws_security_group.allow_ssh.name]
+  key_name        = module.network_main.key_pair.key_name
+  security_groups = [module.network_main.security_group.name]
   tags = {
     Name = "riposte_client"
   }
+}
+
+locals {
+  instances = concat(aws_instance.client, [aws_instance.auditor, aws_instance.server, aws_instance.leader])
+}
+
+module "secgroup_main" {
+  source         = "./modules/secgroup"
+  instances      = local.instances
+  security_group = module.network_main.security_group
+  providers      = { aws = aws }
+}
+module "secgroup_east" {
+  source         = "./modules/secgroup"
+  instances      = local.instances
+  security_group = module.network_east.security_group
+  providers      = { aws = aws.east }
+}
+module "secgroup_west" {
+  source         = "./modules/secgroup"
+  instances      = local.instances
+  security_group = module.network_west.security_group
+  providers      = { aws = aws.west }
 }
 
 output "leader" {
