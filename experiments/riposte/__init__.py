@@ -86,8 +86,7 @@ class Environment(system.Environment):
     def make_tf_cleanup_vars():
         return {
             "region": AWS_REGION,  # must be the same
-            "ami": "null",
-            "instance_type": "null",
+            "instance_type": DEFAULT_INSTANCE_TYPE,
         }
 
 

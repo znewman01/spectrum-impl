@@ -119,7 +119,7 @@ class Environment(system.Environment):
         return self.client_machines + self.worker_machines + 1
 
     def make_tf_vars(
-        self, build: Optional[packer.Build], build_args: BuildArgs
+        self, _build: Optional[packer.Build], build_args: BuildArgs
     ) -> Dict[str, Any]:
         tf_vars = {
             "instance_type": self.instance_type,
@@ -128,16 +128,13 @@ class Environment(system.Environment):
             "region": AWS_REGION,
             "sha": build_args.sha,
         }
-        if build:
-            tf_vars["ami"] = build.ami
         return tf_vars
 
     @staticmethod
     def make_tf_cleanup_vars():
         return {
             "region": AWS_REGION,  # must be the same
-            "ami": "null",
-            "instance_type": "null",
+            "instance_type": DEFAULT_INSTANCE_TYPE,
             "client_machine_count": 0,
             "worker_machine_count": 0,
             "sha": "null",

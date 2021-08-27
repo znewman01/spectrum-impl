@@ -1,4 +1,3 @@
-#![feature(type_ascription)]
 #![allow(dead_code)] // for now
 #[macro_use]
 mod algebra;

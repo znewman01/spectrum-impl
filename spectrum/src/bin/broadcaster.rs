@@ -29,7 +29,7 @@ struct Args {
 }
 
 #[derive(Clap)]
-#[clap(group = ArgGroup::with_name("message").required(true))]
+#[clap(group = ArgGroup::new("message").required(true))]
 struct BroadcasterArgs {
     /// The message to broadcast
     #[clap(long = "message", group = "message")]

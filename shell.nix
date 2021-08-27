@@ -4,7 +4,7 @@ let
   rust_overlay = import (builtins.fetchTarball
     "https://github.com/oxalica/rust-overlay/archive/master.tar.gz");
   nixpkgs = import <nixpkgs> { overlays = [ rust_overlay ]; };
-  rustChannel = nixpkgs.rust-bin.nightly."2021-08-25".default.override {
+  rustChannel = nixpkgs.rust-bin.nightly."2021-08-26".default.override {
     extensions =
       [ "rust-src" "rust-analysis" ];
   };
