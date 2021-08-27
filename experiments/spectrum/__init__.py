@@ -85,6 +85,7 @@ class Setting(system.Setting):
     async def additional_setup(self):
         with Halo("[infrastructure] starting etcd") as spinner:
             await self.publisher.ssh.run(
+                f"HOSTNAME={self.publisher.hostname} "
                 "envsubst '$HOSTNAME' "
                 '    < "$HOME/config/etcd.template" '
                 "    | sudo tee /etc/default/etcd "
