@@ -7,7 +7,6 @@ ExecStart=/bin/bash -c "/home/ubuntu/spectrum/worker --local-port $((6100 + %i -
 Type=simple
 Restart=no
 EnvironmentFile=/etc/spectrum.conf
-Environment="RUST_BACKTRACE=1"
 LimitNOFILE=64000
 LimitFSIZE=infinity
 LimitCPU=infinity

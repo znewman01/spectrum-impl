@@ -17,9 +17,12 @@ use log::{debug, error, info, trace, warn};
 use tokio::time::sleep;
 use tonic::transport::Certificate;
 
-use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::time::Duration;
+use std::{
+    convert::{TryFrom, TryInto},
+    time::Instant,
+};
 
 type TokioError = Box<dyn std::error::Error + Sync + Send>;
 
@@ -82,6 +85,7 @@ where
                 let write_token = write_token.into();
                 tokio::spawn(async move {
                     let response;
+                    let start_time = Instant::now();
                     loop {
                         let req = tonic::Request::new(UploadRequest {
                             client_id: Some(client_id.clone()),
@@ -97,8 +101,8 @@ where
                                 Err(err) => warn!("Error, trying again: {}", err),
                             };
                         }
-                        sleep(Duration::from_millis(50)).await;
                     }
+                    info!("Request took {}ms.", start_time.elapsed().as_millis())
                     debug!("RESPONSE={:?}", response.into_inner());
                 })
             })
