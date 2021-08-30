@@ -34,7 +34,6 @@ fn main() {
     args.logs.init();
 
     tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(args.threads.into())
         .enable_all()
         .build()
         .unwrap()
