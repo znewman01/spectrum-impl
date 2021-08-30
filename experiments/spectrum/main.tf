@@ -60,21 +60,21 @@ module "image_main" {
   image_name    = "spectrum_image"
   instance_type = var.instance_type
   providers     = { aws = aws }
-  extra_filters = { "tag:Sha" = [var.sha] }
+  extra_filters = var.sha != "null" ? { "tag:Sha" = [var.sha] } : {}
 }
 module "image_east" {
   source        = "../modules/image"
   image_name    = "spectrum_image"
   instance_type = var.instance_type
   providers     = { aws = aws.east }
-  extra_filters = { "tag:Sha" = [var.sha] }
+  extra_filters = var.sha != "null" ? { "tag:Sha" = [var.sha] } : {}
 }
 module "image_west" {
   source        = "../modules/image"
   image_name    = "spectrum_image"
   instance_type = var.instance_type
   providers     = { aws = aws.west }
-  extra_filters = { "tag:Sha" = [var.sha] }
+  extra_filters = var.sha != "null" ? { "tag:Sha" = [var.sha] } : {}
 }
 
 module "network_main" {
