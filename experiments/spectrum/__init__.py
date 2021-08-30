@@ -7,7 +7,7 @@ import re
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from itertools import chain, starmap, product
+from itertools import chain, starmap, product, cycle
 from operator import attrgetter
 from pathlib import Path
 from subprocess import check_call
@@ -268,6 +268,7 @@ async def _prepare_client(
 ):
     spectrum_config: Dict[str, Any] = {
         "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
+        "SPECTRUM_VIEWER_THREADS": 1,
         **etcd_env,
     }
     await _install_spectrum_config(machine, spectrum_config)
@@ -307,11 +308,12 @@ class Experiment(system.Experiment):
 
     def to_environment(self) -> Environment:
         client_machines = math.ceil(self.clients / self.clients_per_machine)
-        assert self.groups == 2  # TODO
+        worker_machines_east = self.worker_machines_per_group * ((self.groups + 1) // 2)
+        worker_machines_west = self.worker_machines_per_group * (self.groups // 2)
         return Environment(
             instance_type=self.instance_type,
-            worker_machines_east=self.worker_machines_per_group,
-            worker_machines_west=self.worker_machines_per_group,
+            worker_machines_east=worker_machines_east,
+            worker_machines_west=worker_machines_west,
             client_machines=client_machines,
         )
 
@@ -395,7 +397,7 @@ class Experiment(system.Experiment):
         publisher = setting.publisher
         workers_east = setting.workers_east
         workers_west = setting.workers_west
-        workers = workers_east + workers_west
+        all_workers = workers_east + workers_west
         clients = setting.clients
 
         etcd_url = f"etcd://{publisher.hostname}:2379"
@@ -429,11 +431,15 @@ class Experiment(system.Experiment):
 
         spinner.text = "[experiment] starting workers and clients"
         assert self.workers_per_machine <= MAX_WORKERS_PER_MACHINE
-        assert self.groups == 2  # TODO
         tasks = []
-        for (group, workers) in zip((0, 1), (workers_east, workers_west)):
+        f = open("/tmp/log", "w")
+        w1 = iter(workers_east)
+        w2 = iter(workers_west)
+        for (group, workers) in zip(range(self.groups), cycle((w1, w2))):
             worker_start_idx = 0
-            for worker in workers:
+            for _ in range(self.worker_machines_per_group):
+                worker = next(workers)
+                f.write(f"{group}, {worker_start_idx}\n")
                 task = _prepare_worker(
                     worker,
                     group + 1,
@@ -463,7 +469,7 @@ class Experiment(system.Experiment):
 
         spinner.text = "[experiment] running"
         return await asyncio.wait_for(
-            self._execute_experiment(publisher, workers, etcd_env),
+            self._execute_experiment(publisher, all_workers, etcd_env),
             timeout=EXPERIMENT_TIMEOUT,
         )
 
@@ -473,7 +479,8 @@ class Experiment(system.Experiment):
         finally:
             spinner.text = "[experiment] shutting everything down"
             shutdowns = []
-            for worker in setting.workers_east + setting.workers_west:
+            all_workers = setting.workers_west + setting.workers_east
+            for worker in all_workers:
                 shutdowns.append(
                     worker.ssh.run(
                         "sudo systemctl stop 'spectrum-worker@*'", check=False

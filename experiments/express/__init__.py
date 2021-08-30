@@ -68,7 +68,7 @@ class Environment(system.Environment):
 class Experiment(system.Experiment):
     instance_type: InstanceType = DEFAULT_INSTANCE_TYPE
     server_threads: int = 8  # Express: "1x or 2x the number of cores on the system"
-    client_threads: int = 16  # "larger than the actual number of cores on the machine"
+    client_threads: int = 64  # "larger than the actual number of cores on the machine"
     channels: int = 1
     message_size: Bytes = Bytes(1000)
 
