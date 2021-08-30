@@ -49,7 +49,8 @@ EXPERIMENT_TIMEOUT = 60.0
 @dataclass
 class Setting(system.Setting):
     publisher: Machine
-    workers: List[Machine]
+    workers_east: List[Machine]
+    workers_west: List[Machine]
     clients: List[Machine]
 
     @staticmethod
@@ -58,8 +59,10 @@ class Setting(system.Setting):
     ) -> Dict[Union[str, Tuple[str, int]], str]:
         result = {}
         result["publisher"] = tf_data["publisher"]
-        for idx, worker in enumerate(tf_data["workers"]):
-            result[("worker", idx)] = worker
+        for idx, worker in enumerate(tf_data["workers_east"]):
+            result[("worker_east", idx)] = worker
+        for idx, worker in enumerate(tf_data["workers_west"]):
+            result[("worker_west", idx)] = worker
         for idx, client in enumerate(tf_data["clients"]):
             result[("client", idx)] = client
         return result
@@ -67,20 +70,28 @@ class Setting(system.Setting):
     @classmethod
     def from_dict(cls, machines: Dict[Any, Machine]) -> Setting:
         publisher = None
-        workers = []
+        workers_east = []
+        workers_west = []
         clients = []
         for ident, machine in machines.items():
             if ident == "publisher":
                 publisher = machine
-            elif ident[0] == "worker":
-                workers.append(machine)
+            elif ident[0] == "worker_east":
+                workers_east.append(machine)
+            elif ident[0] == "worker_west":
+                workers_west.append(machine)
             elif ident[0] == "client":
                 clients.append(machine)
             else:
                 raise ValueError(f"Invalid identifier [{ident}]")
         if publisher is None:
             raise ValueError("Missing publisher.")
-        return cls(publisher=publisher, workers=workers, clients=clients)
+        return cls(
+            publisher=publisher,
+            workers_east=workers_east,
+            workers_west=workers_west,
+            clients=clients,
+        )
 
     async def additional_setup(self):
         with Halo("[infrastructure] starting etcd") as spinner:
@@ -113,11 +124,17 @@ class Setting(system.Setting):
 class Environment(system.Environment):
     instance_type: InstanceType
     client_machines: int
-    worker_machines: int
+    worker_machines_east: int
+    worker_machines_west: int
 
     @property
     def total_machines(self) -> int:
-        return self.client_machines + self.worker_machines + 1
+        return (
+            self.client_machines
+            + self.worker_machines_east
+            + self.worker_machines_west
+            + 1
+        )
 
     def make_tf_vars(
         self, _build: Optional[packer.Build], build_args: BuildArgs
@@ -125,7 +142,8 @@ class Environment(system.Environment):
         tf_vars = {
             "instance_type": self.instance_type,
             "client_machine_count": self.client_machines,
-            "worker_machine_count": self.worker_machines,
+            "worker_machine_east_count": self.worker_machines_east,
+            "worker_machine_west_count": self.worker_machines_west,
             "region": AWS_REGION,
             "sha": build_args.sha,
         }
@@ -137,7 +155,8 @@ class Environment(system.Environment):
             "region": AWS_REGION,  # must be the same
             "instance_type": DEFAULT_INSTANCE_TYPE,
             "client_machine_count": 0,
-            "worker_machine_count": 0,
+            "worker_machine_east_count": 0,
+            "worker_machine_west_count": 0,
             "sha": "null",
         }
 
@@ -288,10 +307,11 @@ class Experiment(system.Experiment):
 
     def to_environment(self) -> Environment:
         client_machines = math.ceil(self.clients / self.clients_per_machine)
-        worker_machines = self.worker_machines_per_group * self.groups
+        assert self.groups == 2  # TODO
         return Environment(
             instance_type=self.instance_type,
-            worker_machines=worker_machines,
+            worker_machines_east=self.worker_machines_per_group,
+            worker_machines_west=self.worker_machines_per_group,
             client_machines=client_machines,
         )
 
@@ -371,97 +391,102 @@ class Experiment(system.Experiment):
             queries=int(total_qps * int(min_time) / 1000),
         )
 
+    async def _inner_run(self, setting: Setting, spinner: Halo) -> Result:
+        publisher = setting.publisher
+        workers_east = setting.workers_east
+        workers_west = setting.workers_west
+        workers = workers_east + workers_west
+        clients = setting.clients
+
+        etcd_url = f"etcd://{publisher.hostname}:2379"
+        etcd_env = {"SPECTRUM_CONFIG_SERVER": etcd_url}
+
+        spinner.text = "[experiment] setting up"
+        # don't let this same output confuse us if we run on this machine again
+        await publisher.ssh.run(
+            "sudo journalctl --rotate && sudo journalctl --vacuum-time=1s",
+            check=True,
+        )
+        # ensure a blank slate
+        await publisher.ssh.run(
+            "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''",
+            check=True,
+        )
+        # can't use ssh.run(env=...) because the SSH server doesn't like it.
+        await publisher.ssh.run(
+            f"SPECTRUM_CONFIG_SERVER={etcd_url} "
+            "/home/ubuntu/spectrum/setup"
+            f"    {self.protocol.flag}"
+            f"    --hammer "
+            f"    --channels {self.channels}"
+            f"    --clients {self.clients}"
+            f"    --group-size {self.group_size}"
+            f"    --groups {self.groups}"
+            f"    --message-size {self.message_size}",
+            check=True,
+            timeout=15,
+        )
+
+        spinner.text = "[experiment] starting workers and clients"
+        assert self.workers_per_machine <= MAX_WORKERS_PER_MACHINE
+        assert self.groups == 2  # TODO
+        tasks = []
+        for (group, workers) in zip((0, 1), (workers_east, workers_west)):
+            worker_start_idx = 0
+            for worker in workers:
+                task = _prepare_worker(
+                    worker,
+                    group + 1,
+                    worker_start_idx,
+                    self.workers_per_machine,
+                    etcd_env,
+                )
+                worker_start_idx += self.workers_per_machine
+                tasks.append(task)
+        await asyncio.gather(*tasks)
+
+        # Full client count at every machine except the last
+        cpm = self.clients_per_machine
+        client_counts = starmap(
+            slice,
+            zip(
+                range(1, self.clients, cpm),
+                chain(range(cpm, self.clients, cpm), [self.clients]),
+            ),
+        )
+        await asyncio.gather(
+            *[
+                _prepare_client(client, client_range, etcd_env)
+                for client, client_range in zip(clients, client_counts)
+            ]
+        )
+
+        spinner.text = "[experiment] running"
+        return await asyncio.wait_for(
+            self._execute_experiment(publisher, workers, etcd_env),
+            timeout=EXPERIMENT_TIMEOUT,
+        )
+
     async def run(self, setting: Setting, spinner: Halo) -> Result:
         try:
-            publisher = setting.publisher
-            workers = setting.workers
-            clients = setting.clients
-
-            etcd_url = f"etcd://{publisher.hostname}:2379"
-            etcd_env = {"SPECTRUM_CONFIG_SERVER": etcd_url}
-
-            spinner.text = "[experiment] setting up"
-            # don't let this same output confuse us if we run on this machine again
-            await publisher.ssh.run(
-                "sudo journalctl --rotate && sudo journalctl --vacuum-time=1s",
-                check=True,
-            )
-            # ensure a blank slate
-            await publisher.ssh.run(
-                "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''",
-                check=True,
-            )
-            # can't use ssh.run(env=...) because the SSH server doesn't like it.
-            await publisher.ssh.run(
-                f"SPECTRUM_CONFIG_SERVER={etcd_url} "
-                "/home/ubuntu/spectrum/setup"
-                f"    {self.protocol.flag}"
-                f"    --hammer "
-                f"    --channels {self.channels}"
-                f"    --clients {self.clients}"
-                f"    --group-size {self.group_size}"
-                f"    --groups {self.groups}"
-                f"    --message-size {self.message_size}",
-                check=True,
-                timeout=15,
-            )
-
-            spinner.text = "[experiment] starting workers and clients"
-            assert self.workers_per_machine <= MAX_WORKERS_PER_MACHINE
-            await asyncio.gather(
-                *[
-                    _prepare_worker(
-                        worker,
-                        group + 1,
-                        machine_idx * self.workers_per_machine,
-                        self.workers_per_machine,
-                        etcd_env,
-                    )
-                    for (machine_idx, group), worker in zip(
-                        product(
-                            range(self.worker_machines_per_group), range(self.groups)
-                        ),
-                        workers,
-                    )
-                ]
-            )
-
-            # Full client count at every machine except the last
-            cpm = self.clients_per_machine
-            client_counts = starmap(
-                slice,
-                zip(
-                    range(1, self.clients, cpm),
-                    chain(range(cpm, self.clients, cpm), [self.clients]),
-                ),
-            )
-            await asyncio.gather(
-                *[
-                    _prepare_client(client, client_range, etcd_env)
-                    for client, client_range in zip(clients, client_counts)
-                ]
-            )
-
-            spinner.text = "[experiment] running"
-            return await asyncio.wait_for(
-                self._execute_experiment(publisher, workers, etcd_env),
-                timeout=EXPERIMENT_TIMEOUT,
-            )
+            return await self._inner_run(setting, spinner)
         finally:
             spinner.text = "[experiment] shutting everything down"
             shutdowns = []
-            for worker in workers:
+            for worker in setting.workers_east + setting.workers_west:
                 shutdowns.append(
                     worker.ssh.run(
                         "sudo systemctl stop 'spectrum-worker@*'", check=False
                     )
                 )
-            for client in clients:
+            for client in setting.clients:
                 shutdowns.append(
                     client.ssh.run("sudo systemctl stop 'viewer@*'", check=False)
                 )
             shutdowns.append(
-                publisher.ssh.run("sudo systemctl stop spectrum-publisher", check=False)
+                setting.publisher.ssh.run(
+                    "sudo systemctl stop spectrum-publisher", check=False
+                )
             )
             await asyncio.gather(*shutdowns)
 

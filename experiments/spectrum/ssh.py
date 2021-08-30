@@ -45,7 +45,8 @@ def main(argv):
     if args.client is not None:
         hostname = data["clients"][args.client]
     elif args.worker is not None:
-        hostname = data["workers"][args.worker]
+        workers = data["workers_east"] + data["workers_west"]
+        hostname = workers[args.worker]
     else:
         hostname = data["publisher"]
 

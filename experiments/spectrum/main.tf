@@ -46,7 +46,10 @@ variable "client_machine_count" {
   type = number
 }
 
-variable "worker_machine_count" {
+variable "worker_machine_east_count" {
+  type = number
+}
+variable "worker_machine_west_count" {
   type = number
 }
 
@@ -103,13 +106,22 @@ resource "aws_instance" "publisher" {
   }
 }
 
-resource "aws_instance" "worker" {
+resource "aws_instance" "worker_east" {
   provider        = aws.east # TODO: east AND west
   ami             = module.image_east.ami.id
-  count           = var.worker_machine_count
+  count           = var.worker_machine_east_count
   instance_type   = var.instance_type
   key_name        = module.network_east.key_pair.key_name
   security_groups = [module.network_east.security_group.name]
+  tags            = { Name = "spectrum_worker" }
+}
+resource "aws_instance" "worker_west" {
+  provider        = aws.west
+  ami             = module.image_west.ami.id
+  count           = var.worker_machine_west_count
+  instance_type   = var.instance_type
+  key_name        = module.network_west.key_pair.key_name
+  security_groups = [module.network_west.security_group.name]
   tags            = { Name = "spectrum_worker" }
 }
 
@@ -123,7 +135,7 @@ resource "aws_instance" "client" {
 }
 
 locals {
-  instances = concat(aws_instance.client, aws_instance.worker, [aws_instance.publisher])
+  instances = concat(aws_instance.client, aws_instance.worker_east, aws_instance.worker_west, [aws_instance.publisher])
 }
 module "secgroup_main" {
   source         = "./modules/secgroup"
@@ -148,8 +160,12 @@ output "publisher" {
   value = aws_instance.publisher.public_dns
 }
 
-output "workers" {
-  value = aws_instance.worker.*.public_dns
+output "workers_west" {
+  value = aws_instance.worker_west.*.public_dns
+}
+
+output "workers_east" {
+  value = aws_instance.worker_east.*.public_dns
 }
 
 output "clients" {
