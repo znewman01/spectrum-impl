@@ -29,43 +29,50 @@ struct Args {
     tls: cli::TlsCaArgs,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
+fn main() {
     let args = Args::parse();
     args.logs.init();
 
-    let config = config::from_env().await?;
-    let experiment = experiment::read_from_store(&config).await?;
-    let hammer = experiment.hammer;
-    let tls: Option<Certificate> = args.tls.into();
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(args.threads.into())
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let config = config::from_env().await?;
+            let experiment = experiment::read_from_store(&config).await?;
+            let hammer = experiment.hammer;
+            let tls: Option<Certificate> = args.tls.into();
 
-    repeat_with(|| {
-        let protocol = experiment.get_protocol().clone();
-        let info = ClientInfo::new(thread_rng().gen());
-        let config = config.clone();
-        let tls = tls.clone();
-        tokio::spawn(async move {
-            client::viewer::run(
-                config,
-                protocol,
-                info,
-                hammer,
-                tls,
-                futures::future::ready(()),
-            )
+            repeat_with(|| {
+                let protocol = experiment.get_protocol().clone();
+                let info = ClientInfo::new(thread_rng().gen());
+                let config = config.clone();
+                let tls = tls.clone();
+                tokio::spawn(async move {
+                    client::viewer::run(
+                        config,
+                        protocol,
+                        info,
+                        hammer,
+                        tls,
+                        futures::future::ready(()),
+                    )
+                    .await
+                })
+            })
+            .take(args.threads.into())
+            .collect::<FuturesUnordered<_>>()
+            .map(|r: Result<Result<(), _>, _>| match r {
+                Ok(Ok(())) => Ok::<(), Box<dyn std::error::Error + Sync + Send>>(()),
+                Ok(Err(err)) => Err(err),
+                Err(err) => Err(err.into()),
+            })
+            .collect::<Vec<Result<(), _>>>()
             .await
+            .into_iter()
+            .collect::<Result<Vec<()>, _>>()
+            .map(|_| ())
         })
-    })
-    .take(args.threads.into())
-    .collect::<FuturesUnordered<_>>()
-    .map(|r: Result<Result<(), _>, _>| match r {
-        Ok(Ok(())) => Ok::<(), Box<dyn std::error::Error + Sync + Send>>(()),
-        Ok(Err(err)) => Err(err),
-        Err(err) => Err(err.into()),
-    })
-    .collect::<Vec<Result<(), _>>>()
-    .await
-    .into_iter()
-    .collect::<Result<Vec<()>, _>>()
-    .map(|_| ())
+        .unwrap();
 }
