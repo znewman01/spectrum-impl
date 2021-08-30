@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-FEW_CHANNELS = [1, 50, 100]
+FEW_CHANNELS = [1]
 MESSAGE_SIZES_FEW_CHANNELS = [
     100_000,
     500_000,
@@ -37,41 +37,38 @@ MULTI_SERVER_MESSAGE_SIZES = [160]
 # Doesn't include "full broadcast" plots which are a special case.
 PLOTS_SPECTRUM = {
     "onechannel": {
-        "clients": [200],
+        "clients": [64],
         "channels": FEW_CHANNELS,
         "message_size": MESSAGE_SIZES_FEW_CHANNELS,
     },
     "manychannel": {
-        "clients": [50],
+        "clients": [64],
         "channels": MANY_CHANNELS,
         "message_size": MESSAGE_SIZES_MANY_CHANNELS,
     },
     # Horizontal scaling experiment
     "horizontal": {
-        "clients": [600],
+        "clients": [64],
         "worker_machines_per_group": [1, 2, 3, 5, 8, 10],
-        # too many total workers appears to lead to higher tail latencies
         "message_size": [100_000],
         "channels": [500],
     },
     # Test the scaling of seed homomorphic protocol
     "multi-server": {
-        "clients": [100],
-        "clients_per_machine": [50],
-        "workers_per_machine": [4],
+        "clients": [64],
+        "clients_per_machine": [32],
         "channels": MULTI_SERVER_CHANNELS,
         "message_size": MULTI_SERVER_MESSAGE_SIZES,
         "protocol": [
-            {"SeedHomomorphic": {"parties": 2,},},
-            {"SeedHomomorphic": {"parties": 4,},},
-            {"SeedHomomorphic": {"parties": 6,},},
-            {"SeedHomomorphic": {"parties": 8,},},
-            {"SeedHomomorphic": {"parties": 10,},},
+            {"SeedHomomorphic": {"parties": 2}},
+            {"SeedHomomorphic": {"parties": 4}},
+            {"SeedHomomorphic": {"parties": 6}},
+            {"SeedHomomorphic": {"parties": 8}},
+            {"SeedHomomorphic": {"parties": 10}},
         ],
     },
     "multi-server-control": {
-        "clients": [400],
-        "workers_per_machine": [8],
+        "clients": [64],
         "channels": MULTI_SERVER_CHANNELS,
         "message_size": MULTI_SERVER_MESSAGE_SIZES,
     },
