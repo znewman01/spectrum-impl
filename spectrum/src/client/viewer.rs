@@ -102,7 +102,7 @@ where
                             };
                         }
                     }
-                    info!("Request took {}ms.", start_time.elapsed().as_millis())
+                    info!("Request took {}ms.", start_time.elapsed().as_millis());
                     debug!("RESPONSE={:?}", response.into_inner());
                 })
             })
