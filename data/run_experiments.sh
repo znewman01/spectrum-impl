@@ -57,8 +57,11 @@ main() {
           "ec2metadata | grep instance-type | sed 's/instance-type: //'" \
           > ${TMP_DIR}/results/instance-type.txt
         instance_type=$(cat ${TMP_DIR}/results/instance-type.txt  | tr -d '\n')
-        aws ec2 --region us-east-2 \
-          describe-instance-types --instance-types=${instance_type} \
+        nix-shell -p awscli2 \
+          --pure \
+          --keep AWS_ACCESS_KEY_ID \
+          --keep AWS_SECRET_ACCESS_KEY \
+          --command "aws ec2 --region us-east-2 describe-instance-types --instance-types=${instance_type}" \
           > ${TMP_DIR}/results/instance.json
         curl -sL "https://ec2.shop?filter=${instance_type}" -H 'accept: json' \
           > ${TMP_DIR}/results/instance-cost.json
