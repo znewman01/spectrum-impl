@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from itertools import chain, starmap, product, cycle
-from operator import attrgetter
+from operator import attrgetter, itemgetter
 from pathlib import Path
 from subprocess import check_call
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -92,6 +92,10 @@ class Setting(system.Setting):
             workers_west=workers_west,
             clients=clients,
         )
+
+    @property
+    def all_workers(self):
+        return self.workers_east + self.workers_west
 
     async def additional_setup(self):
         with Halo("[infrastructure] starting etcd") as spinner:
@@ -273,6 +277,10 @@ async def _prepare_client(
     }
     await _install_spectrum_config(machine, spectrum_config)
     await machine.ssh.run(
+        "sudo journalctl --rotate && sudo journalctl --vacuum-time=1s",
+        check=True,
+    )
+    await machine.ssh.run(
         f"sudo systemctl start viewer@{{{client_range.start}..{client_range.stop}}}",
         check=True,
     )
@@ -324,10 +332,12 @@ class Experiment(system.Experiment):
             data["protocol"] = Protocol.from_dict(protocol)
         return cls(**data)
 
-    async def _fetch_timing(self, worker: Machine) -> Optional[Result]:
+    async def _fetch_timing(
+        self, worker: Machine
+    ) -> Optional[Tuple[int, Milliseconds]]:
         """Timing for one worker.
 
-        We look across all worker processes and get the best intermediate result from each.
+        We look across all worker processes and get intermediate results from each.
         We then report the *total* QPS.
         """
         total_qps = 0
@@ -346,58 +356,90 @@ class Experiment(system.Experiment):
                 if not match:
                     continue
                 clients, time = match.groups()
-                process_results.append(
-                    Result(
-                        experiment=self,
-                        queries=int(clients),
-                        time=Milliseconds(int(time)),
-                    )
-                )
+                if int(time) < 1000:  # early results often noisy
+                    continue
+                process_results.append((int(clients), int(time)))
             if not process_results:
                 continue
-            best_result = max(process_results, key=attrgetter("qps"))
-            total_qps += best_result.qps
+            best_queries, best_time = max(process_results, key=lambda x: x[0] / x[1])
+            best_qps = 1000 * best_queries / best_time
+            total_qps += best_qps
             if max_time is None:
-                max_time = best_result.time
+                max_time = best_time
             else:
-                max_time = max(max_time, best_result.time)
+                max_time = max(max_time, best_time)
         if max_time is None:
             return None
-        result = Result(
-            experiment=self,
-            queries=int(total_qps * int(max_time) / 1000),
-            time=max_time,
+        queries = int(total_qps * (int(max_time) / 1000))
+        return (queries, Milliseconds(max_time))
+
+    async def _fetch_latencies(
+        self, client: Machine
+    ) -> Optional[Tuple[Milliseconds, int]]:
+        # just use the first viewer per machine
+        cmd_result = await client.ssh.run(
+            "journalctl --unit viewer@1 | grep -Eo 'Request took [0-9]+ms.'",
         )
-        assert result.qps - total_qps < 0.1
-        return result
+        total_latency = 0
+        total_count = 0
+        for line in cmd_result.stdout.split("\n"):
+            match = re.match(
+                r"Request took ([0-9]+)ms.",
+                line,
+            )
+            if not match:
+                continue
+            (time,) = match.groups()
+            total_latency += int(time)
+            total_count += 1
+        if total_count == 0:
+            return None
+        return (Milliseconds(total_latency), total_count)
 
     async def _execute_experiment(
-        self, publisher: Machine, workers: List[Machine], etcd_env: Dict[str, Any]
+        self,
+        setting: Setting,
+        etcd_env: Dict[str, Any],
     ) -> Result:
-        await _install_spectrum_config(publisher, etcd_env)
+        await _install_spectrum_config(setting.publisher, etcd_env)
         timeout = EXPERIMENT_TIMEOUT - 10  # give some cleanup time
-        await publisher.ssh.run("sudo systemctl start spectrum-publisher", check=True)
+        await setting.publisher.ssh.run(
+            "sudo systemctl start spectrum-publisher", check=True
+        )
         await asyncio.sleep(timeout)
+        f = open("/tmp/log", "w")
 
-        results = await asyncio.gather(*map(self._fetch_timing, workers))
+        latencies = await asyncio.gather(*map(self._fetch_latencies, setting.clients))
+        latencies = list(filter(None, latencies))
+        if not latencies:
+            raise RuntimeError("Couldn't get latencies")
+        f.write(f"{latencies}\n")
+        total_time = sum(map(itemgetter(0), latencies))
+        total_requests = sum(map(itemgetter(1), latencies))
+        mean_latency = int(total_time / total_requests)
+
+        results = await asyncio.gather(*map(self._fetch_timing, setting.all_workers))
         results = list(filter(None, results))
         if not results:
             raise RuntimeError("No successful runs.")
+        f.write(f"{results}\n\n")
         # We now have the total QPS per machine; let's aggregate.
         # Divide by self.groups so we don't double-count.
-        total_qps = sum(map(attrgetter("qps"), results)) / self.groups
-        min_time = min(map(attrgetter("time"), results))
+        total_queries = sum(queries for (queries, time) in results) / self.groups
+        total_time = sum(time for (queries, time) in results) / self.groups
+        total_qps = 1000 * total_queries / total_time
+        min_time = min(time for (queries, time) in results)
         return Result(
             experiment=self,
             time=min_time,
-            queries=int(total_qps * int(min_time) / 1000),
+            queries=int(total_qps * (int(min_time) / 1000)),
+            mean_latency=mean_latency,
         )
 
     async def _inner_run(self, setting: Setting, spinner: Halo) -> Result:
         publisher = setting.publisher
         workers_east = setting.workers_east
         workers_west = setting.workers_west
-        all_workers = workers_east + workers_west
         clients = setting.clients
 
         etcd_url = f"etcd://{publisher.hostname}:2379"
@@ -432,14 +474,11 @@ class Experiment(system.Experiment):
         spinner.text = "[experiment] starting workers and clients"
         assert self.workers_per_machine <= MAX_WORKERS_PER_MACHINE
         tasks = []
-        f = open("/tmp/log", "w")
-        w1 = iter(workers_east)
-        w2 = iter(workers_west)
-        for (group, workers) in zip(range(self.groups), cycle((w1, w2))):
+        workers_by_region = cycle((iter(workers_east), iter(workers_west)))
+        for (group, workers) in zip(range(self.groups), workers_by_region):
             worker_start_idx = 0
             for _ in range(self.worker_machines_per_group):
                 worker = next(workers)
-                f.write(f"{group}, {worker_start_idx}\n")
                 task = _prepare_worker(
                     worker,
                     group + 1,
@@ -469,7 +508,7 @@ class Experiment(system.Experiment):
 
         spinner.text = "[experiment] running"
         return await asyncio.wait_for(
-            self._execute_experiment(publisher, all_workers, etcd_env),
+            self._execute_experiment(setting, etcd_env),
             timeout=EXPERIMENT_TIMEOUT,
         )
 

@@ -60,7 +60,17 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from itertools import groupby
 from pathlib import Path
-from typing import List, NewType, Tuple, Any, ContextManager, Dict, Type, Protocol
+from typing import (
+    List,
+    NewType,
+    Tuple,
+    Any,
+    ContextManager,
+    Dict,
+    Type,
+    Protocol,
+    Optional,
+)
 
 import asyncssh
 
@@ -133,6 +143,7 @@ class Result:
     experiment: Experiment
     time: Milliseconds
     queries: int
+    mean_latency: Optional[Milliseconds] = None
 
     @property
     def qps(self) -> int:
