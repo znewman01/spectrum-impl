@@ -118,6 +118,7 @@ class Args(system.Args):
             "experiments_file",
             metavar="EXPERIMENTS_FILE",
             type=argparse.FileType("r"),
+            nargs="?",
             help="""\
 JSON input.
 

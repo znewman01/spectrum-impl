@@ -48,6 +48,7 @@ class Args(system.Args):
             "experiments_file",
             metavar="EXPERIMENTS_FILE",
             type=argparse.FileType("r"),
+            nargs="?",
             help="""\
 JSON input.
 
@@ -64,4 +65,6 @@ Also configurable:
 
     @classmethod
     def from_parsed(cls, parsed) -> Args:
-        return cls(experiments_file=parsed.experiments_file,)
+        return cls(
+            experiments_file=parsed.experiments_file,
+        )

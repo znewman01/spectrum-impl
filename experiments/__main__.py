@@ -72,7 +72,9 @@ class Args:
             # Pylint gets confused, but this is part of the contract for SystemArgs
             args.add_args(
                 subparsers.add_parser(
-                    args.name, help=args.doc, formatter_class=RawTextHelpFormatter,
+                    args.name,
+                    help=args.doc,
+                    formatter_class=RawTextHelpFormatter,
                 )
             )
             # pylint: enable=no-member
@@ -107,14 +109,22 @@ async def main(args: Args):
         loop.add_signal_handler(sig, ctrl_c.set)
 
     system: System = args.system_args.system
-    experiments_json = json.load(args.system_args.experiments_file)
-    experiments = list(map(system.experiment.from_dict, experiments_json))
+    if args.system_args.experiments_file:
+        experiments_json = json.load(args.system_args.experiments_file)
+        experiments = list(map(system.experiment.from_dict, experiments_json))
+    elif args.cleanup:
+        experiments = []
+    else:
+        raise RuntimeError("EXPERIMENTS_FILE is required (except for cleanup).")
 
     any_err = False
     try:
         with stream_json(args.output, close=True) as writer:
             async for result in run_experiments(
-                experiments, args.run, args.system_args, ctrl_c,
+                experiments,
+                args.run,
+                args.system_args,
+                ctrl_c,
             ):
                 if result is None:
                     any_err = True
