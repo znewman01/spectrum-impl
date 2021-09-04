@@ -428,14 +428,14 @@ class Experiment(system.Experiment):
             raise RuntimeError("No successful runs.")
         # We now have the total QPS per machine; let's aggregate.
         # Divide by self.groups so we don't double-count.
-        total_queries = sum(queries for (queries, time) in results) / self.groups
-        total_time = sum(time for (queries, time) in results) / self.groups
-        total_qps = 1000 * total_queries / total_time
-        min_time = min(time for (queries, time) in results)
+        total_qps = (
+            sum(1000 * queries / time for (queries, time) in results) / self.groups
+        )
+        mean_time = mean(time for (queries, time) in results)
         return Result(
             experiment=self,
-            time=min_time,
-            queries=int(total_qps * (int(min_time) / 1000)),
+            time=Milliseconds(int(mean_time)),
+            queries=int(total_qps * mean_time / 1000),
             mean_latency=mean_latency,
         )
 
