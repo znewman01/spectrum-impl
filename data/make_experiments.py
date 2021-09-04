@@ -35,25 +35,25 @@ MULTI_SERVER_MESSAGE_SIZES = [160]
 # Doesn't include "full broadcast" plots which are a special case.
 PLOTS_SPECTRUM = {
     "onechannel": {
-        "clients": [64],
+        "clients": [16],
         "channels": FEW_CHANNELS,
         "message_size": MESSAGE_SIZES_FEW_CHANNELS,
     },
     "manychannel": {
-        "clients": [64],
+        "clients": [16],
         "channels": MANY_CHANNELS,
         "message_size": MESSAGE_SIZES_MANY_CHANNELS,
     },
     # Horizontal scaling experiment
     "horizontal": {
-        "clients": [64],
+        "clients": [16],
         "worker_machines_per_group": [1, 2, 3, 5, 8, 10],
         "message_size": [100_000],
         "channels": [500],
     },
     # Test the scaling of seed homomorphic protocol
     "multi-server": {
-        "clients": [64],
+        "clients": [16],
         "clients_per_machine": [32],
         "channels": MULTI_SERVER_CHANNELS,
         "message_size": MULTI_SERVER_MESSAGE_SIZES,
@@ -66,9 +66,14 @@ PLOTS_SPECTRUM = {
         ],
     },
     "multi-server-control": {
-        "clients": [64],
+        "clients": [16],
         "channels": MULTI_SERVER_CHANNELS,
         "message_size": MULTI_SERVER_MESSAGE_SIZES,
+    },
+    "dummy": {
+        "clients": [16],
+        "channels": [100],
+        "message_size": [1000],
     },
 }
 
@@ -81,6 +86,10 @@ PLOTS_EXPRESS = {
         "channels": MANY_CHANNELS,
         "message_size": MESSAGE_SIZES_MANY_CHANNELS,
     },
+    "dummy": {
+        "channels": [100],
+        "message_size": [1000],
+    },
 }
 
 PLOTS_RIPOSTE = {
@@ -90,6 +99,10 @@ PLOTS_RIPOSTE = {
         "channels": [max(MANY_CHANNELS)],
         # I've tried many times, it doesn't report any progress for >=5KB messages.
         "message_size": [s for s in MESSAGE_SIZES_MANY_CHANNELS if s < 5000],
+    },
+    "dummy": {
+        "channels": [100],
+        "message_size": [1000],
     },
 }
 
@@ -116,7 +129,7 @@ def _write_file(path, data):
 
 def main(args):
     parser = argparse.ArgumentParser(args[0])
-    parser.add_argument("--trials", type=int, default=1)
+    parser.add_argument("--trials", type=int, default=None)
     parser.add_argument("output_dir", nargs="?", default=".")
     args = parser.parse_args(args[1:])
 

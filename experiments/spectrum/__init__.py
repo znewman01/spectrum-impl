@@ -273,7 +273,7 @@ async def _prepare_client(
 ):
     spectrum_config: Dict[str, Any] = {
         "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
-        "SPECTRUM_VIEWER_THREADS": 1,
+        "SPECTRUM_VIEWER_THREADS": 32,
         "SPECTRUM_LOG_LEVEL": "info",
         **etcd_env,
     }
@@ -294,8 +294,8 @@ class Experiment(system.Experiment):
     channels: int
     message_size: Bytes
     instance_type: InstanceType = DEFAULT_INSTANCE_TYPE
-    clients_per_machine: int = 200
-    workers_per_machine: int = 4  # TODO: better default
+    clients_per_machine: int = 8
+    workers_per_machine: int = 4
     worker_machines_per_group: int = 1
     protocol: Protocol = Symmetric()
 
