@@ -9,7 +9,8 @@ sudo apt-get install -y \
      pkg-config \
      unzip \
      m4 \
-     etcd
+     etcd \
+     iperf
 
 curl https://sh.rustup.rs -sSf | sh -s -- \
     -y \

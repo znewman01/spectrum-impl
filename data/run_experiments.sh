@@ -69,6 +69,43 @@ main() {
         python -m experiments.spectrum.ssh --worker -- \
           "openssl speed -elapsed -evp aes-128-ctr 2>&1" \
           > ${TMP_DIR}/results/openssl-stderr.txt
+        # Network
+        python -m experiments.spectrum.ssh --worker -- \
+          "ec2metadata | grep public-ip" \
+          > ${TMP_DIR}/results/openssl-stderr.txt
+        # python -m experiments.spectrum.ssh --worker
+        W0_REGION=$(python -m experiments.spectrum.ssh --worker 0 -- "ec2metadata --availability-zone | grep -Eo 'us-[a-z]+'")
+        W1_REGION=$(python -m experiments.spectrum.ssh --worker 1 -- "ec2metadata --availability-zone | grep -Eo 'us-[a-z]+'")
+        if [ "$W0_REGION" != "$W1_REGION" ]; then
+          C_IP=$(python -m experiments.spectrum.ssh --client -- "ec2metadata --public-ip")
+          W0_IP=$(python -m experiments.spectrum.ssh --worker 0 -- "ec2metadata --public-ip")
+          W1_IP=$(python -m experiments.spectrum.ssh --worker 1 -- "ec2metadata --public-ip")
+          # grab all the ping times, sort numerically, get the middle => median
+          PING_COUNT=15
+          python -m experiments.spectrum.ssh --worker 0 -- \
+            "ping -c $PING_COUNT $W1_IP" \
+            | grep -Eo 'time=[0-9.]+ ms' \
+            | sed -E 's/time=([0-9.]+) ms/\1/g' \
+            | sort -n \
+            | sed -n "$((($PING_COUNT + 1) / 2))p" \
+            > ${TMP_DIR}/results/median-rtt-w0-w1.txt
+          python -m experiments.spectrum.ssh --client -- \
+            "ping -c $PING_COUNT $W0_IP" \
+            | grep -Eo 'time=[0-9.]+ ms' \
+            | sed -E 's/time=([0-9.]+) ms/\1/g' \
+            | sort -n \
+            | sed -n "$((($PING_COUNT + 1) / 2))p" \
+            > ${TMP_DIR}/results/median-rtt-c-w0.txt
+          python -m experiments.spectrum.ssh --client -- \
+            "ping -c $PING_COUNT $W1_IP" \
+            | grep -Eo 'time=[0-9.]+ ms' \
+            | sed -E 's/time=([0-9.]+) ms/\1/g' \
+            | sort -n \
+            | sed -n "$((($PING_COUNT + 1) / 2))p" \
+            > ${TMP_DIR}/results/median-rtt-c-w1.txt
+        else
+          echo "Not running ping time experiment."
+        fi
       fi
       # Clean up AWS resources
       echo "[]" | python -m experiments --cleanup ${system} -
