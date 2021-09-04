@@ -5,7 +5,7 @@
 Description=Spectrum client
 
 [Service]
-ExecStart=/home/ubuntu/spectrum/viewer --log-level debug
+ExecStart=/home/ubuntu/spectrum/viewer
 Type=simple
 Restart=no
 EnvironmentFile=/etc/spectrum.conf

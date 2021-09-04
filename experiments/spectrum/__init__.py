@@ -249,6 +249,7 @@ async def _prepare_worker(
     spectrum_config: Dict[str, Any] = {
         "SPECTRUM_WORKER_GROUP": group,
         "SPECTRUM_WORKER_START_INDEX": worker_start_idx,
+        "SPECTRUM_LOG_LEVEL": "info",
         "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
         "SPECTRUM_TLS_KEY": "/home/ubuntu/spectrum/data/server.key",
         "SPECTRUM_TLS_CERT": "/home/ubuntu/spectrum/data/server.crt",
@@ -273,6 +274,7 @@ async def _prepare_client(
     spectrum_config: Dict[str, Any] = {
         "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
         "SPECTRUM_VIEWER_THREADS": 1,
+        "SPECTRUM_LOG_LEVEL": "info",
         **etcd_env,
     }
     await _install_spectrum_config(machine, spectrum_config)
@@ -401,19 +403,21 @@ class Experiment(system.Experiment):
         setting: Setting,
         etcd_env: Dict[str, Any],
     ) -> Result:
-        await _install_spectrum_config(setting.publisher, etcd_env)
+        spectrum_config: Dict[str, Any] = {
+            "SPECTRUM_LOG_LEVEL": "info",
+            **etcd_env,
+        }
+        await _install_spectrum_config(setting.publisher, spectrum_config)
         timeout = EXPERIMENT_TIMEOUT - 10  # give some cleanup time
         await setting.publisher.ssh.run(
             "sudo systemctl start spectrum-publisher", check=True
         )
         await asyncio.sleep(timeout)
-        f = open("/tmp/log", "w")
 
         latencies = await asyncio.gather(*map(self._fetch_latencies, setting.clients))
         latencies = list(filter(None, latencies))
         if not latencies:
             raise RuntimeError("Couldn't get latencies")
-        f.write(f"{latencies}\n")
         total_time = sum(map(itemgetter(0), latencies))
         total_requests = sum(map(itemgetter(1), latencies))
         mean_latency = int(total_time / total_requests)
@@ -422,7 +426,6 @@ class Experiment(system.Experiment):
         results = list(filter(None, results))
         if not results:
             raise RuntimeError("No successful runs.")
-        f.write(f"{results}\n\n")
         # We now have the total QPS per machine; let's aggregate.
         # Divide by self.groups so we don't double-count.
         total_queries = sum(queries for (queries, time) in results) / self.groups

@@ -6,7 +6,7 @@
 Description=Spectrum client
 
 [Service]
-ExecStart=/home/ubuntu/spectrum/broadcaster --index %i --log-level debug
+ExecStart=/home/ubuntu/spectrum/broadcaster --index %i
 Type=simple
 Restart=no
 EnvironmentFile=/etc/spectrum.conf
