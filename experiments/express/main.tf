@@ -40,6 +40,10 @@ variable "instance_type" {
   type = string
 }
 
+variable "client_machine_count" {
+  type = number
+}
+
 module "image_main" {
   source        = "../modules/image"
   image_name    = "express_image"
@@ -110,18 +114,17 @@ resource "aws_instance" "serverB" {
   tags            = { Name = "express_serverB" }
 }
 
-# TODO(zjn): add more client servers?
-# Express evaluation only uses one but we (and Riposte) use >1
 resource "aws_instance" "client" {
   ami             = module.image_main.ami.id
   instance_type   = var.instance_type
+  count           = var.client_machine_count
   key_name        = module.network_main.key_pair.key_name
   security_groups = [module.network_main.security_group.name]
   tags            = { Name = "express_client" }
 }
 
 locals {
-  instances = [aws_instance.client, aws_instance.serverA, aws_instance.serverB]
+  instances = concat(aws_instance.client, [aws_instance.serverA, aws_instance.serverB])
 }
 
 module "secgroup_main" {
@@ -152,8 +155,8 @@ output "serverB" {
   value = aws_instance.serverB.public_dns
 }
 
-output "client" {
-  value = aws_instance.client.public_dns
+output "clients" {
+  value = aws_instance.client.*.public_dns
 }
 
 output "private_key" {

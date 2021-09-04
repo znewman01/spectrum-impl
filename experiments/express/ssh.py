@@ -12,18 +12,38 @@ from subprocess import check_output, check_call, CalledProcessError
 def main():
     parser = argparse.ArgumentParser(description="SSH into a Terraform machine.")
     parser.add_argument(
-        "host",
-        choices=("serverA", "serverB", "client"),
-        help="Which machine to SSH into.",
+        "--servera",
+        action="store_true",
+        help="SSH into the leader machine (default)",
+    )
+    parser.add_argument(
+        "--serverb",
+        action="store_true",
+        help="SSH into the other server machine",
+    )
+    parser.add_argument(
+        "--client",
+        type=int,
+        nargs="?",
+        const=0,
+        help="SSH into some/(the nth) worker machine",
     )
     args = parser.parse_args()
 
     data = json.loads(
-        check_output(["terraform", "output", "-json"], cwd=Path(__file__).parent,)
+        check_output(
+            ["terraform", "output", "-json"],
+            cwd=Path(__file__).parent,
+        )
     )
     data = {k: v["value"] for k, v in data.items()}
 
-    hostname = data[args.host]
+    if args.client is not None:
+        hostname = data["clients"][args.client]
+    elif args.servera:
+        hostname = data["serverA"]
+    else:
+        hostname = data["serverB"]
 
     try:
         with tempfile.NamedTemporaryFile() as key_file:
