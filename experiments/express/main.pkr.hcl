@@ -59,6 +59,12 @@ build {
     inline = ["while [ ! -f /var/lib/cloud/instance/boot-finished ]; do echo 'Waiting for cloud-init...'; sleep 1; done"]
   }
 
+  provisioner "file" {
+    destination = "/home/ubuntu"
+    source      = "config"
+  }
+
+
   provisioner "shell" {
     script = "./install.sh"
   }

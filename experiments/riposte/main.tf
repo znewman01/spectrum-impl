@@ -127,7 +127,7 @@ resource "aws_instance" "auditor" {
 
 resource "aws_instance" "client" {
   ami             = module.image_main.ami.id
-  count           = 2 # TODO(zjn): make it 8 # from Riposte paper
+  count           = 8
   instance_type   = var.instance_type
   key_name        = module.network_main.key_pair.key_name
   security_groups = [module.network_main.security_group.name]
@@ -172,7 +172,7 @@ output "auditor" {
 }
 
 output "clients" {
-  value = "${aws_instance.client.*.public_dns}"
+  value = aws_instance.client.*.public_dns
 }
 
 output "private_key" {
