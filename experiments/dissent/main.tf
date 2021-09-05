@@ -21,6 +21,10 @@ variable "instance_type" {
   type = string
 }
 
+variable "client_machine_count" {
+  type = number
+}
+
 locals {
   tags = { Project = "spectrum" }
 }
@@ -48,19 +52,19 @@ provider "aws" {
 
 module "image_main" {
   source        = "../modules/image"
-  image_name    = "riposte_image"
+  image_name    = "dissent_image"
   instance_type = var.instance_type
   providers     = { aws = aws }
 }
 module "image_east" {
   source        = "../modules/image"
-  image_name    = "riposte_image"
+  image_name    = "dissent_image"
   instance_type = var.instance_type
   providers     = { aws = aws.east }
 }
 module "image_west" {
   source        = "../modules/image"
-  image_name    = "riposte_image"
+  image_name    = "dissent_image"
   instance_type = var.instance_type
   providers     = { aws = aws.west }
 }
@@ -73,7 +77,7 @@ resource "tls_private_key" "key" {
 resource "aws_key_pair" "main" {
   public_key = tls_private_key.key.public_key_openssh
   tags = {
-    Name = "riposte_keypair"
+    Name = "dissent_keypair"
   }
 }
 
@@ -93,51 +97,41 @@ module "network_west" {
   providers  = { aws = aws.west }
 }
 
-resource "aws_instance" "leader" {
+resource "aws_instance" "server0" {
   provider        = aws.east
   ami             = module.image_east.ami.id
   instance_type   = var.instance_type
   key_name        = module.network_east.key_pair.key_name
   security_groups = [module.network_east.security_group.name]
   tags = {
-    Name = "riposte_leader"
+    Name = "dissent_server0"
   }
 }
 
-resource "aws_instance" "server" {
+resource "aws_instance" "server1" {
   provider        = aws.west
   ami             = module.image_west.ami.id
   instance_type   = var.instance_type
   key_name        = module.network_west.key_pair.key_name
   security_groups = [module.network_west.security_group.name]
   tags = {
-    Name = "riposte_server"
-  }
-}
-
-resource "aws_instance" "auditor" {
-  ami             = module.image_main.ami.id
-  instance_type   = var.instance_type
-  key_name        = module.network_main.key_pair.key_name
-  security_groups = [module.network_main.security_group.name]
-  tags = {
-    Name = "riposte_auditor"
+    Name = "dissent_server1"
   }
 }
 
 resource "aws_instance" "client" {
   ami             = module.image_main.ami.id
-  count           = 2 # TODO(zjn): make it 8 # from Riposte paper
+  count           = var.client_machine_count
   instance_type   = var.instance_type
   key_name        = module.network_main.key_pair.key_name
   security_groups = [module.network_main.security_group.name]
   tags = {
-    Name = "riposte_client"
+    Name = "dissent_client"
   }
 }
 
 locals {
-  instances = concat(aws_instance.client, [aws_instance.auditor, aws_instance.server, aws_instance.leader])
+  instances = concat(aws_instance.client, [aws_instance.server0, aws_instance.server1])
 }
 
 module "secgroup_main" {
@@ -159,20 +153,16 @@ module "secgroup_west" {
   providers      = { aws = aws.west }
 }
 
-output "leader" {
-  value = aws_instance.leader.public_dns
+output "server0" {
+  value = aws_instance.server0.public_dns
 }
 
-output "server" {
-  value = aws_instance.server.public_dns
-}
-
-output "auditor" {
-  value = aws_instance.auditor.public_dns
+output "server1" {
+  value = aws_instance.server1.public_dns
 }
 
 output "clients" {
-  value = "${aws_instance.client.*.public_dns}"
+  value = aws_instance.client.*.public_dns
 }
 
 output "private_key" {

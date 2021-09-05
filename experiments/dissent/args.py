@@ -1,45 +1,28 @@
-"""Run Riposte experiments.
+"""Run Dissent experiments.
 
-We use the `multiparty` branch of <https://bitbucket.org/henrycg/riposte>.
-We create an Ubuntu AMI with Go and Riposte installed; this is sufficient to run
-the Riposte experiments. However, Riposte is not configurable, so we need to
-recompile for every set of parameters.
+Use the source from <https://github.com/dedis/Dissent> (current commit as of
+2021-09-05).
 
-Our AWS environment:
+We create an Ubuntu AMI with the Dissent binaries. Our AWS environment:
 
 - (many) client machines
-- "leader" machine
-- "server" machine
-- "auditor" machine
+- "server0" machine
+- "server1" machine
 
 A Spectrum experiment is parameterized by number of channels and message size.
-Message size is easy in Riposte, but translating the number of channels into a
-rectangular table (rows = width * height) is tricky.
-
-Sec. 3.2 proposes a technique to give rows ~= 2.7 * channels; we use that
-estimate. Then, we take the *minimum* of the results with each of two
-width:height ratios: 1 (which fig. 4 suggests leads to greatest throughput) and
-a ratio using the formula of sec. 4.3).
 
 For each experiment, we:
 
-1. Recompile the binaries.
-2. Run `auditor`, `server`, and `leader` in that order.
-3. Run the client, with the `-hammer` flag.
-4. Kill after a while (AFAICT it just runs forever).
-5. Parse the output of `auditor` to get the average QPS.
-
-Step (5) is pretty generous -- we rely on the self-reported rate of the server
-for each batch. This cuts out some idle time. But I don't think it changes the
-results by much.
-
+1. Set up config files (server0/server1 keys are baked into the AMI; the clients
+   get generated locally)
+2. Run `server0` and `server1`.
+3. Parse?
 
 To debug:
 
     $ python ssh.py --client 4  # the 5th client
-    $ python ssh.py --leader
-    $ python ssh.py --server
-    $ python ssh.py --auditor
+    $ python ssh.py --server0
+    $ python ssh.py --server1
 """
 from __future__ import annotations
 import argparse
@@ -47,7 +30,7 @@ import io
 
 from dataclasses import dataclass
 from experiments import system
-from experiments.riposte import RIPOSTE
+from experiments.dissent import DISSENT
 
 
 @dataclass
@@ -55,9 +38,9 @@ class Args(system.Args):
     experiments_file: io.TextIOBase
     build = None  # no build arguments
 
-    system = RIPOSTE
+    system = DISSENT
 
-    name = "riposte"
+    name = "dissent"
     doc = __doc__.lstrip()
 
     @classmethod

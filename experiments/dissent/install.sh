@@ -1,5 +1,5 @@
 #!/bin/bash
-git clone https://github.com/dedis/Dissent
+set -euf
 
 sudo apt-get update -y > /dev/null
 sudo apt-get install -y qtchooser qt5-default g++ make unzip
@@ -14,13 +14,16 @@ make libcryptopp.so
 sudo make install
 popd
 
+git clone https://github.com/dedis/Dissent
 pushd Dissent
 git checkout 84c79e038d4137004244ca41f2d06726c67dc632
 sed -i 's/-Werror/-Wall/g' dissent.pro
-qmake dissent.pro
-make
-qmake keygen.pro
-make
+for project in dissent.pro keygen.pro application.pro; do
+    qmake "DEFINES += DEMO_SESSION" "DEFINES += BAD_CS_BULK" $project
+    make
+done
 popd
+# TODO: make bigger
+./Dissent/keygen --nkeys=1002  # 2 servers + up to 100 clients
 
 sudo cp "$HOME/config/sysctl.conf" /etc/sysctl.d/20-spectrum.conf

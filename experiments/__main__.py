@@ -40,13 +40,19 @@ from typing import List, Type
 from experiments.spectrum.args import Args as SpectrumArgs
 from experiments.express.args import Args as ExpressArgs
 from experiments.riposte.args import Args as RiposteArgs
+from experiments.dissent.args import Args as DissentArgs
 
 from experiments.system import Args as SystemArgs, System
 from experiments.util import stream_json
 from experiments.run import run_experiments, Args as RunArgs
 
 
-_SYSTEM_ARGS: List[Type[SystemArgs]] = [SpectrumArgs, ExpressArgs, RiposteArgs]
+_SYSTEM_ARGS: List[Type[SystemArgs]] = [
+    SpectrumArgs,
+    ExpressArgs,
+    RiposteArgs,
+    DissentArgs,
+]
 
 
 @dataclass

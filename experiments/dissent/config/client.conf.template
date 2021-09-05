@@ -1,0 +1,17 @@
+[general]
+remote_endpoints="tcp://${SERVER0_ADDR}:${DISSENT_PORT}","tcp://${SERVER1_ADDR}:${DISSENT_PORT}"
+local_endpoints="tcp://:6001"
+local_nodes=${NODES_PER_PROCESS}
+
+# local_id="DEADBEEF=","CAFEBABE="  from the key filename
+local_id=${LOCAL_IDS}
+server_ids=${SERVER_IDS}
+round_type="null/csdcnet"
+
+auth=true
+path_to_private_keys=keys/private
+path_to_public_keys=keys/public
+
+console=false
+log="clients.log"
+multithreading=true
