@@ -21,6 +21,7 @@ from experiments.util import Bytes
 
 PORT = 6000
 WAIT_TIME = 300
+LISTENERS_PER_PROCESS = 10
 
 _SERVER0_ID = "QUTDkL8mYss2gBw-E2fx1GGAh2w="
 _SERVER1_ID = "h8m9jFrEqu4bOcUBxYilGQMsYXE="
@@ -113,6 +114,16 @@ async def _get_ip(machine: Machine) -> str:
     return proc.stdout.strip()
 
 
+def _distribute(balls: int, bins: int) -> List[int]:
+    counts = [balls // bins] * bins
+    remainder = balls % bins
+    for i in range(remainder):
+        counts[i] += 1
+    assert sum(counts) == balls
+    assert len(counts) == bins
+    return counts
+
+
 @dataclass(frozen=True)
 class Experiment(system.Experiment):
     clients: int
@@ -122,7 +133,10 @@ class Experiment(system.Experiment):
     blame: bool = False
 
     def to_environment(self) -> Environment:
-        return Environment(instance_type=self.instance_type)
+        # TODO: >1 broadcaster per machine
+        return Environment(
+            instance_type=self.instance_type, client_machine_count=self.channels
+        )
 
     @classmethod
     def from_dict(cls, data) -> Experiment:
@@ -178,7 +192,7 @@ class Experiment(system.Experiment):
     _SERVER_CONF_PATH = Path("server.conf")
     _BROADCASTER_CONF_TEMPLATE_PATH = _LOCAL_CONFIG_DIR / "broadcaster.conf"
     _BROADCASTER_CONF_PATH = Path("broadcaster.conf")
-    _CLIENT_CONF_PATH = Path("client.conf")
+    _CLIENT_CONF_PATH = "client{}.conf"
     _CLIENT_CONF_TEMPLATE_PATH = _LOCAL_CONFIG_DIR / "client.conf"
 
     async def _install_configs(
@@ -209,7 +223,10 @@ class Experiment(system.Experiment):
         broadcaster_conf_template = self._BROADCASTER_CONF_TEMPLATE_PATH.read_text()
         client_conf_template = self._CLIENT_CONF_TEMPLATE_PATH.read_text()
         broadcaster_keys = list(keys["broadcasters"])
-        for client in clients:
+        listener_keys = list(keys["listeners"])
+        listener_counts = _distribute(len(listener_keys), len(clients))
+        counts = []  # for each client: (num_broadcasters, num_listener_processes)
+        for client, listener_count in zip(clients, listener_counts):
             # TODO: handle >1 broadcaster per machine
             # - web_port
             # - multiple configs
@@ -220,15 +237,17 @@ class Experiment(system.Experiment):
             }
             broadcaster_conf = broadcaster_conf_template.format(**broadcaster_vars)
             await _install_file(client, broadcaster_conf, self._BROADCASTER_CONF_PATH)
-            # TODO: divide up listeners over machines
-            listener_local_ids = ",".join(map('"{}"'.format, keys["listeners"]))
+            # TODO: divide up listeners over processses
+            listener_local_ids = listener_keys[:listener_count]
+            listener_keys = listener_keys[listener_count:]
+            listener_local_id_str = ",".join(map('"{}"'.format, listener_local_ids))
             client_vars = {
-                "local_ids": listener_local_ids,
-                "nodes_per_process": len(keys["listeners"]),
+                "local_ids": listener_local_id_str,
+                "nodes_per_process": len(listener_local_ids),
                 **common_vars,
             }
             client_conf = client_conf_template.format(**client_vars)
-            await _install_file(client, client_conf, self._CLIENT_CONF_PATH)
+            await _install_file(client, client_conf, self._CLIENT_CONF_PATH.format(0))
             # make a message_size-byte dummy file
             cmd = (
                 f"head -c {self.message_size} /dev/zero "
@@ -236,8 +255,12 @@ class Experiment(system.Experiment):
                 f"> {message_path}"
             )
             await client.ssh.run(cmd, check=True)
+            counts.append((1, 1))
+        return counts
 
-    def _run_dissent(self, setting: Setting, shutdown: asyncio.Event):
+    def _run_dissent(
+        self, setting: Setting, counts: List[Tuple[int, int]], shutdown: asyncio.Event
+    ):
         server0 = setting.server0
         server1 = setting.server1
         clients = setting.clients
@@ -251,12 +274,18 @@ class Experiment(system.Experiment):
                 asyncio.create_task(_run(server1.ssh, server_cmd, shutdown)),
             ]
         )
-        listener_cmd = f"{dissent_bin} {self._CLIENT_CONF_PATH}"
         broadcaster_cmd = f"{dissent_bin} {self._BROADCASTER_CONF_PATH}"
-        for client in clients:
-            proc_futures.append(
-                asyncio.create_task(_run(client.ssh, listener_cmd, shutdown))
+        for client, (broadcasters, listeners) in zip(clients, counts):
+            client_confs = map(self._CLIENT_CONF_PATH.format, range(listeners))
+            listener_cmds = [f"{dissent_bin} {c}" for c in client_confs]
+            proc_futures.extend(
+                [
+                    asyncio.create_task(_run(client.ssh, l, shutdown))
+                    for l in listener_cmds
+                ]
             )
+            # TODO: >1 broadcaster per machine
+            assert broadcasters == 1
             proc_futures.append(
                 asyncio.create_task(_run(client.ssh, broadcaster_cmd, shutdown))
             )
@@ -299,21 +328,23 @@ class Experiment(system.Experiment):
         await self._install_keys(list(setting))
         keys = await self._sort_keys(server0)
         ips = await self._sort_ips(server0, server1, clients)
-        assert len(keys["broadcasters"]) == len(clients)  # TODO: for now
-        assert len(clients) == 1
+        assert len(keys["broadcasters"]) == len(clients)
 
         # set up configs
-        await self._install_configs(setting, ips, keys)
+        counts = await self._install_configs(setting, ips, keys)
 
         # run the dissent processes
         shutdown = asyncio.Event()
         spinner.text = f"[experiment] starting processes"
-        all_procs = self._run_dissent(setting, shutdown)
+        all_procs = self._run_dissent(setting, counts, shutdown)
         try:
             # TODO: wait until broadcaster log has "WaitingForServer"? or "Registering"
             await asyncio.sleep(5)
             curl_cmd = "curl -X POST --data-binary @message localhost:8080/session/send"
-            await asyncio.gather(*[c.ssh.run(curl_cmd, check=True) for c in clients])
+            curl_procs = []
+            for client in clients:
+                curl_procs.append(client.ssh.run(curl_cmd, check=True))
+            await asyncio.gather(*curl_procs)
             spinner.text = f"[experiment] run processes for {WAIT_TIME}s"
             await server0.ssh.run(
                 'tail -f -n +0 server.log | grep -m1 "finished bulk"',
