@@ -40,10 +40,13 @@ def main():
 
     if args.client is not None:
         hostname = data["clients"][args.client]
+        machine = f"clients{args.client}"
     elif args.server1:
         hostname = data["server1"]
+        machine = "server1"
     else:
         hostname = data["server0"]
+        machine = "server0"
 
     try:
         with tempfile.NamedTemporaryFile() as key_file:
@@ -58,6 +61,8 @@ def main():
                     f"ubuntu@{hostname}",
                     "-o",
                     "StrictHostKeyChecking=no",
+                    "-t",
+                    f'PS1="{machine} ($(ec2metadata --public-ip))$ " bash --norc -i',
                 ],
             )
     except CalledProcessError as err:
