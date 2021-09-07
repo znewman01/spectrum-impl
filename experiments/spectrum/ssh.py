@@ -44,17 +44,28 @@ def main(argv):
 
     if args.client is not None:
         hostname = data["clients"][args.client]
+        machine = f"clients{args.client}"
     elif args.worker is not None:
         workers = data["workers_east"] + data["workers_west"]
         hostname = workers[args.worker]
+        machine = f"workers{args.worker}"
     else:
         hostname = data["publisher"]
+        machine = "publisher"
 
     try:
         with tempfile.NamedTemporaryFile() as key_file:
             key_file.write(data["private_key"].encode("utf8"))
             key_file.flush()
 
+            extra = (
+                extra
+                if extra
+                else [
+                    "-t",
+                    f'PS1="{machine} ($(ec2metadata --public-ip))$ " bash --norc -i',
+                ]
+            )
             check_call(
                 [
                     "ssh",
