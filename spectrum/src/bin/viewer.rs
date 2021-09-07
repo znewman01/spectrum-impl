@@ -27,6 +27,9 @@ struct Args {
     threads: u16,
     #[clap(flatten)]
     tls: cli::TlsCaArgs,
+    /// Max jitter. Useful for big big messages (make big).
+    #[clap(long, env = "SPECTRUM_MAX_JITTER_MILLIS", default_value = "100")]
+    max_jitter: u64,
 }
 
 fn main() {
@@ -42,6 +45,7 @@ fn main() {
             let experiment = experiment::read_from_store(&config).await?;
             let hammer = experiment.hammer;
             let tls: Option<Certificate> = args.tls.into();
+            let max_jitter = args.max_jitter;
 
             repeat_with(|| {
                 let protocol = experiment.get_protocol().clone();
@@ -55,6 +59,7 @@ fn main() {
                         info,
                         hammer,
                         tls,
+                        max_jitter,
                         futures::future::ready(()),
                     )
                     .await

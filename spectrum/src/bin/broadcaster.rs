@@ -26,6 +26,9 @@ struct Args {
     logs: cli::LogArgs,
     #[clap(flatten)]
     client: BroadcasterArgs,
+    /// Max jitter. Useful for big big messages (make big).
+    #[clap(long, env = "SPECTRUM_MAX_JITTER_MILLIS", default_value = "100")]
+    max_jitter: u64,
 }
 
 #[derive(Clap)]
@@ -42,6 +45,10 @@ struct BroadcasterArgs {
     /// File containing the broadcast key, serialized to JSON.
     #[clap(long, required = true)]
     key_file: String,
+
+    /// Max jitter. Useful for big big messages (make big).
+    #[clap(long, env = "SPECTRUM_MAX_JITTER_MILLIS", default_value = "100")]
+    max_jitter: u64,
 }
 
 impl TryFrom<BroadcasterArgs> for ClientInfo {
@@ -88,6 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         info,
         experiment.hammer,
         None,
+        args.max_jitter,
         ctrl_c().map(|_| ()),
     )
     .await

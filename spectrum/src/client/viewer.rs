@@ -32,6 +32,7 @@ async fn inner_run<C, F, P>(
     info: ClientInfo,
     hammer: bool,
     cert: Option<Certificate>,
+    max_jitter: u64,
     shutdown: F,
 ) -> Result<(), TokioError>
 where
@@ -70,8 +71,7 @@ where
     };
 
     delay_until(start_time).await;
-    const MAX_JITTER_MILLIS: u64 = 100;
-    let jitter = Duration::from_millis(rand::random::<u64>() % MAX_JITTER_MILLIS);
+    let jitter = Duration::from_millis(rand::random::<u64>() % max_jitter);
     sleep(jitter).await;
     debug!("Client detected start time ready.");
 
@@ -129,6 +129,7 @@ pub async fn run<C, F>(
     info: ClientInfo,
     hammer: bool,
     cert: Option<Certificate>,
+    max_jitter: u64,
     shutdown: F,
 ) -> Result<(), TokioError>
 where
@@ -137,13 +138,13 @@ where
 {
     match protocol {
         ProtocolWrapper::Secure(protocol) => {
-            inner_run(config, protocol, info, hammer, cert, shutdown).await?;
+            inner_run(config, protocol, info, hammer, cert, max_jitter, shutdown).await?;
         }
         ProtocolWrapper::SecureMultiKey(protocol) => {
-            inner_run(config, protocol, info, hammer, cert, shutdown).await?;
+            inner_run(config, protocol, info, hammer, cert, max_jitter, shutdown).await?;
         }
         ProtocolWrapper::Insecure(protocol) => {
-            inner_run(config, protocol, info, hammer, cert, shutdown).await?;
+            inner_run(config, protocol, info, hammer, cert, max_jitter, shutdown).await?;
         }
     }
     Ok(())

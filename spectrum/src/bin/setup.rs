@@ -4,7 +4,7 @@ use spectrum::experiment::{write_to_store, Experiment};
 
 use clap::{crate_authors, crate_version, Clap};
 
-use std::fs::File;
+// use std::fs::File;
 
 /// Spectrum -- set up an experiment.
 ///
@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let config = config::from_env().await?;
     write_to_store(&config, &experiment).await?;
 
-    let keys = experiment.get_keys();
+    // let keys = experiment.get_keys();
     // for (idx, key) in keys.iter().enumerate() {
     //     let file = File::create(&format!("key-{}.json", idx))?;
     //     serde_json::to_writer(file, key)?;
