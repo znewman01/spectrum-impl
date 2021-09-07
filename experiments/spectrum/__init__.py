@@ -245,9 +245,11 @@ async def _prepare_worker(
     worker_start_idx: int,
     num_workers: int,
     etcd_env: Mapping[str, str],
+    leader: bool,
 ):
     spectrum_config: Dict[str, Any] = {
         "SPECTRUM_WORKER_GROUP": group,
+        "SPECTRUM_LEADER_GROUP": group,
         "SPECTRUM_WORKER_START_INDEX": worker_start_idx,
         "SPECTRUM_LOG_LEVEL": "info",
         "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
@@ -266,14 +268,23 @@ async def _prepare_worker(
     await machine.ssh.run(
         f"sudo systemctl start spectrum-worker@{{1..{num_workers}}}", check=True
     )
+    if leader:
+        await machine.ssh.run(f"sudo systemctl start spectrum-leader", check=True)
 
 
 async def _prepare_client(
-    machine: Machine, client_range: slice, etcd_env: Dict[str, Any]
+    machine: Machine, count: int, etcd_env: Dict[str, Any], hammer: bool
 ):
+    if hammer:
+        nprocs = count
+        threads = 32
+    else:
+        threads = 20
+        nprocs = count // threads
+        assert count % threads == 0
     spectrum_config: Dict[str, Any] = {
         "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
-        "SPECTRUM_VIEWER_THREADS": 32,
+        "SPECTRUM_VIEWER_THREADS": threads,
         "SPECTRUM_LOG_LEVEL": "info",
         **etcd_env,
     }
@@ -283,9 +294,15 @@ async def _prepare_client(
         check=True,
     )
     await machine.ssh.run(
-        f"sudo systemctl start viewer@{{{client_range.start}..{client_range.stop}}}",
+        f"sudo systemctl start viewer@{{1..{nprocs}}}",
         check=True,
     )
+
+
+def distribute(balls: int, balls_per_bin: int):
+    counts = [balls_per_bin] * (balls // balls_per_bin)
+    counts.append(balls % balls_per_bin)
+    return counts
 
 
 @dataclass(frozen=True)
@@ -294,10 +311,11 @@ class Experiment(system.Experiment):
     channels: int
     message_size: Bytes
     instance_type: InstanceType = DEFAULT_INSTANCE_TYPE
-    clients_per_machine: int = 8
+    clients_per_machine: int = None
     workers_per_machine: int = 4
     worker_machines_per_group: int = 1
     protocol: Protocol = Symmetric()
+    hammer: bool = True
 
     @property
     def groups(self) -> int:
@@ -313,11 +331,20 @@ class Experiment(system.Experiment):
         )
 
     @property
+    def cpm(self):
+        if self.clients_per_machine is not None:
+            return self.clients_per_machine
+        elif self.hammer:
+            return 8
+        else:
+            return 200
+
+    @property
     def group_size(self) -> int:
         return self.workers_per_machine * self.worker_machines_per_group
 
     def to_environment(self) -> Environment:
-        client_machines = math.ceil(self.clients / self.clients_per_machine)
+        client_machines = math.ceil(self.clients / self.cpm)
         worker_machines_east = self.worker_machines_per_group * ((self.groups + 1) // 2)
         worker_machines_west = self.worker_machines_per_group * (self.groups // 2)
         return Environment(
@@ -404,15 +431,20 @@ class Experiment(system.Experiment):
         etcd_env: Dict[str, Any],
     ) -> Result:
         spectrum_config: Dict[str, Any] = {
-            "SPECTRUM_LOG_LEVEL": "info",
+            "SPECTRUM_LOG_LEVEL": "trace",
             **etcd_env,
         }
         await _install_spectrum_config(setting.publisher, spectrum_config)
-        timeout = EXPERIMENT_TIMEOUT - 10  # give some cleanup time
-        await setting.publisher.ssh.run(
-            "sudo systemctl start spectrum-publisher", check=True
-        )
-        await asyncio.sleep(timeout)
+        if hammer:
+            await setting.publisher.ssh.run(
+                "sudo systemctl start spectrum-publisher", check=True
+            )
+            timeout = EXPERIMENT_TIMEOUT - 10  # give some cleanup time
+            await asyncio.sleep(timeout)
+        else:
+            await setting.publisher.ssh.run(
+                "sudo systemctl start spectrum-publisher --wait", check=True
+            )
 
         latencies = await asyncio.gather(*map(self._fetch_latencies, setting.clients))
         latencies = list(filter(None, latencies))
@@ -422,22 +454,39 @@ class Experiment(system.Experiment):
         total_requests = sum(map(itemgetter(1), latencies))
         mean_latency = int(total_time / total_requests)
 
-        results = await asyncio.gather(*map(self._fetch_timing, setting.all_workers))
-        results = list(filter(None, results))
-        if not results:
-            raise RuntimeError("No successful runs.")
-        # We now have the total QPS per machine; let's aggregate.
-        # Divide by self.groups so we don't double-count.
-        total_qps = (
-            sum(1000 * queries / time for (queries, time) in results) / self.groups
-        )
-        mean_time = mean(time for (queries, time) in results)
-        return Result(
-            experiment=self,
-            time=Milliseconds(int(mean_time)),
-            queries=int(total_qps * mean_time / 1000),
-            mean_latency=mean_latency,
-        )
+        if self.hammer:
+            results = await asyncio.gather(
+                *map(self._fetch_timing, setting.all_workers)
+            )
+            results = list(filter(None, results))
+            if not results:
+                raise RuntimeError("No successful runs.")
+            # We now have the total QPS per machine; let's aggregate.
+            # Divide by self.groups so we don't double-count.
+            total_qps = (
+                sum(1000 * queries / time for (queries, time) in results) / self.groups
+            )
+            mean_time = mean(time for (queries, time) in results)
+            return Result(
+                experiment=self,
+                time=Milliseconds(int(mean_time)),
+                queries=int(total_qps * mean_time / 1000),
+                mean_latency=mean_latency,
+            )
+        else:
+            result = await setting.publisher.ssh.run(
+                "journalctl --unit spectrum-publisher "
+                "    | grep -o 'Elapsed time: .*' "
+                "    | sed 's/Elapsed time: \\(.*\\)ms/\\1/'",
+                check=True,
+            )
+            time = int(result.stdout.strip())
+            return Result(
+                experiment=self,
+                time=Milliseconds(time),
+                queries=self.clients,
+                mean_latency=mean_latency,
+            )
 
     async def _inner_run(self, setting: Setting, spinner: Halo) -> Result:
         publisher = setting.publisher
@@ -459,19 +508,20 @@ class Experiment(system.Experiment):
             "ETCDCTL_API=3 etcdctl --endpoints localhost:2379 del --prefix ''",
             check=True,
         )
+        hammer_flag = "--hammer" if self.hammer else ""
         # can't use ssh.run(env=...) because the SSH server doesn't like it.
         await publisher.ssh.run(
             f"SPECTRUM_CONFIG_SERVER={etcd_url} "
             "/home/ubuntu/spectrum/setup"
             f"    {self.protocol.flag}"
-            f"    --hammer "
+            f"    {hammer_flag} "
             f"    --channels {self.channels}"
             f"    --clients {self.clients}"
             f"    --group-size {self.group_size}"
             f"    --groups {self.groups}"
             f"    --message-size {self.message_size}",
             check=True,
-            timeout=15,
+            timeout=30,
         )
 
         spinner.text = "[experiment] starting workers and clients"
@@ -480,31 +530,25 @@ class Experiment(system.Experiment):
         workers_by_region = cycle((iter(workers_east), iter(workers_west)))
         for (group, workers) in zip(range(self.groups), workers_by_region):
             worker_start_idx = 0
-            for _ in range(self.worker_machines_per_group):
+            for idx in range(self.worker_machines_per_group):
                 worker = next(workers)
+                leader = idx == 0 and not self.hammer
                 task = _prepare_worker(
                     worker,
                     group + 1,
                     worker_start_idx,
                     self.workers_per_machine,
                     etcd_env,
+                    leader,
                 )
                 worker_start_idx += self.workers_per_machine
                 tasks.append(task)
         await asyncio.gather(*tasks)
 
-        # Full client count at every machine except the last
-        cpm = self.clients_per_machine
-        client_counts = starmap(
-            slice,
-            zip(
-                range(1, self.clients, cpm),
-                chain(range(cpm, self.clients, cpm), [self.clients]),
-            ),
-        )
+        client_counts = distribute(self.clients, self.cpm)
         await asyncio.gather(
             *[
-                _prepare_client(client, client_range, etcd_env)
+                _prepare_client(client, client_range, etcd_env, self.hammer)
                 for client, client_range in zip(clients, client_counts)
             ]
         )
@@ -512,7 +556,7 @@ class Experiment(system.Experiment):
         spinner.text = "[experiment] running"
         return await asyncio.wait_for(
             self._execute_experiment(setting, etcd_env),
-            timeout=EXPERIMENT_TIMEOUT,
+            timeout=EXPERIMENT_TIMEOUT + 30,
         )
 
     async def run(self, setting: Setting, spinner: Halo) -> Result:
@@ -527,6 +571,9 @@ class Experiment(system.Experiment):
                     worker.ssh.run(
                         "sudo systemctl stop 'spectrum-worker@*'", check=False
                     )
+                )
+                shutdowns.append(
+                    worker.ssh.run("sudo systemctl stop spectrum-leader", check=False)
                 )
             for client in setting.clients:
                 shutdowns.append(
