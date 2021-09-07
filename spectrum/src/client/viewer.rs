@@ -101,6 +101,7 @@ where
                                 Err(err) => warn!("Error, trying again: {}", err),
                             };
                         }
+                        sleep(Duration::from_millis(100)).await;
                     }
                     info!("Request took {}ms.", start_time.elapsed().as_millis());
                     debug!("RESPONSE={:?}", response.into_inner());
