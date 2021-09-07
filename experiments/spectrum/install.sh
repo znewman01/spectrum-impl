@@ -28,3 +28,5 @@ sudo mv "${HOME}/config/leader.service" "/etc/systemd/system/spectrum-leader.ser
 sudo mv "${HOME}/config/worker@.service" "/etc/systemd/system/spectrum-worker@.service"
 sudo mv "${HOME}/config/viewer@.service" "/etc/systemd/system/viewer@.service"
 sudo mv "${HOME}/config/broadcaster@.service" "/etc/systemd/system/broadcaster@.service"
+sudo mkdir -p "/etc/systemd/system/etcd2.service.d/"
+sudo mv "${HOME}/config/etcd.conf" "/etc/systemd/system/etcd2.service.d/args.conf"
