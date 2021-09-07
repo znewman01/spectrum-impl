@@ -29,14 +29,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     write_to_store(&config, &experiment).await?;
 
     let keys = experiment.get_keys();
-    for (idx, key) in keys.iter().enumerate() {
-        let file = File::create(&format!("key-{}.json", idx))?;
-        serde_json::to_writer(file, key)?;
-    }
-    {
-        let file = File::create("keys.json")?;
-        serde_json::to_writer(file, &keys)?;
-    }
+    // for (idx, key) in keys.iter().enumerate() {
+    //     let file = File::create(&format!("key-{}.json", idx))?;
+    //     serde_json::to_writer(file, key)?;
+    // }
+    // {
+    //     let file = File::create("keys.json")?;
+    //     serde_json::to_writer(file, &keys)?;
+    // }
 
     Ok(())
 }
