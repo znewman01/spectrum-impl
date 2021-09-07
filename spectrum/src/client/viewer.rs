@@ -57,6 +57,10 @@ where
 
     let clients: Vec<_> = connections::connect_and_register(&config, info.clone(), cert).await?;
     let client_id = info.to_proto(); // before we move info
+
+    let jitter = Duration::from_millis(rand::random::<u64>() % max_jitter);
+    sleep(jitter).await;
+
     let mut write_tokens = match info.broadcast {
         Some((msg, key)) => {
             info!("Broadcaster about to send write token.");
@@ -71,8 +75,6 @@ where
     };
 
     delay_until(start_time).await;
-    let jitter = Duration::from_millis(rand::random::<u64>() % max_jitter);
-    sleep(jitter).await;
     debug!("Client detected start time ready.");
 
     loop {
