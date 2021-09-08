@@ -61,63 +61,65 @@ where
     let jitter = Duration::from_millis(rand::random::<u64>() % max_jitter);
     sleep(jitter).await;
 
-    let mut write_tokens = match info.broadcast {
-        Some((msg, key)) => {
-            info!("Broadcaster about to send write token.");
-            debug!("Write token: msg.len()={}, key={:?}", msg.len(), key);
-            protocol.broadcast(
-                msg.try_into().unwrap(),
-                info.idx.try_into().expect("idx should be small"),
-                key.try_into().unwrap(),
-            )
-        }
-        None => protocol.cover(),
-    };
+    {  // free the write token memory after send!
+        let mut write_tokens = match info.broadcast {
+            Some((msg, key)) => {
+                info!("Broadcaster about to send write token.");
+                debug!("Write token: msg.len()={}, key={:?}", msg.len(), key);
+                protocol.broadcast(
+                    msg.try_into().unwrap(),
+                    info.idx.try_into().expect("idx should be small"),
+                    key.try_into().unwrap(),
+                )
+            }
+            None => protocol.cover(),
+        };
 
-    delay_until(start_time).await;
-    debug!("Client detected start time ready.");
+        delay_until(start_time).await;
+        debug!("Client detected start time ready.");
 
-    loop {
-        clients
-            .iter()
-            .cloned()
-            .zip(write_tokens.into_iter())
-            .map(|(mut client, write_token)| {
-                let client_id = client_id.clone();
-                let write_token = write_token.into();
-                tokio::spawn(async move {
-                    let response;
-                    let start_time = Instant::now();
-                    loop {
-                        let req = tonic::Request::new(UploadRequest {
-                            client_id: Some(client_id.clone()),
-                            write_token: Some(write_token.clone()),
-                        });
-                        trace!("About to send upload request.");
-                        {
-                            match client.upload(req).await {
-                                Ok(r) => {
-                                    response = r;
-                                    break;
-                                }
-                                Err(err) => warn!("Error, trying again: {}", err),
-                            };
+        loop {
+            clients
+                .iter()
+                .cloned()
+                .zip(write_tokens.into_iter())
+                .map(|(mut client, write_token)| {
+                    let client_id = client_id.clone();
+                    let write_token = write_token.into();
+                    tokio::spawn(async move {
+                        let response;
+                        let start_time = Instant::now();
+                        loop {
+                            let req = tonic::Request::new(UploadRequest {
+                                client_id: Some(client_id.clone()),
+                                write_token: Some(write_token.clone()),
+                            });
+                            trace!("About to send upload request.");
+                            {
+                                match client.upload(req).await {
+                                    Ok(r) => {
+                                        response = r;
+                                        break;
+                                    }
+                                    Err(err) => warn!("Error, trying again: {}", err),
+                                };
+                            }
+                            sleep(Duration::from_millis(100)).await;
                         }
-                        sleep(Duration::from_millis(100)).await;
-                    }
-                    info!("Request took {}ms.", start_time.elapsed().as_millis());
-                    debug!("RESPONSE={:?}", response.into_inner());
+                        info!("Request took {}ms.", start_time.elapsed().as_millis());
+                        debug!("RESPONSE={:?}", response.into_inner());
+                    })
                 })
-            })
-            .collect::<FuturesUnordered<_>>()
-            .inspect_err(|err| error!("{:?}", err))
-            .try_collect::<Vec<_>>()
-            .await
-            .expect("tokio spawn should succeed");
-        if !hammer {
-            break;
+                .collect::<FuturesUnordered<_>>()
+                .inspect_err(|err| error!("{:?}", err))
+                .try_collect::<Vec<_>>()
+                .await
+                .expect("tokio spawn should succeed");
+            if !hammer {
+                break;
+            }
+            write_tokens = protocol.cover();
         }
-        write_tokens = protocol.cover();
     }
 
     shutdown.await;
