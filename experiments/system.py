@@ -83,6 +83,7 @@ from experiments.util import Hostname
 class Machine:
     ssh: asyncssh.SSHClientConnection
     hostname: Hostname
+    _ssh_args: Dict[str, Any]
 
 
 class Setting(ABC):

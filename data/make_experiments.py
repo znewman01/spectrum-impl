@@ -22,11 +22,10 @@ MESSAGE_SIZES_FEW_CHANNELS = [
 MESSAGE_SIZES_MANY_CHANNELS = [1_000, 5_000, 10_000]
 MANY_CHANNELS = [
     1000,
-    2000,
-    3000,
     5000,
-    8000,
     10000,
+    50000,
+    100000,
 ]
 
 MULTI_SERVER_CHANNELS = [64]
@@ -70,10 +69,14 @@ PLOTS_SPECTRUM = {
         "channels": MULTI_SERVER_CHANNELS,
         "message_size": MULTI_SERVER_MESSAGE_SIZES,
     },
-    "dummy": {
-        "clients": [16],
-        "channels": [100],
-        "message_size": [1000],
+    "latency": {
+        # TODO: you want to make this bigger to match Blinder but....
+        # maybe make message size smaller, 100KB or so?
+        "clients": [2000, 1_000, 5_000, 10_000],
+        "message_size": [1_000_000],
+        "channels": [1],
+        "hammer": [False],
+        "clients_per_machine": [500],
     },
 }
 
@@ -86,27 +89,38 @@ PLOTS_EXPRESS = {
         "channels": MANY_CHANNELS,
         "message_size": MESSAGE_SIZES_MANY_CHANNELS,
     },
-    "dummy": {
-        "channels": [100],
-        "message_size": [1000],
-    },
 }
 
 PLOTS_RIPOSTE = {
     # riposte can't separate channels and users, so we just take the max
     # also it barfs with messages >100KB (won't compile) so just do the manychannel setting
     "manychannel": {
-        "channels": [max(MANY_CHANNELS)],
+        "channels": [max([c for c in MANY_CHANNELS if c <= 25000])],
         # I've tried many times, it doesn't report any progress for >=5KB messages.
         "message_size": [s for s in MESSAGE_SIZES_MANY_CHANNELS if s < 5000],
     },
-    "dummy": {
-        "channels": [100],
+    "latency": {
+        "channels": [200, 1000, 5000, 10000],
         "message_size": [1000],
     },
 }
 
-# PLOTS_DISSENT
+PLOTS_DISSENT = {
+    "latency-blame": {
+        "clients": [200, 400, 600, 800, 1000],
+        "message_size": [10_000],  # TODO: can make 10K?
+        "blame": [True],
+        "channels": [1],
+    },
+    "latency-honest": {
+        "clients": [200, 400, 800, 1000],
+        # if we go too big it doesn't actually seem to register the messages and
+        # then everything is really fast because it doesn't do anything.
+        "message_size": [10_000],
+        "blame": [False],
+        "channels": [1],
+    },
+}
 
 
 def make_experiments(trials, params):
@@ -121,6 +135,16 @@ def make_experiments_spectrum(trials, params):
     # support for "full broadcast" plots (# channels = # clients) by omitting clients/channels
     # other services don't need this
     for experiment in make_experiments(trials, params):
+        if experiment["channels"] == 10000:
+            experiment["clients_per_machine"] = 2
+            experiment["clients"] = 8
+        elif experiment["channels"] == 50000:
+            experiment["clients_per_machine"] = 2
+            experiment["clients"] = 4
+        elif experiment["channels"] == 100000:
+            experiment["clients_per_machine"] = 1
+            experiment["clients"] = 2
+
         yield experiment
 
 
@@ -147,6 +171,11 @@ def main(args):
 
     for name, params in PLOTS_RIPOSTE.items():
         path = os.path.join(args.output_dir, f"riposte-{name}.json")
+        experiments = list(make_experiments(args.trials, params))
+        _write_file(path, experiments)
+
+    for name, params in PLOTS_DISSENT.items():
+        path = os.path.join(args.output_dir, f"dissent-{name}.json")
         experiments = list(make_experiments(args.trials, params))
         _write_file(path, experiments)
 

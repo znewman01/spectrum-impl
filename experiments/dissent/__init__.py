@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import asyncssh
+import asyncssh.misc
+import math
 
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -20,8 +22,10 @@ from experiments.cloud import DEFAULT_INSTANCE_TYPE, InstanceType, AWS_REGION
 from experiments.util import Bytes
 
 PORT = 6000
-WAIT_TIME = 300
-LISTENERS_PER_PROCESS = 10
+WAIT_TIME_SHORT = 120
+WAIT_TIME_LONG = 600
+LISTENERS_PER_PROCESS = 50
+CLIENTS_PER_MACHINE = 200
 
 _SERVER0_ID = "QUTDkL8mYss2gBw-E2fx1GGAh2w="
 _SERVER1_ID = "h8m9jFrEqu4bOcUBxYilGQMsYXE="
@@ -101,11 +105,11 @@ async def _install_file(machine: Machine, contents: str, remote: Path):
     await machine.ssh.run(f"cp {tmp_path} {remote}", check=True)
 
 
-async def _run(connection, cmd: str, shutdown: asyncio.Event):
-    async with connection.create_process(cmd) as process:
-        await shutdown.wait()
-        process.kill()
-        return await process.stderr.read()
+async def _run(machine: Machine, cmd: str, shutdown: asyncio.Event):
+    async with asyncssh.connect(str(machine.hostname), **machine._ssh_args) as conn:
+        async with conn.create_process(cmd) as process:
+            await shutdown.wait()
+            process.kill()
 
 
 async def _get_ip(machine: Machine) -> str:
@@ -133,9 +137,9 @@ class Experiment(system.Experiment):
     blame: bool = False
 
     def to_environment(self) -> Environment:
-        # TODO: >1 broadcaster per machine
+        client_machine_count = math.ceil(self.clients / CLIENTS_PER_MACHINE)
         return Environment(
-            instance_type=self.instance_type, client_machine_count=self.channels
+            instance_type=self.instance_type, client_machine_count=client_machine_count
         )
 
     @classmethod
@@ -146,7 +150,12 @@ class Experiment(system.Experiment):
 
     async def _cleanup(self, setting: Setting):
         await asyncio.gather(
-            *[m.ssh.run("pkill dissent || rm -f *.log", check=True) for m in setting]
+            *[
+                m.ssh.run(
+                    "pkill dissent || pkill curl || rm -f *.{log,conf}", check=True
+                )
+                for m in setting
+            ]
         )
 
     async def _install_keys(self, machines: List[Machine]):
@@ -191,7 +200,7 @@ class Experiment(system.Experiment):
     _SERVER_CONF_TEMPLATE_PATH = _LOCAL_CONFIG_DIR / "server.conf"
     _SERVER_CONF_PATH = Path("server.conf")
     _BROADCASTER_CONF_TEMPLATE_PATH = _LOCAL_CONFIG_DIR / "broadcaster.conf"
-    _BROADCASTER_CONF_PATH = Path("broadcaster.conf")
+    _BROADCASTER_CONF_PATH = "broadcaster{}.conf"
     _CLIENT_CONF_PATH = "client{}.conf"
     _CLIENT_CONF_TEMPLATE_PATH = _LOCAL_CONFIG_DIR / "client.conf"
 
@@ -225,29 +234,49 @@ class Experiment(system.Experiment):
         broadcaster_keys = list(keys["broadcasters"])
         listener_keys = list(keys["listeners"])
         listener_counts = _distribute(len(listener_keys), len(clients))
+        broadcaster_counts = _distribute(self.channels, len(clients))
         counts = []  # for each client: (num_broadcasters, num_listener_processes)
-        for client, listener_count in zip(clients, listener_counts):
-            # TODO: handle >1 broadcaster per machine
-            # - web_port
-            # - multiple configs
-            broadcaster_vars = {
-                "local_id": broadcaster_keys.pop(),
-                "web_port": 8080,
-                **common_vars,
-            }
-            broadcaster_conf = broadcaster_conf_template.format(**broadcaster_vars)
-            await _install_file(client, broadcaster_conf, self._BROADCASTER_CONF_PATH)
-            # TODO: divide up listeners over processses
+        for client, listener_count, broadcaster_count in zip(
+            clients, listener_counts, broadcaster_counts
+        ):
+            for b_idx in range(broadcaster_count):
+                broadcaster_vars = {
+                    "local_id": broadcaster_keys.pop(),
+                    "port": 6100 + b_idx,
+                    "web_port": 8850 + b_idx,
+                    "entry_port": 8950 + b_idx,
+                    "idx": b_idx,
+                    **common_vars,
+                }
+                broadcaster_conf = broadcaster_conf_template.format(**broadcaster_vars)
+                await _install_file(
+                    client, broadcaster_conf, self._BROADCASTER_CONF_PATH.format(b_idx)
+                )
             listener_local_ids = listener_keys[:listener_count]
             listener_keys = listener_keys[listener_count:]
-            listener_local_id_str = ",".join(map('"{}"'.format, listener_local_ids))
-            client_vars = {
-                "local_ids": listener_local_id_str,
-                "nodes_per_process": len(listener_local_ids),
-                **common_vars,
-            }
-            client_conf = client_conf_template.format(**client_vars)
-            await _install_file(client, client_conf, self._CLIENT_CONF_PATH.format(0))
+            listener_counts = _distribute(
+                listener_count, math.ceil(listener_count / LISTENERS_PER_PROCESS)
+            )
+            for l_idx, lcount in enumerate(listener_counts):
+                listener_local_process_ids = [
+                    listener_local_ids.pop() for _ in range(lcount)
+                ]
+                listener_local_id_str = ",".join(
+                    map('"{}"'.format, listener_local_process_ids)
+                )
+                client_vars = {
+                    "local_ids": listener_local_id_str,
+                    "nodes_per_process": len(listener_local_process_ids),
+                    "port": 6200 + l_idx,
+                    "web_port": 8800 + l_idx,
+                    "entry_port": 8900 + l_idx,
+                    "idx": l_idx,
+                    **common_vars,
+                }
+                client_conf = client_conf_template.format(**client_vars)
+                await _install_file(
+                    client, client_conf, self._CLIENT_CONF_PATH.format(l_idx)
+                )
             # make a message_size-byte dummy file
             cmd = (
                 f"head -c {self.message_size} /dev/zero "
@@ -255,7 +284,7 @@ class Experiment(system.Experiment):
                 f"> {message_path}"
             )
             await client.ssh.run(cmd, check=True)
-            counts.append((1, 1))
+            counts.append((broadcaster_count, len(listener_counts)))
         return counts
 
     def _run_dissent(
@@ -270,24 +299,27 @@ class Experiment(system.Experiment):
         server_cmd = f"{dissent_bin} {self._SERVER_CONF_PATH}"
         proc_futures.extend(
             [
-                asyncio.create_task(_run(server0.ssh, server_cmd, shutdown)),
-                asyncio.create_task(_run(server1.ssh, server_cmd, shutdown)),
+                asyncio.create_task(_run(server0, server_cmd, shutdown)),
+                asyncio.create_task(_run(server1, server_cmd, shutdown)),
             ]
         )
-        broadcaster_cmd = f"{dissent_bin} {self._BROADCASTER_CONF_PATH}"
         for client, (broadcasters, listeners) in zip(clients, counts):
+            broadcaster_confs = map(
+                self._BROADCASTER_CONF_PATH.format, range(broadcasters)
+            )
+            broadcaster_cmds = [
+                f"{dissent_bin} {c} > /tmp/bcast.log 2>&1" for c in broadcaster_confs
+            ]
+            proc_futures.extend(
+                [
+                    asyncio.create_task(_run(client, b, shutdown))
+                    for b in broadcaster_cmds
+                ]
+            )
             client_confs = map(self._CLIENT_CONF_PATH.format, range(listeners))
             listener_cmds = [f"{dissent_bin} {c}" for c in client_confs]
             proc_futures.extend(
-                [
-                    asyncio.create_task(_run(client.ssh, l, shutdown))
-                    for l in listener_cmds
-                ]
-            )
-            # TODO: >1 broadcaster per machine
-            assert broadcasters == 1
-            proc_futures.append(
-                asyncio.create_task(_run(client.ssh, broadcaster_cmd, shutdown))
+                [asyncio.create_task(_run(client, l, shutdown)) for l in listener_cmds]
             )
         return asyncio.gather(*proc_futures)
 
@@ -297,6 +329,13 @@ class Experiment(system.Experiment):
             return datetime.fromisoformat(time_str)
 
         lines = log.split("\n")
+        while lines:
+            if not lines:
+                raise RuntimeError("No broadcast found in log.")
+            line = lines.pop(0)
+            # If nobody broadcasts, the round failed!
+            if "Opening slot" in line:
+                break
         while lines:
             if not lines:
                 raise RuntimeError("No start time found in log.")
@@ -328,7 +367,6 @@ class Experiment(system.Experiment):
         await self._install_keys(list(setting))
         keys = await self._sort_keys(server0)
         ips = await self._sort_ips(server0, server1, clients)
-        assert len(keys["broadcasters"]) == len(clients)
 
         # set up configs
         counts = await self._install_configs(setting, ips, keys)
@@ -340,26 +378,35 @@ class Experiment(system.Experiment):
         try:
             # TODO: wait until broadcaster log has "WaitingForServer"? or "Registering"
             await asyncio.sleep(5)
-            curl_cmd = "curl -X POST --data-binary @message localhost:8080/session/send"
+            curl_cmd = (
+                "curl -X POST --data-binary @message localhost:{port}/session/send"
+            )
             curl_procs = []
-            for client in clients:
-                curl_procs.append(client.ssh.run(curl_cmd, check=True))
+            for (client, (broadcasters, _)) in zip(clients, counts):
+                for idx in range(broadcasters):
+                    curl_procs.append(
+                        client.ssh.run(curl_cmd.format(port=8850 + idx, check=True))
+                    )
             await asyncio.gather(*curl_procs)
-            spinner.text = f"[experiment] run processes for {WAIT_TIME}s"
+            wait_time = WAIT_TIME_LONG if self.blame else WAIT_TIME_SHORT
+            spinner.text = f"[experiment] run processes for {wait_time}s"
             await server0.ssh.run(
                 'tail -f -n +0 server.log | grep -m1 "finished bulk"',
                 check=True,
-                timeout=WAIT_TIME,
+                timeout=wait_time,
             )
             # TODO: wait time should probably be estimated from parameters
             # e.g. it's way too short for many clients + blame
         finally:
             shutdown.set()
-            spinner.text = "[experiment] waiting for processes to exit"
-            await all_procs
 
-        # TODO: dl server.log
-        log = (await server0.ssh.run("cat server.log", check=True)).stdout
+        log = (
+            await server0.ssh.run(
+                "cat server.log | "
+                "grep -E '(Opening slot|finished bulk|SERVER_PUSH_CLEARTEXT|Phase: 1)'",
+                check=True,
+            )
+        ).stdout
         latency = self._parse_log(log)
         return Result(experiment=self, time=latency, queries=self.clients)
 

@@ -54,7 +54,7 @@ async def _connect_ssh(hostname: Hostname, *args, **kwargs) -> AsyncIterator[Mac
                     "test -f /var/lib/cloud/instance/boot-finished", check=True
                 )
                 try:
-                    yield Machine(conn, Hostname(hostname))
+                    yield Machine(conn, Hostname(hostname), kwargs)
                 except BaseException as err:  # pylint: disable=broad-except
                     # Exceptions from "yield" have nothing to do with us.
                     # We reraise them below without retrying.

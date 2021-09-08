@@ -25,6 +25,6 @@ for project in dissent.pro keygen.pro application.pro; do
 done
 popd
 # TODO: make bigger
-./Dissent/keygen --nkeys=1000
+./Dissent/keygen --nkeys=10000
 
 sudo cp "$HOME/config/sysctl.conf" /etc/sysctl.d/20-spectrum.conf

@@ -44,6 +44,7 @@ BuildProfile = NewType("BuildProfile", str)
 MAX_WORKERS_PER_MACHINE = 10
 
 EXPERIMENT_TIMEOUT = 60.0
+EXPERIMENT_LONG_TIMEOUT = 1000
 
 
 @dataclass
@@ -251,7 +252,7 @@ async def _prepare_worker(
         "SPECTRUM_WORKER_GROUP": group,
         "SPECTRUM_LEADER_GROUP": group,
         "SPECTRUM_WORKER_START_INDEX": worker_start_idx,
-        "SPECTRUM_LOG_LEVEL": "info",
+        "SPECTRUM_LOG_LEVEL": "trace",
         "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
         "SPECTRUM_TLS_KEY": "/home/ubuntu/spectrum/data/server.key",
         "SPECTRUM_TLS_CERT": "/home/ubuntu/spectrum/data/server.crt",
@@ -272,33 +273,6 @@ async def _prepare_worker(
         await machine.ssh.run(f"sudo systemctl start spectrum-leader", check=True)
 
 
-async def _prepare_client(
-    machine: Machine, count: int, etcd_env: Dict[str, Any], hammer: bool
-):
-    if hammer:
-        nprocs = count
-        threads = 32
-    else:
-        threads = 20
-        nprocs = count // threads
-        assert count % threads == 0
-    spectrum_config: Dict[str, Any] = {
-        "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
-        "SPECTRUM_VIEWER_THREADS": threads,
-        "SPECTRUM_LOG_LEVEL": "info",
-        **etcd_env,
-    }
-    await _install_spectrum_config(machine, spectrum_config)
-    await machine.ssh.run(
-        "sudo journalctl --rotate && sudo journalctl --vacuum-time=1s",
-        check=True,
-    )
-    await machine.ssh.run(
-        f"sudo systemctl start viewer@{{1..{nprocs}}}",
-        check=True,
-    )
-
-
 def distribute(balls: int, balls_per_bin: int):
     counts = [balls_per_bin] * (balls // balls_per_bin)
     counts.append(balls % balls_per_bin)
@@ -316,6 +290,7 @@ class Experiment(system.Experiment):
     worker_machines_per_group: int = 1
     protocol: Protocol = Symmetric()
     hammer: bool = True
+    expected_runtime: int = None
 
     @property
     def groups(self) -> int:
@@ -337,7 +312,7 @@ class Experiment(system.Experiment):
         elif self.hammer:
             return 8
         else:
-            return 200
+            return 500
 
     @property
     def group_size(self) -> int:
@@ -425,6 +400,41 @@ class Experiment(system.Experiment):
             return None
         return (Milliseconds(total_latency), total_count)
 
+    async def _prepare_client(
+        self,
+        machine: Machine,
+        count: int,
+        etcd_env: Dict[str, Any],
+        runtime: Optional[int],
+    ):
+        if self.hammer:
+            nprocs = count
+            threads = 32
+            if self.channels >= 10000:
+                # otherwise we OOM
+                count /= 2
+        else:
+            threads = 20
+            nprocs = count // threads
+            assert count % threads == 0
+        spectrum_config: Dict[str, Any] = {
+            "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
+            "SPECTRUM_VIEWER_THREADS": threads,
+            "SPECTRUM_LOG_LEVEL": "trace",
+            **etcd_env,
+        }
+        if runtime:
+            spectrum_config["SPECTRUM_MAX_JITTER_MILLIS"] = runtime
+        await _install_spectrum_config(machine, spectrum_config)
+        await machine.ssh.run(
+            "sudo journalctl --rotate && sudo journalctl --vacuum-time=1s",
+            check=True,
+        )
+        await machine.ssh.run(
+            f"sudo systemctl start viewer@{{1..{nprocs}}}",
+            check=True,
+        )
+
     async def _execute_experiment(
         self,
         setting: Setting,
@@ -436,7 +446,7 @@ class Experiment(system.Experiment):
             **etcd_env,
         }
         await _install_spectrum_config(setting.publisher, spectrum_config)
-        if hammer:
+        if self.hammer:
             await setting.publisher.ssh.run(
                 "sudo systemctl start spectrum-publisher", check=True
             )
@@ -547,17 +557,22 @@ class Experiment(system.Experiment):
         await asyncio.gather(*tasks)
 
         client_counts = distribute(self.clients, self.cpm)
+        if self.expected_runtime or self.hammer:
+            runtime = self.expected_runtime
+        else:
+            runtime = self.clients * 4
         await asyncio.gather(
             *[
-                _prepare_client(client, client_range, etcd_env, self.hammer)
+                self._prepare_client(client, client_range, etcd_env, runtime)
                 for client, client_range in zip(clients, client_counts)
             ]
         )
 
         spinner.text = "[experiment] running"
+        timeout = EXPERIMENT_TIMEOUT + 30 if self.hammer else EXPERIMENT_LONG_TIMEOUT
         return await asyncio.wait_for(
             self._execute_experiment(setting, etcd_env),
-            timeout=EXPERIMENT_TIMEOUT + 30,
+            timeout=timeout,
         )
 
     async def run(self, setting: Setting, spinner: Halo) -> Result:
