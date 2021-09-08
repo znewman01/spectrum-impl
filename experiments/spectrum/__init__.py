@@ -432,6 +432,7 @@ class Experiment(system.Experiment):
     ) -> Result:
         spectrum_config: Dict[str, Any] = {
             "SPECTRUM_LOG_LEVEL": "trace",
+            "SPECTRUM_DELAY_MS": 30000,
             **etcd_env,
         }
         await _install_spectrum_config(setting.publisher, spectrum_config)

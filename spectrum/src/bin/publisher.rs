@@ -21,6 +21,11 @@ struct Args {
     logs: cli::LogArgs,
     #[clap(flatten)]
     net: cli::NetArgs,
+    /// How long to delay between quorum and clients start.
+    ///
+    /// Might need to increase this if lots of clients on the same machine.
+    #[clap(long, env = "SPECTRUM_DELAY_MS", default_value = "5000")]
+    delay_ms: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         args.net.into(),
         remote,
         shutdown,
+        args.delay_ms,
     )
     .await
 }

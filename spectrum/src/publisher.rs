@@ -128,6 +128,7 @@ async fn inner_run<C, F, R, P>(
     net: NetConfig,
     remote: R,
     shutdown: F,
+    delay_ms: i64,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
     C: Store + Sync + Send,
@@ -160,7 +161,8 @@ where
     wait_for_quorum(&config, &experiment).await?;
 
     // TODO(zjn): should be more in the future
-    let start = DateTime::<FixedOffset>::from(Utc::now()) + chrono::Duration::milliseconds(5000);
+    let start =
+        DateTime::<FixedOffset>::from(Utc::now()) + chrono::Duration::milliseconds(delay_ms);
     info!("Registering experiment start time: {}", start);
     set_start_time(&config, start).await?;
     delay_until(start).await;
@@ -179,6 +181,7 @@ pub async fn run<C, R, F>(
     net: NetConfig,
     remote: R,
     shutdown: F,
+    delay_ms: i64,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>>
 where
     C: Store + Sync + Send,
@@ -187,13 +190,13 @@ where
 {
     match protocol {
         ProtocolWrapper::Secure(protocol) => {
-            inner_run(config, protocol, info, net, remote, shutdown).await?;
+            inner_run(config, protocol, info, net, remote, shutdown, delay_ms).await?;
         }
         ProtocolWrapper::SecureMultiKey(protocol) => {
-            inner_run(config, protocol, info, net, remote, shutdown).await?;
+            inner_run(config, protocol, info, net, remote, shutdown, delay_ms).await?;
         }
         ProtocolWrapper::Insecure(protocol) => {
-            inner_run(config, protocol, info, net, remote, shutdown).await?;
+            inner_run(config, protocol, info, net, remote, shutdown, delay_ms).await?;
         }
     }
     Ok(())

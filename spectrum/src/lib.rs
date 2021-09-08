@@ -135,6 +135,7 @@ where
                 net,
                 remote.clone(),
                 shutdown,
+                5000,
             )
             .boxed(),
             Leader(info) => leader::run(
