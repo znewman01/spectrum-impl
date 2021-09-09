@@ -26,7 +26,7 @@ macro_rules! check_seed_homomorphic_prg {
             proptest! {
                 /// The null seed should be the identity for seed group operations.
                 #[test]
-                fn test_null_seed_identity(prg: $type, seed: <$type as Prg>::Seed) {
+                fn test_null_seed_identity(seed: <$type as Prg>::Seed) {
                     assert_eq!(
                         seed.clone() + <$type as SeedHomomorphicPrg>::null_seed(),
                         seed
