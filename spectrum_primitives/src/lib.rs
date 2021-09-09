@@ -14,6 +14,8 @@ mod bytes;
 mod dpf;
 #[macro_use]
 mod vdpf;
+#[macro_use]
+pub mod pir;
 
 mod constructions;
 
