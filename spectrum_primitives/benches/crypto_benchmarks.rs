@@ -1,12 +1,28 @@
 #![allow(clippy::identity_op)]
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
+use spectrum_primitives::pir;
 use spectrum_primitives::{Bytes, Dpf, MultiKeyVdpf, TwoKeyVdpf, Vdpf};
+use std::fmt::{self, Display};
+use std::iter::repeat_with;
+
+#[derive(Copy, Clone, Debug)]
+struct PirParams {
+    channels: usize,
+    size: usize,
+}
+
+impl Display for PirParams {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
 
 fn criterion_benchmark(c: &mut Criterion) {
     static KB: usize = 1000;
     static MB: usize = 1000000;
     static SIZES: [usize; 6] = [KB, 10 * KB, 100 * KB, 250 * KB, 500 * KB, 1 * MB];
+    static CHANNELS: [usize; 6] = [1, 10, 100, 1000, 10000, 100000];
 
     let mut group = c.benchmark_group("DPF (AES) Evaluation");
     for size in SIZES.iter() {
@@ -80,8 +96,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             )
         });
     }
-
     group.finish();
+
     let mut group = c.benchmark_group("Vdpf.gen_audit() (SH)");
     for size in SIZES.iter() {
         group.throughput(Throughput::Bytes(*size as u64));
@@ -101,6 +117,39 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
     group.finish();
 
+    let mut group = c.benchmark_group("PIR");
+    for &size in SIZES.iter().take(3) {
+        for &channels in CHANNELS.iter() {
+            if channels >= 100000 && size >= 100000 {
+                continue;
+            }
+            let params = PirParams { size, channels };
+            // group.throughput(Throughput::Bytes(*(size * channels) as u64));
+            group.bench_with_input(
+                BenchmarkId::from_parameter(params),
+                &params,
+                |b, &params| {
+                    let channels = params.channels;
+                    let size = params.size;
+                    const IDX: usize = 0;
+                    let data: Vec<Vec<u8>> = repeat_with(|| Bytes::random(size, &mut thread_rng()))
+                        .take(channels)
+                        .map(Vec::<u8>::from)
+                        .collect();
+                    let db = pir::LinearDatabase::from_vec(data);
+                    let queries =
+                        <pir::LinearDatabase as pir::Database<1>>::queries(IDX, channels).unwrap();
+                    let query = queries[0].clone();
+                    b.iter_batched(
+                        || query.clone(),
+                        |query| <pir::LinearDatabase as pir::Database<1>>::answer(&db, query),
+                        BatchSize::LargeInput,
+                    )
+                },
+            );
+        }
+    }
+    group.finish();
     // TODO: more benchmarks
     // - GroupPRG
     // - DPF with Group PRG
