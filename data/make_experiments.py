@@ -20,13 +20,7 @@ MESSAGE_SIZES_FEW_CHANNELS = [
 ]
 
 MESSAGE_SIZES_MANY_CHANNELS = [1_000, 5_000, 10_000]
-MANY_CHANNELS = [
-    1000,
-    5000,
-    10000,
-    50000,
-    100000,
-]
+MANY_CHANNELS = [1_000, 5_000, 10_000, 50_000, 100_000]
 
 MULTI_SERVER_CHANNELS = [64]
 MULTI_SERVER_MESSAGE_SIZES = [160]
@@ -70,13 +64,11 @@ PLOTS_SPECTRUM = {
         "message_size": MULTI_SERVER_MESSAGE_SIZES,
     },
     "latency": {
-        # TODO: you want to make this bigger to match Blinder but....
-        # maybe make message size smaller, 100KB or so?
-        "clients": [2000, 1_000, 5_000, 10_000],
+        "clients": [1_000, 2_000, 5_000, 10_000, 50_000, 100_000],
         "message_size": [1_000_000],
         "channels": [1],
         "hammer": [False],
-        "clients_per_machine": [500],
+        "clients_per_machine": [2000],
     },
 }
 
@@ -108,12 +100,12 @@ PLOTS_RIPOSTE = {
 PLOTS_DISSENT = {
     "latency-blame": {
         "clients": [200, 400, 600, 800, 1000],
-        "message_size": [10_000],  # TODO: can make 10K?
+        "message_size": [10_000],
         "blame": [True],
         "channels": [1],
     },
     "latency-honest": {
-        "clients": [200, 400, 800, 1000],
+        "clients": [200, 400, 600, 800, 1000],
         # if we go too big it doesn't actually seem to register the messages and
         # then everything is really fast because it doesn't do anything.
         "message_size": [10_000],

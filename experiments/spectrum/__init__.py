@@ -252,7 +252,7 @@ async def _prepare_worker(
         "SPECTRUM_WORKER_GROUP": group,
         "SPECTRUM_LEADER_GROUP": group,
         "SPECTRUM_WORKER_START_INDEX": worker_start_idx,
-        "SPECTRUM_LOG_LEVEL": "trace",
+        "SPECTRUM_LOG_LEVEL": "debug",
         "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
         "SPECTRUM_TLS_KEY": "/home/ubuntu/spectrum/data/server.key",
         "SPECTRUM_TLS_CERT": "/home/ubuntu/spectrum/data/server.crt",
@@ -409,10 +409,12 @@ class Experiment(system.Experiment):
     ):
         if self.hammer:
             nprocs = count
-            threads = 32
-            if self.channels >= 10000:
-                # otherwise we OOM
-                count /= 2
+            if self.channels <= 10000:
+                threads = 32
+            elif self.channels <= 50000 or self.message_size <= 1000:
+                threads = 16
+            else:
+                threads = 8
         else:
             threads = 20
             nprocs = count // threads
@@ -420,7 +422,7 @@ class Experiment(system.Experiment):
         spectrum_config: Dict[str, Any] = {
             "SPECTRUM_TLS_CA": "/home/ubuntu/spectrum/data/ca.crt",
             "SPECTRUM_VIEWER_THREADS": threads,
-            "SPECTRUM_LOG_LEVEL": "trace",
+            "SPECTRUM_LOG_LEVEL": "debug",
             **etcd_env,
         }
         if runtime:

@@ -3,7 +3,7 @@ set -eo pipefail
 
 main() {
   TMP_DIR=$(mktemp -d)
-  TRIALS="${SPECTRUM_PLOT_TRIALS:-10}"
+  TRIALS="${SPECTRUM_PLOT_TRIALS:-5}"
   echo "Temporary directory:" ${TMP_DIR}
   mkdir ${TMP_DIR}/{experiments,results}
 
