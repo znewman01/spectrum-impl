@@ -1,3 +1,4 @@
+#![feature(type_ascription)]
 mod accumulator;
 
 #[macro_use]

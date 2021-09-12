@@ -21,6 +21,7 @@ impl Display for PirParams {
 fn criterion_benchmark(c: &mut Criterion) {
     static KB: usize = 1000;
     static MB: usize = 1000000;
+    static GB: usize = 1000000000;
     static SIZES: [usize; 6] = [KB, 10 * KB, 100 * KB, 250 * KB, 500 * KB, 1 * MB];
     static CHANNELS: [usize; 6] = [1, 10, 100, 1000, 10000, 100000];
 
@@ -120,7 +121,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("PIR");
     for &size in SIZES.iter().take(3) {
         for &channels in CHANNELS.iter() {
-            if channels >= 100000 && size >= 100000 {
+            if channels * size > 1 * GB {
                 continue;
             }
             let params = PirParams { size, channels };
@@ -137,12 +138,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                         .map(Vec::<u8>::from)
                         .collect();
                     let db = pir::LinearDatabase::from_vec(data);
-                    let queries =
-                        <pir::LinearDatabase as pir::Database<1>>::queries(IDX, channels).unwrap();
-                    let query = queries[0].clone();
                     b.iter_batched(
-                        || query.clone(),
-                        |query| <pir::LinearDatabase as pir::Database<1>>::answer(&db, query),
+                        || {
+                            <pir::LinearDatabase as pir::Database<2>>::queries(IDX, channels)
+                                .unwrap()[0]
+                                .clone()
+                        },
+                        |query| <pir::LinearDatabase as pir::Database<2>>::answer(&db, query),
                         BatchSize::LargeInput,
                     )
                 },
