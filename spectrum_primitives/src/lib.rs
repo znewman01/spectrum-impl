@@ -32,12 +32,17 @@ pub use constructions::TwoKeyVdpf;
 pub use constructions::AuthKey;
 pub use dpf::multi_key::Key as MultiKeyKey;
 pub use dpf::two_key::Key as TwoKeyKey;
+pub use dpf::TwoKeyDpf;
 pub use prg::ElementVector;
 pub use util::Sampleable;
 pub use vdpf::multi_key::ProofShare as MultiKeyProof;
 pub use vdpf::multi_key::Token as MultiKeyToken;
 pub use vdpf::two_key::ProofShare as TwoKeyProof;
 pub use vdpf::two_key::Token as TwoKeyToken;
+pub use vdpf::two_key_pub::Construction as TwoKeyPubConstruction;
+pub use vdpf::two_key_pub::KeyPair as TwoKeyPubAuthKey;
+pub use vdpf::two_key_pub::ProofShare as TwoKeyPubProof;
+pub use vdpf::two_key_pub::Token as TwoKeyPubToken;
 
 use constructions::AesPrg;
 use prg::GroupPrg;
@@ -45,6 +50,14 @@ use prg::GroupPrg;
 impl TwoKeyVdpf {
     pub fn with_channels_msg_size(channels: usize, msg_size: usize) -> Self {
         TwoKeyVdpf::new(dpf::TwoKeyDpf::new(AesPrg::new(msg_size), channels))
+    }
+}
+
+pub type TwoKeyPubVdpf = TwoKeyPubConstruction<TwoKeyDpf<AesPrg>>;
+
+impl TwoKeyPubVdpf {
+    pub fn with_channels_msg_size(channels: usize, msg_size: usize) -> Self {
+        TwoKeyPubVdpf::new(dpf::TwoKeyDpf::new(AesPrg::new(msg_size), channels))
     }
 }
 

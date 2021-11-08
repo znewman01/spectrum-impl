@@ -1,6 +1,6 @@
 mod aes_prg;
 mod baby;
-mod jubjub;
+pub mod jubjub;
 
 use crate::bytes::Bytes;
 use crate::dpf::{MultiKeyDpf, TwoKeyDpf};

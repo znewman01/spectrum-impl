@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::iter::Sum;
 use std::ops;
 
+use ::group::Group as _;
 use ::group::GroupEncoding;
 use jubjub::{Fr, SubgroupPoint};
 use rug::{integer::Order, Integer};
@@ -30,11 +31,25 @@ const MODULUS: [u64; 4] = [
 pub const MODULUS_BYTES: usize = 32;
 const BYTE_ORDER: Order = Order::LsfLe;
 
-/// A CurvePoint representing an exponent in the elliptic curve group.
-#[derive(Eq, Debug, Clone, Serialize, Deserialize)]
+/// A CurvePoint representing a point in the elliptic curve group.
+#[derive(Eq, Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(try_from = "Vec<u8>", into = "Vec<u8>")]
 pub struct CurvePoint {
     inner: SubgroupPoint,
+}
+
+impl CurvePoint {
+    pub fn generator() -> Self {
+        let inner = SubgroupPoint::generator();
+        Self { inner }
+    }
+}
+
+impl From<Scalar> for CurvePoint {
+    fn from(scalar: Scalar) -> Self {
+        let inner = SubgroupPoint::generator() * scalar.inner; // exponentiation!
+        Self { inner }
+    }
 }
 
 // From/to bytes encodes a message as a group point. To/from Vec<u8> encodes a group point as a message.
@@ -197,9 +212,8 @@ impl Arbitrary for CurvePoint {
 }
 
 /// A scalar representing an exponent in the elliptic curve group.
-#[derive(Eq, Debug, Clone, Serialize, Deserialize)]
+#[derive(Eq, Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(try_from = "Vec<u8>", into = "Vec<u8>")]
-// #[derive(Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct Scalar {
     inner: Fr,
 }
