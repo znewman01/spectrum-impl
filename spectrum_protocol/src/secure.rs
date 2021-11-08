@@ -126,7 +126,7 @@ use {
     crate::proto,
     spectrum_primitives::{
         ElementVector, MultiKeyKey, MultiKeyProof, MultiKeyToken, TwoKeyKey, TwoKeyProof,
-        TwoKeyToken,
+        TwoKeyPubProof, TwoKeyPubToken, TwoKeyToken,
     },
     std::convert::{TryFrom, TryInto},
 };
@@ -221,6 +221,27 @@ where
             encoded_msg: value.msg().into(),
             bits: value.bits().into_iter().map(Into::into).collect(),
             seeds: value.seeds().into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[cfg(feature = "proto")]
+impl TryFrom<proto::secure_write_token::ProofShare> for TwoKeyPubProof {
+    type Error = &'static str;
+
+    fn try_from(proto: proto::secure_write_token::ProofShare) -> Result<Self, Self::Error> {
+        let seed = proto.seed.try_into().map_err(|_| "can't convert seed")?;
+        let bit = proto.bit.try_into().map_err(|_| "can't convert bit")?;
+        Ok(Self::new(seed, bit))
+    }
+}
+
+#[cfg(feature = "proto")]
+impl From<TwoKeyPubProof> for proto::secure_write_token::ProofShare {
+    fn from(value: TwoKeyPubProof) -> Self {
+        proto::secure_write_token::ProofShare {
+            bit: value.bit().into(),
+            seed: value.seed().into(),
         }
     }
 }
@@ -349,6 +370,29 @@ where
     S: Clone + Into<Vec<u8>>,
 {
     fn from(value: TwoKeyToken<S>) -> Self {
+        proto::SecureAuditShare {
+            bit: value.bit().into(),
+            seed: value.seed().into(),
+            data: value.data().into(),
+        }
+    }
+}
+
+#[cfg(feature = "proto")]
+impl TryFrom<proto::SecureAuditShare> for TwoKeyPubToken {
+    type Error = &'static str;
+
+    fn try_from(proto: proto::SecureAuditShare) -> Result<Self, Self::Error> {
+        let bit = proto.bit.try_into().map_err(|_| "can't convert bit")?;
+        let seed = proto.seed.try_into().map_err(|_| "can't convert seed")?;
+        let data = proto.data.into();
+        Ok(Self::new(seed, bit, data))
+    }
+}
+
+#[cfg(feature = "proto")]
+impl From<TwoKeyPubToken> for proto::SecureAuditShare {
+    fn from(value: TwoKeyPubToken) -> Self {
         proto::SecureAuditShare {
             bit: value.bit().into(),
             seed: value.seed().into(),

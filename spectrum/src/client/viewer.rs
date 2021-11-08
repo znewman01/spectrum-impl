@@ -61,7 +61,8 @@ where
     let jitter = Duration::from_millis(rand::random::<u64>() % max_jitter);
     sleep(jitter).await;
 
-    {  // free the write token memory after send!
+    {
+        // free the write token memory after send!
         let mut write_tokens = match info.broadcast {
             Some((msg, key)) => {
                 info!("Broadcaster about to send write token.");
@@ -142,6 +143,9 @@ where
 {
     match protocol {
         ProtocolWrapper::Secure(protocol) => {
+            inner_run(config, protocol, info, hammer, cert, max_jitter, shutdown).await?;
+        }
+        ProtocolWrapper::SecurePub(protocol) => {
             inner_run(config, protocol, info, hammer, cert, max_jitter, shutdown).await?;
         }
         ProtocolWrapper::SecureMultiKey(protocol) => {

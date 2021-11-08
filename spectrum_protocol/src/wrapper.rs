@@ -7,12 +7,13 @@ use crate::{
 };
 
 use serde::{Deserialize, Serialize};
-use spectrum_primitives::{AuthKey, MultiKeyVdpf, TwoKeyVdpf};
+use spectrum_primitives::{AuthKey, MultiKeyVdpf, TwoKeyPubAuthKey, TwoKeyPubVdpf, TwoKeyVdpf};
 
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
 type SecureProtocolTwoKey = secure::Wrapper<TwoKeyVdpf>;
+type SecureProtocolTwoKeyPub = secure::Wrapper<TwoKeyPubVdpf>;
 type SecureProtocolMultiKey = secure::Wrapper<MultiKeyVdpf>;
 
 #[cfg(any(test, feature = "testing"))]
@@ -23,6 +24,25 @@ use proptest_derive::Arbitrary;
 pub enum ChannelKeyWrapper {
     Insecure(String),
     Secure(AuthKey),
+    SecurePub(TwoKeyPubAuthKey),
+}
+
+impl TryFrom<ChannelKeyWrapper> for TwoKeyPubAuthKey {
+    type Error = &'static str;
+
+    fn try_from(wrapper: ChannelKeyWrapper) -> Result<Self, Self::Error> {
+        if let ChannelKeyWrapper::SecurePub(secret) = wrapper {
+            Ok(secret)
+        } else {
+            Err("Invalid channel key")
+        }
+    }
+}
+
+impl From<TwoKeyPubAuthKey> for ChannelKeyWrapper {
+    fn from(key: TwoKeyPubAuthKey) -> Self {
+        ChannelKeyWrapper::SecurePub(key)
+    }
 }
 
 impl TryFrom<ChannelKeyWrapper> for AuthKey {
@@ -64,6 +84,7 @@ impl From<String> for ChannelKeyWrapper {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ProtocolWrapper {
     Secure(SecureProtocolTwoKey),
+    SecurePub(SecureProtocolTwoKeyPub),
     Insecure(insecure::InsecureProtocol),
     SecureMultiKey(SecureProtocolMultiKey),
 }
@@ -77,6 +98,12 @@ impl From<insecure::InsecureProtocol> for ProtocolWrapper {
 impl From<SecureProtocolTwoKey> for ProtocolWrapper {
     fn from(protocol: SecureProtocolTwoKey) -> Self {
         Self::Secure(protocol)
+    }
+}
+
+impl From<SecureProtocolTwoKeyPub> for ProtocolWrapper {
+    fn from(protocol: SecureProtocolTwoKeyPub) -> Self {
+        Self::SecurePub(protocol)
     }
 }
 
@@ -116,6 +143,7 @@ impl ProtocolWrapper {
     pub fn num_parties(&self) -> usize {
         match self {
             Self::Secure(protocol) => protocol.num_parties(),
+            Self::SecurePub(protocol) => protocol.num_parties(),
             Self::SecureMultiKey(protocol) => protocol.num_parties(),
             Self::Insecure(protocol) => protocol.num_parties(),
         }
@@ -124,6 +152,7 @@ impl ProtocolWrapper {
     pub fn num_channels(&self) -> usize {
         match self {
             Self::Secure(protocol) => protocol.num_channels(),
+            Self::SecurePub(protocol) => protocol.num_channels(),
             Self::SecureMultiKey(protocol) => protocol.num_channels(),
             Self::Insecure(protocol) => protocol.num_channels(),
         }
@@ -132,6 +161,7 @@ impl ProtocolWrapper {
     pub fn message_len(&self) -> usize {
         match self {
             Self::Secure(protocol) => protocol.message_len(),
+            Self::SecurePub(protocol) => protocol.message_len(),
             Self::SecureMultiKey(protocol) => protocol.message_len(),
             Self::Insecure(protocol) => protocol.message_len(),
         }

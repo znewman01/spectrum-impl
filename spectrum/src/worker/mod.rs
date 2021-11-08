@@ -486,6 +486,9 @@ where
         ProtocolWrapper::Secure(protocol) => {
             inner_run(config, experiment, protocol, info, net, shutdown).await?;
         }
+        ProtocolWrapper::SecurePub(protocol) => {
+            inner_run(config, experiment, protocol, info, net, shutdown).await?;
+        }
         ProtocolWrapper::SecureMultiKey(protocol) => {
             inner_run(config, experiment, protocol, info, net, shutdown).await?;
         }

@@ -9,3 +9,9 @@ mod multi_key {
     use spectrum_primitives::MultiKeyVdpf;
     check_protocol!(Wrapper<MultiKeyVdpf>);
 }
+
+mod two_key_pub {
+    use crate::secure::Wrapper;
+    use spectrum_primitives::TwoKeyPubVdpf;
+    check_protocol!(Wrapper<TwoKeyPubVdpf>);
+}

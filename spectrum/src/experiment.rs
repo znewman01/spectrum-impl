@@ -44,12 +44,15 @@ impl Experiment {
         clients: u128,
         hammer: bool,
     ) -> Self {
-        use spectrum_primitives::{AuthKey, Sampleable};
+        use spectrum_primitives::{AuthKey, Sampleable, TwoKeyPubAuthKey};
         let channels = 0..protocol.num_channels();
         let keys: Vec<ChannelKeyWrapper> = match &protocol {
             ProtocolWrapper::Secure(_) => {
                 channels.map(|_: usize| AuthKey::sample().into()).collect()
             }
+            ProtocolWrapper::SecurePub(_) => channels
+                .map(|_: usize| TwoKeyPubAuthKey::sample().into())
+                .collect(),
             ProtocolWrapper::SecureMultiKey(_) => {
                 channels.map(|_: usize| AuthKey::sample().into()).collect()
             }
