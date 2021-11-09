@@ -309,6 +309,7 @@ where
 {
     type Error = &'static str;
 
+    #[allow(irrefutable_let_patterns)] // TODO: we removed insecure stuff
     fn try_from(value: proto::WriteToken) -> Result<Self, Self::Error> {
         // WriteToken has an optional enum for the token type; this should always be populated.
         let token_enum = value.inner.ok_or("no inner")?;
@@ -490,5 +491,24 @@ where
             .map(ElementVector::<G>::try_from)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| "conversion failed")
+    }
+}
+
+use spectrum_primitives::Bytes;
+
+#[cfg(feature = "proto")]
+impl TryFrom<proto::Share> for Vec<Bytes> {
+    type Error = ();
+    fn try_from(share: proto::Share) -> Result<Self, Self::Error> {
+        Ok(share.data.into_iter().map(Bytes::from).collect())
+    }
+}
+
+#[cfg(feature = "proto")]
+impl From<Vec<Bytes>> for proto::Share {
+    fn from(value: Vec<Bytes>) -> Self {
+        proto::Share {
+            data: value.into_iter().map(Into::into).collect(),
+        }
     }
 }

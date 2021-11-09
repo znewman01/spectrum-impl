@@ -186,9 +186,6 @@ where
         ProtocolWrapper::SecureMultiKey(protocol) => {
             inner_run(config, experiment, protocol, info, net, shutdown).await?;
         }
-        ProtocolWrapper::Insecure(protocol) => {
-            inner_run(config, experiment, protocol, info, net, shutdown).await?;
-        }
     }
     Ok(())
 }

@@ -182,6 +182,10 @@ pub struct ExperimentArgs {
     #[clap(long = "no-security", group = "security")]
     no_security: bool,
 
+    /// Use the public-key variant.
+    #[clap(long)]
+    public: bool,
+
     /// If true, don't set up a publisher or leaders; just measure raw QPS.
     #[clap(long)]
     hammer: bool,
@@ -207,6 +211,7 @@ impl From<ExperimentArgs> for ProtocolWrapper {
             args.groups,
             args.channels,
             args.msg_size,
+            args.public,
         )
     }
 }

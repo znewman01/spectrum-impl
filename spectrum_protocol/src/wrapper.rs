@@ -1,10 +1,6 @@
 // https://github.com/rust-lang/rust-clippy/issues/6594
 #![allow(clippy::unit_arg)]
-use crate::{
-    insecure,
-    secure::{self},
-    Protocol,
-};
+use crate::{secure, Protocol};
 
 use serde::{Deserialize, Serialize};
 use spectrum_primitives::{AuthKey, MultiKeyVdpf, TwoKeyPubAuthKey, TwoKeyPubVdpf, TwoKeyVdpf};
@@ -22,7 +18,6 @@ use proptest_derive::Arbitrary;
 #[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum ChannelKeyWrapper {
-    Insecure(String),
     Secure(AuthKey),
     SecurePub(TwoKeyPubAuthKey),
 }
@@ -67,17 +62,15 @@ impl TryFrom<ChannelKeyWrapper> for String {
     type Error = &'static str;
 
     fn try_from(wrapper: ChannelKeyWrapper) -> Result<Self, Self::Error> {
-        if let ChannelKeyWrapper::Insecure(password) = wrapper {
-            Ok(password)
-        } else {
-            Err("Invalid channel key")
-        }
+        let _ = wrapper;
+        Err("Invalid channel key")
     }
 }
 
 impl From<String> for ChannelKeyWrapper {
     fn from(value: String) -> ChannelKeyWrapper {
-        ChannelKeyWrapper::Insecure(value)
+        let _ = value;
+        panic!("Removed insecure protocol")
     }
 }
 
@@ -85,14 +78,7 @@ impl From<String> for ChannelKeyWrapper {
 pub enum ProtocolWrapper {
     Secure(SecureProtocolTwoKey),
     SecurePub(SecureProtocolTwoKeyPub),
-    Insecure(insecure::InsecureProtocol),
     SecureMultiKey(SecureProtocolMultiKey),
-}
-
-impl From<insecure::InsecureProtocol> for ProtocolWrapper {
-    fn from(protocol: insecure::InsecureProtocol) -> Self {
-        Self::Insecure(protocol)
-    }
 }
 
 impl From<SecureProtocolTwoKey> for ProtocolWrapper {
@@ -120,12 +106,19 @@ impl ProtocolWrapper {
         groups: usize,
         channels: usize,
         msg_size: usize,
+        public: bool,
     ) -> Self {
         match security_bytes {
             true => {
                 if multi_key {
                     Into::<secure::Wrapper<_>>::into(MultiKeyVdpf::with_channels_parties_msg_size(
                         channels, groups, msg_size,
+                    ))
+                    .into()
+                } else if public {
+                    assert_eq!(groups, 2);
+                    Into::<secure::Wrapper<_>>::into(TwoKeyPubVdpf::with_channels_msg_size(
+                        channels, msg_size,
                     ))
                     .into()
                 } else {
@@ -136,7 +129,7 @@ impl ProtocolWrapper {
                     .into()
                 }
             }
-            false => insecure::InsecureProtocol::new(groups, channels, msg_size).into(),
+            false => panic!("Insecure protocol removed"),
         }
     }
 
@@ -145,7 +138,6 @@ impl ProtocolWrapper {
             Self::Secure(protocol) => protocol.num_parties(),
             Self::SecurePub(protocol) => protocol.num_parties(),
             Self::SecureMultiKey(protocol) => protocol.num_parties(),
-            Self::Insecure(protocol) => protocol.num_parties(),
         }
     }
 
@@ -154,7 +146,6 @@ impl ProtocolWrapper {
             Self::Secure(protocol) => protocol.num_channels(),
             Self::SecurePub(protocol) => protocol.num_channels(),
             Self::SecureMultiKey(protocol) => protocol.num_channels(),
-            Self::Insecure(protocol) => protocol.num_channels(),
         }
     }
 
@@ -163,7 +154,6 @@ impl ProtocolWrapper {
             Self::Secure(protocol) => protocol.message_len(),
             Self::SecurePub(protocol) => protocol.message_len(),
             Self::SecureMultiKey(protocol) => protocol.message_len(),
-            Self::Insecure(protocol) => protocol.message_len(),
         }
     }
 }
@@ -175,12 +165,13 @@ mod tests {
     use spectrum_primitives::check_roundtrip;
     use std::convert::TryInto;
 
-    check_roundtrip!(
-        String,
-        Into::<ChannelKeyWrapper>::into,
-        |w: ChannelKeyWrapper| w.try_into().unwrap(),
-        string_channelkeywrapper_rt
-    );
+    // TODO: remove
+    // check_roundtrip!(
+    //     String,
+    //     Into::<ChannelKeyWrapper>::into,
+    //     |w: ChannelKeyWrapper| w.try_into().unwrap(),
+    //     string_channelkeywrapper_rt
+    // );
 
     check_roundtrip!(
         AuthKey,

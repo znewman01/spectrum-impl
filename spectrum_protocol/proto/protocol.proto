@@ -10,22 +10,6 @@ message Share {
   repeated bytes data = 1;
 }
 
-// TODO: move inside InsecureWriteToken
-message InsecureWriteTokenInner {
-  bytes data = 1;
-  uint64 channel_idx = 2;
-  string key = 3;
-}
-
-// Dummy share/proof/check for testing/benchmarking system
-message InsecureWriteToken {
-  InsecureWriteTokenInner inner = 1;
-}
-
-message InsecureAuditShare {
-  bool okay = 1;
-}
-
 message SecureWriteToken {
   message DpfKey {
     bytes encoded_msg = 1;
@@ -52,7 +36,6 @@ message SecureAuditShare {
 
 message WriteToken {
   oneof inner {
-    InsecureWriteToken insecure = 1;
     SecureWriteToken secure = 2;
   }
 }
@@ -60,7 +43,6 @@ message WriteToken {
 // what workers exchange to collaboratively verify shares
 message AuditShare {
   oneof inner {
-    InsecureAuditShare insecure = 1;
     SecureAuditShare secure = 2;
   }
 }
