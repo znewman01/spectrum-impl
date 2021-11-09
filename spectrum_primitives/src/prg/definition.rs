@@ -31,7 +31,7 @@ macro_rules! check_prg {
                 fn test_seed_random(prg: $type) {
                     prop_assume!(prg.output_size() > 0);
                     let results: HashSet<_> = repeat_with(<$type as Prg>::new_seed)
-                        .take(5)
+                        .take(10)
                         .map(|s| prg.eval(&s))
                         .collect();
                     prop_assert!(results.len() > 1);
