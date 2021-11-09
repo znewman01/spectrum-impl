@@ -1,4 +1,4 @@
-use clap::{crate_authors, crate_version, ArgGroup, Clap};
+use clap::{crate_authors, crate_version, ArgGroup, Parser};
 use futures::prelude::*;
 use rand::{thread_rng, Rng};
 use spectrum::{
@@ -19,7 +19,7 @@ use tokio::signal::ctrl_c;
 /// Use `$SPECTRUM_CONFIG_SERVER=etcd://127.0.0.1:8000` to point to an etcd
 /// instance, and the client will pick up the experiment configuration from
 /// there.
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(version = crate_version!(), author = crate_authors!())]
 struct Args {
     #[clap(flatten)]
@@ -31,7 +31,7 @@ struct Args {
     max_jitter: u64,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(group = ArgGroup::new("message").required(true))]
 struct BroadcasterArgs {
     /// The message to broadcast

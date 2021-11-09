@@ -2,11 +2,11 @@ use crate::{
     experiment::Experiment, net::Config as NetConfig, protocols::wrapper::ProtocolWrapper,
 };
 
-use clap::Clap;
+use clap::Parser;
 use simplelog::{LevelFilter, SimpleLogger, TermLogger, TerminalMode};
 use tonic::transport::{Certificate, Identity};
 
-#[derive(Clap)]
+#[derive(Parser)]
 pub struct Args {
     #[clap(flatten)]
     logs: LogArgs,
@@ -27,7 +27,7 @@ impl From<Args> for Experiment {
 }
 
 // TODO: parse valid values, put in help string
-#[derive(Clap)]
+#[derive(Parser)]
 pub struct LogArgs {
     /// Log level.
     #[clap(short = 'v', long, default_value = "debug", env = "SPECTRUM_LOG_LEVEL")]
@@ -58,7 +58,7 @@ impl LogArgs {
     }
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 pub struct NetArgs {
     /// Port on which the service should bind (localhost interface).
     ///
@@ -76,7 +76,7 @@ pub struct NetArgs {
     tls: TlsServerArgs,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 pub struct TlsServerArgs {
     /// Path to .crt
     #[clap(long = "tls-cert", env = "SPECTRUM_TLS_CERT")]
@@ -108,7 +108,7 @@ impl From<TlsServerArgs> for Option<(Identity, Certificate)> {
     }
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 pub struct TlsCaArgs {
     /// Path to ca.pem
     #[clap(long = "tls-ca", env = "SPECTRUM_TLS_CA")]
@@ -136,7 +136,7 @@ impl From<NetArgs> for NetConfig {
     }
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 pub struct ExperimentArgs {
     /// Number of clients to simulate.
     ///

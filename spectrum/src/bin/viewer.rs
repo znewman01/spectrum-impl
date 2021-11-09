@@ -2,7 +2,7 @@ use rand::{thread_rng, Rng};
 use std::iter::repeat_with;
 use tonic::transport::Certificate;
 
-use clap::{crate_authors, crate_version, Clap};
+use clap::{crate_authors, crate_version, Parser};
 use futures::stream::{FuturesUnordered, StreamExt};
 use spectrum::{cli, client, config, experiment, services::ClientInfo};
 
@@ -17,7 +17,7 @@ use spectrum::{cli, client, config, experiment, services::ClientInfo};
 /// Use `$SPECTRUM_CONFIG_SERVER=etcd://127.0.0.1:8000` to point to an etcd
 /// instance, and the client will pick up the experiment configuration from
 /// there.
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(version = crate_version!(), author = crate_authors!())]
 struct Args {
     #[clap(flatten)]

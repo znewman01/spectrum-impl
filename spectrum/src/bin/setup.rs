@@ -2,7 +2,7 @@ use spectrum::cli;
 use spectrum::config;
 use spectrum::experiment::{write_to_store, Experiment};
 
-use clap::{crate_authors, crate_version, Clap};
+use clap::{crate_authors, crate_version, Parser};
 
 // use std::fs::File;
 
@@ -10,7 +10,7 @@ use clap::{crate_authors, crate_version, Clap};
 ///
 /// Writes the experiment details to etcd and dumps key files to disk
 /// (`key-{0..n}.json`, `keys.json`).
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(version = crate_version!(), author = crate_authors!())]
 struct Args {
     #[clap(flatten)]

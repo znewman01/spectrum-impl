@@ -1,4 +1,4 @@
-use clap::{crate_authors, crate_version, Clap};
+use clap::{crate_authors, crate_version, Parser};
 use futures::prelude::*;
 use spectrum::{
     cli, config, experiment, leader,
@@ -15,7 +15,7 @@ use tokio::signal::ctrl_c;
 /// Use `$SPECTRUM_CONFIG_SERVER=etcd://127.0.0.1:8000` to point to an etcd
 /// instance, and the leader will pick up the experiment configuration from
 /// there.
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(version = crate_version!(), author = crate_authors!())]
 struct Args {
     #[clap(flatten)]
@@ -26,7 +26,7 @@ struct Args {
     net: cli::NetArgs,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 struct LeaderArgs {
     /// The index of the group of this leader.
     #[clap(long, env = "SPECTRUM_LEADER_GROUP")]
