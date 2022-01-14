@@ -64,7 +64,7 @@ PLOTS_SPECTRUM = {
         "message_size": MULTI_SERVER_MESSAGE_SIZES,
     },
     "latency": {
-        "clients": [1_000, 2_000, 5_000, 10_000, 50_000, 100_000],
+        "clients": [200, 400, 600, 800, 1_000, 2_000, 5_000, 10_000, 50_000, 100_000],
         "message_size": [1_000_000],
         "channels": [1],
         "hammer": [False],
