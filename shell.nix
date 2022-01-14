@@ -8,7 +8,7 @@ let
     extensions =
       [ "rust-src" "rust-analysis" ];
   };
-  pythonPackages = python38Packages;
+  pythonPackages = python39Packages;
 in pkgs.mkShell rec {
   name = "spectrum-env";
   venvDir = "./.venv";
