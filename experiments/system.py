@@ -147,8 +147,8 @@ class Result:
     mean_latency: Optional[Milliseconds] = None
 
     @property
-    def qps(self) -> int:
-        return int((self.queries / self.time) * 1000)
+    def qps(self) -> float:
+        return (self.queries / self.time) * 1000
 
 
 class Experiment(ABC):

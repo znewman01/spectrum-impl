@@ -134,7 +134,7 @@ Also configurable:
 - `worker_machines_per_group`: worker *machines* in each group
 - `protocol`: the protocol to run; can be:
   - `{"Symmetric": {"security": 16}}` (16-byte prime, 2 groups)
-  - `{"Insecure": {"parties": 3}}` (3 groups)
+  - `{"SymmetricPub": {"security": 16}}` (16-byte prime, public, 2 groups)
   - `{"SeedHomomorphic": {"parties": 3}}` (3 groups, default security)
 """,
         )

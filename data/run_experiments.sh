@@ -15,7 +15,7 @@ main() {
   python make_experiments.py --trials ${TRIALS} ${TMP_DIR}/experiments
   popd > /dev/null
 
-  for system in express riposte spectrum dissent; do
+  for system in express spectrum spectrum-pub dissent; do
     for exp_path in ${TMP_DIR}/experiments/*${system}*.json; do
       exp=$(basename "$exp_path")
       any_match=0

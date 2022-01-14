@@ -123,10 +123,14 @@ def make_experiments(trials, params):
             yield dict(zip(keys, values))
 
 
-def make_experiments_spectrum(trials, params):
+def make_experiments_spectrum(trials, params, public=False):
     # support for "full broadcast" plots (# channels = # clients) by omitting clients/channels
     # other services don't need this
     for experiment in make_experiments(trials, params):
+        if public and "SeedHomomorphic" in experiment.get("protocol", {}):
+            continue
+        if public:
+            experiment["protocol"] = {"SymmetricPub": {"security": 16}}
         if experiment["channels"] == 10000:
             experiment["clients_per_machine"] = 2
             experiment["clients"] = 8
@@ -154,6 +158,11 @@ def main(args):
     for name, params in PLOTS_SPECTRUM.items():
         path = os.path.join(args.output_dir, f"spectrum-{name}.json")
         experiments = list(make_experiments_spectrum(args.trials, params))
+        _write_file(path, experiments)
+
+    for name, params in PLOTS_SPECTRUM.items():
+        path = os.path.join(args.output_dir, f"spectrum-pub-{name}.json")
+        experiments = list(make_experiments_spectrum(args.trials, params, public=True))
         _write_file(path, experiments)
 
     for name, params in PLOTS_EXPRESS.items():

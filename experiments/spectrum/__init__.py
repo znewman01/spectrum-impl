@@ -204,15 +204,15 @@ class Symmetric(Protocol):
 
 
 @dataclass(frozen=True)
-class Insecure(Protocol):
-    parties: int = field(default=2)
+class SymmetricPub(Protocol):
+    security: Bytes = field(default=Bytes(16))
 
     @property
     def flag(self) -> str:
-        return "--no-security"
+        return f"--security {self.security} --public"
 
     @classmethod
-    def _from_dict(cls, data: Dict[str, Any]) -> Insecure:
+    def _from_dict(cls, data: Dict[str, Any]) -> SymmetricPub:
         return cls(**data)
 
 
@@ -296,13 +296,13 @@ class Experiment(system.Experiment):
     def groups(self) -> int:
         if isinstance(self.protocol, Symmetric):
             return 2
-        if isinstance(self.protocol, Insecure):
-            return self.protocol.parties
+        if isinstance(self.protocol, SymmetricPub):
+            return 2
         if isinstance(self.protocol, SeedHomomorphic):
             return self.protocol.parties
         raise TypeError(
             f"Invalid protocol {self.protocol}. "
-            "Expected one of Symmetric, Insecure, SeedHomomorphic"
+            "Expected one of Symmetric, SymmetricPub, SeedHomomorphic"
         )
 
     @property
@@ -415,6 +415,8 @@ class Experiment(system.Experiment):
                 threads = 16
             else:
                 threads = 8
+            if isinstance(self.protocol, SymmetricPub):
+                threads //= 4
         else:
             threads = 20
             nprocs = count // threads
@@ -453,6 +455,8 @@ class Experiment(system.Experiment):
                 "sudo systemctl start spectrum-publisher", check=True
             )
             timeout = EXPERIMENT_TIMEOUT - 10  # give some cleanup time
+            if isinstance(self.protocol, SymmetricPub):
+                timeout += 180
             await asyncio.sleep(timeout)
         else:
             await setting.publisher.ssh.run(
@@ -483,7 +487,7 @@ class Experiment(system.Experiment):
             return Result(
                 experiment=self,
                 time=Milliseconds(int(mean_time)),
-                queries=int(total_qps * mean_time / 1000),
+                queries=(total_qps * mean_time / 1000),
                 mean_latency=mean_latency,
             )
         else:
@@ -572,6 +576,8 @@ class Experiment(system.Experiment):
 
         spinner.text = "[experiment] running"
         timeout = EXPERIMENT_TIMEOUT + 30 if self.hammer else EXPERIMENT_LONG_TIMEOUT
+        if isinstance(self.protocol, SymmetricPub):
+            timeout += 180
         return await asyncio.wait_for(
             self._execute_experiment(setting, etcd_env),
             timeout=timeout,

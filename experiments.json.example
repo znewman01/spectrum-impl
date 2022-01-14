@@ -75,9 +75,9 @@
 
         "protocol": {
             // Insecure protocol, for benchmarking.
-            "Insecure": {
-                // Number of "trust groups" to simulate in the protocol.
-                "parties": 2
+            "SymmetricPub": {
+                // Security parameter (in bytes).
+                "security": 16
             }
         }
     },
